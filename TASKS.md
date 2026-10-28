@@ -3,10 +3,6 @@
      acceptance criteria are not pickable — sharpen them first. -->
 
 ## Now
-- [ ] T-010 — Dragon asset gate: Meshy dragon → UE, rig verdict
-      Why: winged-dragon auto-rig is the project's biggest asset risk; verdict must land before flight animation is designed around it.
-      Accept: Meshy dragon generated via docs/ASSET-PIPELINE.md, imported to Content/Meshy/Dragon; written verdict in goose-deuce.md ([decision]): rig usable, or Blender fixup task filed with the failing evidence (screenshot + bone list).
-      Touches: Content/Meshy/Dragon/, docs/ASSET-PIPELINE.md, goose-deuce.md   Depends: T-025   Gated: none
 - [ ] T-011 — Dragon flight feel: flap/dive/stamina/landing damage
       Why: flight is design pillar 3; feel gates every exterior decision.
       Accept: In PIE, flap gains altitude, dive gains speed (velocity readout in debug HUD), landing above threshold speed deals damage; automation tests for stamina drain + landing damage pass via Scripts/gate.sh.
@@ -67,6 +63,7 @@
       Touches: goose-deuce.md, docs/PLAN.md, TASKS.md   Depends: none   Gated: cadence
 
 ## Blocked
+- [!] T-010 — Dragon asset gate: Meshy dragon → UE, rig verdict — BLOCKED 2026-10-27: Meshy MCP tools absent from this Hermes session (portable plugin dropped on MCP reconcile; owner must /reload-mcp or start a new session to restore them). DONE SO FAR: SAM 3.1 cutout verified clean at docs/concepts/dragon-side-cutout.png (Meta API sam-3.1, input_image data-URL, mask decoded — ART-DIRECTION §5). NEXT: Meshy image-to-3D from the cutout → remesh → rig → import Content/Meshy/Dragon → rig verdict in goose-deuce [decision].
 
 ## Dropped
 
