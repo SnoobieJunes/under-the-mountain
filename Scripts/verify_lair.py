@@ -8,6 +8,12 @@ ues = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
 
 ok = les.load_level(MAP_PATH)
 print("LAIR_LOAD_OK", ok)
+if not ok:
+    # [2026-10-28 T-037] A verifier that only prints its failure lets
+    # automation treat a missing/broken map as success. Abort before
+    # the census/traces can produce misleading partial results.
+    print("LAIR_VERIFY_FAILED load_level returned False for", MAP_PATH)
+    raise SystemExit(1)
 
 actors = eas.get_all_level_actors()
 counts = {}
@@ -98,4 +104,10 @@ results.append(sphere("Chamber2->Chamber3", (C2, 0, 200), (C3, 0, 200), 60.0))
 results.append(sphere("Chamber3->Hoard", (C3, 0, 200), (HOARD, 0, 200), 60.0))
 results.append(sphere("Hoard->up_the_shaft", (HOARD, 0, 200), (HOARD, 0, 5600), 60.0))
 
-print("LAIR_TRACES_SUMMARY passed=%d/%d" % (sum(1 for r in results if r), len(results)))
+passed = sum(1 for r in results if r)
+print("LAIR_TRACES_SUMMARY passed=%d/%d" % (passed, len(results)))
+if passed != len(results):
+    # [2026-10-28 T-037] Make the process result match the printed
+    # verdict; callers must not need to scrape PASS/FAIL text.
+    print("LAIR_VERIFY_FAILED %d trace(s) failed" % (len(results) - passed))
+    raise SystemExit(1)

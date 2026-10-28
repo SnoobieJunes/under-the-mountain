@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-10-28 — T-037 — Build and level-generation scripts now fail loudly instead of reporting success after a masked format error, failed level check, or failed asset operation (no user-visible change)
+
 2026-10-28 — T-036 — A dragon that empties its stamina mid-dive now keeps diving instead of being forced out of flight; glide/hover exhaustion still burns HP and ends flight
 
 2026-10-28 — T-035 — Fixed a GC ownership bug: the dragon pawn’s input actions, mapping context and tint-picker widget are now reflection-tracked so the garbage collector cannot collect them under the pawn (no user-visible change)

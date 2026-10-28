@@ -3,11 +3,22 @@
 # except where the base is crimson-dominant (wing membranes/spines), which
 # the picker must not recolour (T-027 accept). Assigns to SK_Dragon_v4 slot 0
 # (previously WorldGridMaterial — the mesh shipped untextured).
+import os
+
 import unreal
 
 eal = unreal.EditorAssetLibrary
 mel = unreal.MaterialEditingLibrary
 asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
+
+
+def require(value, action):
+    # [2026-10-28 T-037] Surface Unreal's False/None helper failures
+    # as a named exception before destructive work or success text.
+    if not value:
+        raise RuntimeError("create_dragon_material failed: %s" % action)
+    return value
+
 
 SRC = unreal.Paths.project_dir() + "Content/Meshy/Raw/Dragon/dragon_v4_textures/"
 DST = "/Game/Meshy/Dragon/Textures"
@@ -15,19 +26,22 @@ DST = "/Game/Meshy/Dragon/Textures"
 def import_tex(png, name, srgb):
     dest = DST + "/" + name
     if eal.does_asset_exist(dest):
-        return eal.load_asset(dest)
+        return require(eal.load_asset(dest), "load existing texture %s" % dest)
+    source = SRC + png
+    # Validate the source before any material is deleted/rebuilt.
+    require(os.path.isfile(source), "find source texture %s" % source)
     task = unreal.AssetImportTask()
-    task.set_editor_property("filename", SRC + png)
+    task.set_editor_property("filename", source)
     task.set_editor_property("destination_path", DST)
     task.set_editor_property("destination_name", name)
     task.set_editor_property("automated", True)
     task.set_editor_property("save", True)
     asset_tools.import_asset_tasks([task])
-    tex = eal.load_asset(dest)
+    tex = require(eal.load_asset(dest), "load imported texture %s" % dest)
     tex.set_editor_property("srgb", srgb)
     if not srgb and "Normal" in name:
         tex.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_NORMALMAP)
-    eal.save_asset(dest)
+    require(eal.save_asset(dest), "save texture %s" % dest)
     return tex
 
 T_BASE = import_tex("base_color.png", "T_Dragon_BaseColor", True)
@@ -38,12 +52,18 @@ print("TEXTURES", T_BASE, T_NORM, T_ROUGH, T_METAL)
 
 MAT_PATH = "/Game/Meshy/Dragon/M_DragonScales"
 if eal.does_asset_exist(MAT_PATH):
-    eal.delete_asset(MAT_PATH)
-mat = asset_tools.create_asset("M_DragonScales", "/Game/Meshy/Dragon", unreal.Material, unreal.MaterialFactoryNew())
+    require(eal.delete_asset(MAT_PATH), "delete existing material %s" % MAT_PATH)
+mat = require(
+    asset_tools.create_asset("M_DragonScales", "/Game/Meshy/Dragon", unreal.Material, unreal.MaterialFactoryNew()),
+    "create material %s" % MAT_PATH,
+)
 mat.set_editor_property("used_with_skeletal_mesh", True)
 
 def sample(tex, x, y, sampler):
-    s = mel.create_material_expression(mat, unreal.MaterialExpressionTextureSample, x, y)
+    s = require(
+        mel.create_material_expression(mat, unreal.MaterialExpressionTextureSample, x, y),
+        "create texture sample expression",
+    )
     s.set_editor_property("texture", tex)
     s.set_editor_property("sampler_type", sampler)
     return s
@@ -102,16 +122,18 @@ mel.connect_material_property(norm, "RGB", unreal.MaterialProperty.MP_NORMAL)
 mel.connect_material_property(rough, "R", unreal.MaterialProperty.MP_ROUGHNESS)
 mel.connect_material_property(metal, "R", unreal.MaterialProperty.MP_METALLIC)
 mel.recompile_material(mat)
-eal.save_asset(MAT_PATH)
+require(eal.save_asset(MAT_PATH), "save material %s" % MAT_PATH)
 print("MATERIAL", MAT_PATH)
 
-sk = eal.load_asset("/Game/Meshy/Dragon/SK_Dragon_v4")
+sk = require(eal.load_asset("/Game/Meshy/Dragon/SK_Dragon_v4"), "load SK_Dragon_v4")
 # [2026-10-28 T-027] Whole-list replacement: mutating the fetched
 # SkeletalMaterial struct in place does not write back (proven —
 # slot stayed WorldGridMaterial on the first attempt).
 sm = unreal.SkeletalMaterial()
 sm.set_editor_property("material_interface", mat)
 sk.set_editor_property("materials", [sm])
-eal.save_asset("/Game/Meshy/Dragon/SK_Dragon_v4")
-print("ASSIGNED slot0 ->", sk.get_editor_property("materials")[0].get_editor_property("material_interface").get_name())
+require(eal.save_asset("/Game/Meshy/Dragon/SK_Dragon_v4"), "save SK_Dragon_v4")
+assigned = sk.get_editor_property("materials")[0].get_editor_property("material_interface").get_name()
+require(assigned == "M_DragonScales", "verify SK_Dragon_v4 material assignment (got %s)" % assigned)
+print("ASSIGNED slot0 ->", assigned)
 print("DRAGON_MATERIAL_DONE")

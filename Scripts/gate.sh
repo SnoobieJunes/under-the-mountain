@@ -10,9 +10,15 @@ Scripts/build.sh
 "$UE_BUILD" UnderTheMountain Mac Development -Project="$UPROJECT" -WaitMutex -NoHotReload -NoUba
 echo "OK: UnderTheMountain (game) built"
 CLANG_FORMAT="$(xcrun --find clang-format)"
-find Source -name '*.h' -o -name '*.cpp' | while read -r f; do
-  "$CLANG_FORMAT" --dry-run --Werror -style=file:"$PROJECT_ROOT/.clang-format" "$f" >/dev/null
-done
+# [2026-10-28 T-037] Let find aggregate every clang-format invocation:
+# -exec ... {} + returns non-zero if any batch fails. The former
+# find|while form could report only the last file's result, so an
+# early failure followed by a clean file was masked.
+if ! find Source \( -name '*.h' -o -name '*.cpp' \) -exec \
+  "$CLANG_FORMAT" --dry-run --Werror -style=file:"$PROJECT_ROOT/.clang-format" {} + >/dev/null; then
+  echo "FAIL: clang-format check (Source/)" >&2
+  exit 1
+fi
 echo "OK: clang-format check (Source/)"
 Scripts/test-fast.sh
 # [2026-10-27 T-022] Coverage floor check. gate.sh deliberately does NOT run

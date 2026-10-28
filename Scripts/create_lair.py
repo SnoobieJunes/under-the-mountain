@@ -15,12 +15,31 @@ eal = unreal.EditorAssetLibrary
 mel = unreal.MaterialEditingLibrary
 asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
 
+
+def require(value, action):
+    # [2026-10-28 T-037] Unreal editor helpers often report failure by
+    # returning False/None instead of raising. Convert those results
+    # at the call site so a generator cannot print success after a
+    # failed delete, create, load, or save.
+    if not value:
+        raise RuntimeError("create_lair failed: %s" % action)
+    return value
+
+
+# Preflight the shared engine meshes before deleting/recreating any
+# project assets; a broken engine install must not cost the old map.
+CUBE = require(unreal.load_asset("/Engine/BasicShapes/Cube"), "load Cube mesh")
+SPHERE = require(unreal.load_asset("/Engine/BasicShapes/Sphere"), "load Sphere mesh")
+
 # --- materials (recreate deterministically; only ever our own 3 assets) ---
 def make_material(name, color, roughness, metallic):
     path = MAT_DIR + "/" + name
     if eal.does_asset_exist(path):
-        eal.delete_asset(path)
-    mat = asset_tools.create_asset(name, MAT_DIR, unreal.Material, unreal.MaterialFactoryNew())
+        require(eal.delete_asset(path), "delete existing material %s" % path)
+    mat = require(
+        asset_tools.create_asset(name, MAT_DIR, unreal.Material, unreal.MaterialFactoryNew()),
+        "create material %s" % path,
+    )
     c = mel.create_material_expression(mat, unreal.MaterialExpressionConstant3Vector, -400, -100)
     c.set_editor_property("constant", unreal.LinearColor(*color, 1.0))
     mel.connect_material_property(c, "", unreal.MaterialProperty.MP_BASE_COLOR)
@@ -31,7 +50,7 @@ def make_material(name, color, roughness, metallic):
     m.set_editor_property("r", metallic)
     mel.connect_material_property(m, "", unreal.MaterialProperty.MP_METALLIC)
     mel.recompile_material(mat)
-    eal.save_asset(path)
+    require(eal.save_asset(path), "save material %s" % path)
     return mat
 
 M_ROCK = make_material("M_RockDark", (0.08, 0.07, 0.06), 0.95, 0.0)
@@ -40,17 +59,18 @@ M_WOOD = make_material("M_WoodDark", (0.25, 0.16, 0.09), 0.85, 0.0)
 
 # --- fresh level (delete only our own Lair.umap if a prior run left one) ---
 if eal.does_asset_exist(MAP_PATH):
-    eal.delete_asset(MAP_PATH)
-les.new_level(MAP_PATH)
+    require(eal.delete_asset(MAP_PATH), "delete existing level %s" % MAP_PATH)
+require(les.new_level(MAP_PATH), "create level %s" % MAP_PATH)
 
-CUBE = unreal.load_asset("/Engine/BasicShapes/Cube")
-SPHERE = unreal.load_asset("/Engine/BasicShapes/Sphere")
 rng = random.Random(12)
 COUNTER = [0]
 
 def box(prefix, mesh, center, size, mat, yaw=0.0):
     COUNTER[0] += 1
-    actor = eas.spawn_actor_from_class(unreal.StaticMeshActor, unreal.Vector(*center))
+    actor = require(
+        eas.spawn_actor_from_class(unreal.StaticMeshActor, unreal.Vector(*center)),
+        "spawn static mesh actor %s" % prefix,
+    )
     actor.set_actor_label("%s_%03d" % (prefix, COUNTER[0]))
     comp = actor.static_mesh_component
     comp.set_static_mesh(mesh)
@@ -113,7 +133,7 @@ def tunnel(name, x1, x2):
         box(name + "_Beam", CUBE, (bx, 0, DOOR_H - 25), (80, DOOR_W + 400, 50), M_WOOD)
 
 def point_light(name, loc, color=(1.0, 0.62, 0.32), intensity=6000.0, radius=2800.0):
-    a = eas.spawn_actor_from_class(unreal.PointLight, unreal.Vector(*loc))
+    a = require(eas.spawn_actor_from_class(unreal.PointLight, unreal.Vector(*loc)), "spawn point light %s" % name)
     a.set_actor_label(name)
     comp = a.get_component_by_class(unreal.PointLightComponent)
     comp.set_intensity(intensity)
@@ -198,7 +218,7 @@ for gx, gy, gs in ((HOARD - 1200, 1300, 1.2), (HOARD + 1200, 1300, 1.4),
     gold_pile(gx, gy, gs)
 
 # --- player start + lights ---
-start = eas.spawn_actor_from_class(unreal.PlayerStart, unreal.Vector(C1, 0, 150))
+start = require(eas.spawn_actor_from_class(unreal.PlayerStart, unreal.Vector(C1, 0, 150)), "spawn PlayerStart")
 start.set_actor_label("DragonStart")
 
 point_light("Light_Entry", (C1, 0, 900))
@@ -212,14 +232,17 @@ point_light("Light_Tunnel2", ((C2 + C3) / 2.0, 0, 450), intensity=2500.0, radius
 point_light("Light_Tunnel3", ((C3 + HOARD) / 2.0, 0, 450), intensity=2500.0, radius=1800.0)
 point_light("Light_ShaftGlow", (HOARD, 0, 3000), color=(0.75, 0.85, 1.0), intensity=5000.0, radius=3000.0)
 
-sun = eas.spawn_actor_from_class(unreal.DirectionalLight, unreal.Vector(HOARD + 600, 400, 7500))
+sun = require(
+    eas.spawn_actor_from_class(unreal.DirectionalLight, unreal.Vector(HOARD + 600, 400, 7500)),
+    "spawn directional light",
+)
 sun.set_actor_label("PeakSun")
 sun.set_actor_rotation(unreal.Rotator(-82.0, -30.0, 0.0), False)
 sun.get_component_by_class(unreal.DirectionalLightComponent).set_intensity(3.0)
 
-sky = eas.spawn_actor_from_class(unreal.SkyLight, unreal.Vector(HOARD, 0, 6200))
+sky = require(eas.spawn_actor_from_class(unreal.SkyLight, unreal.Vector(HOARD, 0, 6200)), "spawn sky light")
 sky.set_actor_label("PeakSkyLight")
 
-les.save_current_level()
-eal.save_directory(MAT_DIR)
+require(les.save_current_level(), "save level %s" % MAP_PATH)
+require(eal.save_directory(MAT_DIR), "save materials in %s" % MAT_DIR)
 print("LAIR_CREATED", MAP_PATH, "static_mesh_actors=", COUNTER[0])
