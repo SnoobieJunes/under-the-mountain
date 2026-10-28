@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-10-28 — T-040 — Scent ribbons now stretch the full dragon-to-treasure distance even across the lair, instead of fading out after a few metres
+
 2026-10-28 — T-039 — Dragon tint tests can no longer overwrite your saved scale colour (they use their own save slot), and a failed or corrupt tint save now reports itself in the log (no user-visible change)
 
 2026-10-28 — T-038 — Scent/treasure lifetime fixes: scent ribbons and markers can no longer outlive their world or registry, moved treasure now keeps its scent endpoint, and failed treasure registration reports itself as failed (no user-visible change)

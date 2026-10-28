@@ -87,10 +87,16 @@ void AScentRibbonActor::Tick(float DeltaSeconds)
 		return;
 	}
 
-	// [2026-10-28 T-031] Ping-pong sweep: phase advances at a fixed
-	// world speed so long lair ribbons and short hoard ribbons lay
-	// particles at the same density.
-	SweepPhase += SweepDirection * (SweepSpeed * DeltaSeconds / LengthCm);
+	// [2026-10-28 T-040] Ping-pong sweep at the per-segment effective
+	// speed, not raw SweepSpeed: particles live only
+	// ParticleLifetimeSeconds, so the live trail spans speed x
+	// lifetime and a fixed 6000 cm/s would cover just 3600 cm of a
+	// 19000 cm segment. EffectiveSweepSpeed makes the emitter
+	// traverse the whole segment within one lifetime on long
+	// segments while short ones keep the base speed and density.
+	SweepPhase += SweepDirection *
+				  (EffectiveSweepSpeed(LengthCm, SweepSpeed, ParticleLifetimeSeconds) *
+				   DeltaSeconds / LengthCm);
 	if (SweepPhase >= 1.0f)
 	{
 		SweepPhase = 1.0f;

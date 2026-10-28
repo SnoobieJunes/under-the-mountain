@@ -39,12 +39,26 @@ class UNDERTHEMOUNTAIN_API AScentRibbonActor : public AActor
 	UPROPERTY(VisibleAnywhere, Category = "Scent")
 	float VisibleOpacity = 1.0f;
 
-	// [2026-10-28 T-031] Sweep speed (cm/s) of the emitter along the
-	// nose->treasure line. Fast enough that the 0.6 s particle
-	// lifetime always covers the full segment on lair scales, slow
-	// enough to read as flowing scent rather than a laser.
+	// [2026-10-28 T-040] Base/minimum sweep speed (cm/s) of the
+	// emitter along the nose->treasure line: short segments sweep at
+	// exactly this speed, slow enough to read as flowing scent
+	// rather than a laser; long segments sweep faster per
+	// EffectiveSweepSpeed so the live particle trail still covers
+	// the full segment (see ParticleLifetimeSeconds).
 	UPROPERTY(EditAnywhere, Category = "Scent")
 	float SweepSpeed = 6000.0f;
+
+	// [2026-10-28 T-040] Particle lifetime in seconds. This MUST
+	// match NS_ScentRibbon's Initialize Particle Lifetime (0.6s):
+	// the ribbon renderer draws only particles spawned within the
+	// last lifetime, so the live trail length is sweep speed x
+	// lifetime. At the 6000 cm/s base speed that is only 3600 cm —
+	// far short of 19000 cm lair segments — which is why Tick
+	// raises the speed per segment (EffectiveSweepSpeed) instead of
+	// using SweepSpeed raw. Change the asset's lifetime and this
+	// value together, or the trail will over- or under-cover.
+	UPROPERTY(EditAnywhere, Category = "Scent")
+	float ParticleLifetimeSeconds = 0.6f;
 
 	// [2026-10-28 T-031] Records the ribbon's segment and width:
 	// stores From/To for the sweep and pushes WidthCm to the
@@ -62,6 +76,31 @@ class UNDERTHEMOUNTAIN_API AScentRibbonActor : public AActor
 	float CurrentWidth() const
 	{
 		return RibbonWidthCm;
+	}
+
+	// [2026-10-28 T-040] Pure per-segment sweep speed (cm/s): the
+	// emitter must traverse the whole segment within one particle
+	// lifetime so the live trail (speed x lifetime) covers the full
+	// nose->treasure line, hence max(BaseSpeed, Length/Lifetime).
+	// Non-positive length or lifetime cannot demand a faster sweep
+	// (and lifetime must not divide), so they return BaseSpeed.
+	static float EffectiveSweepSpeed(float LengthCm, float BaseSpeed, float LifetimeSeconds)
+	{
+		if (LengthCm <= 0.0f || LifetimeSeconds <= 0.0f)
+		{
+			return BaseSpeed;
+		}
+		return FMath::Max(BaseSpeed, LengthCm / LifetimeSeconds);
+	}
+
+	// [2026-10-28 T-040] The sweep speed Tick applies to the current
+	// segment: EffectiveSweepSpeed at the live segment length with
+	// this actor's SweepSpeed/ParticleLifetimeSeconds. Tests read
+	// this to prove far-chamber segments get full-trail coverage.
+	float CurrentEffectiveSweepSpeed() const
+	{
+		return EffectiveSweepSpeed(FVector::Dist(SegmentFrom, SegmentTo), SweepSpeed,
+								   ParticleLifetimeSeconds);
 	}
 
   protected:

@@ -197,6 +197,35 @@ bool FScentRibbonWidthPassThroughTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// [2026-10-28 T-040] Full-segment trail coverage: NS_ScentRibbon
+// particles live 0.6s and are location-based, so the renderer draws
+// only the last speed x 0.6 cm of sweep. At the 6000 cm/s base speed
+// that is 3600 cm — a 19000 cm far-chamber segment would show only a
+// stub. EffectiveSweepSpeed must raise the speed so speed x lifetime
+// spans the segment, while short segments keep the base speed and
+// degenerate inputs stay safe (no divide by a non-positive lifetime).
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScentRibbonCoverageTest, "UnderTheMountain.Scent.RibbonCoverage",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FScentRibbonCoverageTest::RunTest(const FString& Parameters)
+{
+	TestTrue(TEXT("far-chamber segment is fully covered within one particle lifetime"),
+			 AScentRibbonActor::EffectiveSweepSpeed(19000.0f, 6000.0f, 0.6f) * 0.6f >= 19000.0f);
+	TestEqual(TEXT("short segment keeps the base sweep speed"),
+			  AScentRibbonActor::EffectiveSweepSpeed(1000.0f, 6000.0f, 0.6f), 6000.0f);
+	TestEqual(TEXT("zero-length segment keeps the base sweep speed"),
+			  AScentRibbonActor::EffectiveSweepSpeed(0.0f, 6000.0f, 0.6f), 6000.0f);
+	TestEqual(TEXT("zero lifetime keeps the base sweep speed"),
+			  AScentRibbonActor::EffectiveSweepSpeed(5000.0f, 6000.0f, 0.0f), 6000.0f);
+
+	AScentRibbonActor* Ribbon = NewObject<AScentRibbonActor>();
+	Ribbon->SetEndpoints(FVector::ZeroVector, FVector(19000.0f, 0.0f, 0.0f),
+						 FScentMath::RibbonWidthForValue(1200));
+	TestTrue(TEXT("actor sweep covers its full 19000 cm segment within one particle lifetime"),
+			 Ribbon->CurrentEffectiveSweepSpeed() * 0.6f >= 19000.0f);
+	return true;
+}
+
 // [2026-10-28 T-038] Failure honesty at the subsystem seam: a
 // UTreasureSubsystem that was never Initialize()d owns no registry,
 // so every forwarding verb must fail explicitly (NAME_None/false)
