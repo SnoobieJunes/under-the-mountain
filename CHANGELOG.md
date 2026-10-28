@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-10-28 — T-022 — Real C++ line coverage: coverage.sh measures 31.1% (llvm-cov), floor ratcheted to 29% and enforced by the gate (no user-visible change)
+
 2026-10-27 — T-026 — Gameplay spec published: docs/GAMEPLAY.md with implementable numbers/tables for loop, stamina, scent, waves, thieves, artifacts, intro, win/lose (no user-visible change)
 
 2026-10-27 — T-025 — Concept art pack approved: gold/crimson dragon (multi-view), lair, village, 3 thieves, hoard in docs/concepts/ + docs/ART-DIRECTION.md; player scale-colour picker filed as T-027 (no user-visible change)

@@ -57,11 +57,11 @@ green commit, record where the work lives on the task, and stop cleanly.
   Scripts/build.sh                                      # build editor target; packaging arrives in T-020
   ```
 
-- **Coverage floor:** 0% on Source/ lines — measured by the
-  coverage command above. 0 is the measured T-002 baseline: UE C++ line
-  coverage is not instrumented in this build (Scripts/coverage.sh says so
-  loudly instead of inventing a number); instrumentation is owed in T-022
-  and the floor ratchets up from the first real measurement. Set from the measured number, not a wish. The floor only
+- **Coverage floor:** 29% on Source/ lines — measured by the
+  coverage command above. [2026-10-28 T-022] First real llvm-cov measurement:
+  31.1% of Source/UnderTheMountain product lines (Tests/ excluded) via
+  Scripts/coverage.sh's module-only rsp-relink instrumentation; floor set
+  just under the measured number. The floor only
   ratchets up; a task may not lower it. (Other sections point here; this line is
   the single owner of the number.)
 - **Foot-guns already paid for** *(append as they are discovered — this list is why

@@ -162,6 +162,7 @@ tag, choose the owing one.
   measured 0% and ratchets at first instrumentation. TASKS.md corrected in
   this commit: T-022 owes the instrumentation. docs/PLAN.md unaffected.
 - Commit(s): this commit
+- [Correction, 2026-10-28: resolved by T-022 — Scripts/coverage.sh now measures real llvm-cov line coverage (module-only rsp-relink; measured 31.1% product lines), AGENTS.md floor ratcheted 0% → 29%, gate.sh enforces it.]
 
 ## 2026-10-27 — Engine and scope: Unreal 5.8.4, full open-world retained  [decision]
 - Task: T-001 (docs/PLAN.md phases; hackathon submission 2026-11-04)
