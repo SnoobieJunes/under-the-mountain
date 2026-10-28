@@ -24,7 +24,7 @@ green commit, record where the work lives on the task, and stop cleanly.
 ## Project snapshot  *(keep every line true — this section is verified, not aspirational)*
 
 - **Name / purpose:** Under the Mountain — an open-world dragon simulator (you are the dragon: guard your hoard, smell treasure, manage notoriety) for Mac gamers; Meta AI Developer Hackathon 2026, Indie track. Full vision + phases: docs/PLAN.md.
-- **Stack:** Unreal Engine 5.8.4 (source build at `/Users/auston/Development Projects/UnrealEngine`), C++ + Blueprint, Unreal Automation Framework for tests, Meshy (MCP) for 3D assets, Blender 5.2 (MCP) as asset fallback/fixup. Toolchain commands pinned in step 3 (⟨TBD step 3⟩ markers until then).
+- **Stack:** Unreal Engine 5.8.4 (source build at `/Users/auston/Development Projects/UnrealEngine`), C++ + Blueprint, Unreal Automation Framework for tests, Meshy (MCP) for 3D assets, Blender 5.2 (MCP) as asset fallback/fixup. Pinned 2026-10-27 (T-002); commands below.
 - **Agent concurrency:** single-agent (default)
 - **Platforms that must work:** macOS on Apple Silicon (primary; hackathon showcase) — the only acceptable
   evidence for a platform is a run on real hardware (this M1 Max Mac for macOS).
@@ -49,16 +49,19 @@ green commit, record where the work lives on the task, and stop cleanly.
 - **Commands** (run from repo root; every one of these must actually work):
 
   ```bash
-  Scripts/setup.sh                                      # install / bootstrap (verifies engine + toolchain) ⟨TBD step 3⟩
-  Scripts/run-editor.sh                                 # launch (smoke-checkable) ⟨TBD step 3⟩
-  Scripts/test-fast.sh                                  # inner loop while iterating ⟨TBD step 3⟩
-  Scripts/gate.sh                                       # the pre-commit gate (full) ⟨TBD step 3⟩
-  Scripts/coverage.sh                                   # measures against the floor ⟨TBD step 3⟩
-  Scripts/build.sh                                      # build/package ⟨TBD step 3⟩
+  Scripts/setup.sh                                      # install / bootstrap (verifies engine + toolchain)
+  Scripts/run-editor.sh                                 # launch (smoke-checkable)
+  Scripts/test-fast.sh                                  # inner loop while iterating
+  Scripts/gate.sh                                       # the pre-commit gate (full)
+  Scripts/coverage.sh                                   # measures against the floor
+  Scripts/build.sh                                      # build editor target; packaging arrives in T-020
   ```
 
-- **Coverage floor:** ⟨TBD step 3⟩% on Source/ lines — measured by the
-  coverage command above. Set from the measured number, not a wish. The floor only
+- **Coverage floor:** 0% on Source/ lines — measured by the
+  coverage command above. 0 is the measured T-002 baseline: UE C++ line
+  coverage is not instrumented in this build (Scripts/coverage.sh says so
+  loudly instead of inventing a number); instrumentation is owed in T-022
+  and the floor ratchets up from the first real measurement. Set from the measured number, not a wish. The floor only
   ratchets up; a task may not lower it. (Other sections point here; this line is
   the single owner of the number.)
 - **Foot-guns already paid for** *(append as they are discovered — this list is why

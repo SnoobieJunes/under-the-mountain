@@ -3,14 +3,14 @@
      acceptance criteria are not pickable — sharpen them first. -->
 
 ## Now
-- [ ] T-002 — Toolchain and the test gate
-      Why: one pinned UE/Xcode toolchain + a runnable gate before product code.
-      Accept: Scripts/setup.sh, run-editor.sh, test-fast.sh, gate.sh, coverage.sh, build.sh all run as written in AGENTS.md → Project snapshot; no `TBD step 3` markers remain; cold-clone gate green.
-      Touches: Scripts/, UnderTheMountain.uproject, Source/, Config/, AGENTS.md   Depends: T-001   Gated: none
+- [ ] T-023 — Prove unreal-mcp live against the editor
+      Why: MCP is the editor-work channel for T-003+; config is wired (plugins + auto-start) but no live tool call has succeeded yet — a configured server is not a working one.
+      Accept: With the editor open on this project, `hermes mcp test unreal-mcp` connects and a read-only `list_toolsets` call (via the session's unreal-mcp tools, after /reload-mcp) returns toolsets; result recorded in the task close.
+      Touches: UnderTheMountain.uproject, Saved/Config/MacEditor/EditorPerProjectUserSettings.ini (per-user, uncommitted)   Depends: T-002   Gated: hardware
 - [ ] T-003 — Walking skeleton: dragon in an empty lair, playable in PIE
       Why: smallest end-to-end slice proving the architecture (input → dragon pawn → camera → flight) on real hardware.
       Accept: PIE on this Mac: dragon pawn spawns in a greybox lair, walks, flaps/dives with stamina drain, gamepad + keyboard; automation smoke test passes via Scripts/gate.sh.
-      Touches: Source/UnderTheMountain/, Content/Maps/, Config/   Depends: T-002   Gated: none
+      Touches: Source/UnderTheMountain/, Content/Maps/, Config/   Depends: T-023   Gated: none
 - [ ] T-010 — Dragon asset gate: Meshy dragon → UE, rig verdict
       Why: winged-dragon auto-rig is the project's biggest asset risk; verdict must land before flight animation is designed around it.
       Accept: Meshy dragon generated via docs/ASSET-PIPELINE.md, imported to Content/Meshy/Dragon; written verdict in goose-deuce.md ([decision]): rig usable, or Blender fixup task filed with the failing evidence (screenshot + bone list).
@@ -61,6 +61,10 @@
       Touches: docs/SUBMISSION.md   Depends: T-020   Gated: owner
 
 ## Later
+- [ ] T-022 — Instrument C++ line coverage (llvm-cov) and ratchet the floor
+      Why: T-002 coverage floor is an honest 0% — UE C++ line coverage is not instrumented; a measured floor is owed before M1 code grows.
+      Accept: Scripts/coverage.sh prints a real line-coverage percentage for Source/UnderTheMountain; AGENTS.md floor set to just under the measured number; gate fails below it.
+      Touches: Scripts/coverage.sh, Scripts/gate.sh, AGENTS.md   Depends: T-003   Gated: none
 - [ ] T-004 — goose-deuce sweep
       Why: standing audit cadence (AGENTS.md → Deviations).
       Accept: NEW-PROJECT-GUIDE step-5 checklist run; [process] marker entry filed; successor sweep task filed.
@@ -71,5 +75,6 @@
 ## Dropped
 
 ## Done
+- [x] T-002 — Toolchain and the test gate (2026-10-27, this commit)
 - [x] T-001 — Plan, backlog, and living docs (2026-10-27, this commit)
 - [x] T-000 — Scaffold Under the Mountain from templates (2026-10-27, this commit)

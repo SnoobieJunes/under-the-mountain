@@ -12,3 +12,4 @@ Build/
 *.p8
 # Meshy task payloads with keys, if any
 *_secret*
+/Config/DefaultInput.ini is editor-generated on first run; real input config is authored in T-003

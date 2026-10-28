@@ -8,22 +8,22 @@ Process: `AGENTS.md`.
 
 ## Status
 
-Scaffolding (T-000/T-001 done). No playable build yet — the Unreal project and
-toolchain gate arrive in T-002, the walking skeleton in T-003.
+Scaffolding + toolchain done (T-000–T-002). No playable build yet — the
+walking skeleton (playable dragon in PIE) arrives in T-003.
 
 ## Install / run / test
 
 Engine: Unreal Engine 5.8.4 source build at
 `/Users/auston/Development Projects/UnrealEngine` (Xcode 27.1, macOS, M1 Max
-reference machine). Commands below arrive in T-002 and are not real until then:
-
-```bash
-Scripts/setup.sh       # arrives in T-002 — verify engine + toolchain
-Scripts/run-editor.sh  # arrives in T-002 — open the project in the editor
-Scripts/test-fast.sh   # arrives in T-002 — inner-loop tests
-Scripts/gate.sh        # arrives in T-002 — full pre-commit gate
-Scripts/build.sh       # arrives in T-002 — packaged macOS build
+reference machine). ```bash
+Scripts/setup.sh       # verify engine + toolchain (UE 5.8.4, Xcode 27.1)
+Scripts/run-editor.sh  # open the project in the editor
+Scripts/build.sh       # build the editor target (compiles the game module)
+Scripts/test-fast.sh   # build + automation tests (inner loop)
+Scripts/gate.sh        # full pre-commit gate: setup, both builds, format, tests
+Scripts/coverage.sh    # coverage report (floor 0% until T-022 instruments it)
 ```
+Packaged `.app` for judges arrives in T-020, not here.
 
 ## Assets
 

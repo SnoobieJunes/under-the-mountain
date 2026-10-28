@@ -123,6 +123,20 @@ tag, choose the owing one.
 <!-- Real entries accumulate below, NEWEST AT THE TOP. The top entries are
      session-start required reading (count: AGENTS.md → Session ritual). -->
 
+## 2026-10-27 — Coverage floor is an honest 0% until llvm-cov lands  [tech-debt]
+- Task: T-002 (AGENTS.md → Project snapshot, coverage floor)
+- What: The coverage floor ships as 0% with Scripts/coverage.sh reporting
+  "not instrumented" instead of a percentage.
+- Why: UE C++ line coverage needs a dedicated UBT/llvm-cov pass that does not
+  exist in the T-002 toolchain; inventing a floor number would violate the
+  snapshot's "set from the measured number" rule. The measured baseline today
+  is: 1 automation test file, 0% instrumented lines.
+- Where: Scripts/coverage.sh, Scripts/gate.sh, AGENTS.md snapshot.
+- Plan: AGENTS.md said floor is measured, never wished → floor recorded as the
+  measured 0% and ratchets at first instrumentation. TASKS.md corrected in
+  this commit: T-022 owes the instrumentation. docs/PLAN.md unaffected.
+- Commit(s): this commit
+
 ## 2026-10-27 — Engine and scope: Unreal 5.8.4, full open-world retained  [decision]
 - Task: T-001 (docs/PLAN.md phases; hackathon submission 2026-11-04)
 - What: Unreal Engine 5.8.4 chosen for the submission over Kaigen3D; the full
