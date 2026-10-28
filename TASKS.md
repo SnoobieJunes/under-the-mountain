@@ -3,10 +3,6 @@
      acceptance criteria are not pickable — sharpen them first. -->
 
 ## Now
-- [ ] T-011 — Dragon flight feel: flap/dive/stamina/landing damage
-      Why: flight is design pillar 3; feel gates every exterior decision.
-      Accept: In PIE, flap gains altitude, dive gains speed (velocity readout in debug HUD), landing above threshold speed deals damage; automation tests for stamina drain + landing damage pass via Scripts/gate.sh.
-      Touches: Source/UnderTheMountain/Dragon/, Content/Maps/   Depends: T-010   Gated: none
 - [ ] T-012 — Lair level: 3 chambers + hoard room + peak exit, dressed
       Why: the patrol space the scent mechanic is played in.
       Accept: Level loads in PIE, dragon traverses all chambers on foot and exits via the peak in flight; no collision soft-locks found in a scripted traversal; 60 fps in lair on this Mac (stat fps capture in task evidence).
@@ -49,6 +45,10 @@
       Touches: docs/SUBMISSION.md   Depends: T-020   Gated: owner
 
 ## Later
+- [ ] T-030 — Dive input never clears on key release + PIE flight-feel check
+      Why: found in T-011 (Muse review): HandleDive is bound only to Triggered, so bDiving may stay true after Shift/trigger release; and T-011's PIE feel (flap altitude feel, dive speed feel, HUD readability) is unverified by a human.
+      Accept: Dive action binds Started/Completed so bDiving clears on release (test or PIE log shows dive acceleration stops on release); a human or MCP-driven PIE session records flap→altitude gain, dive→speed gain with the debug HUD visible, one hard landing taking HP damage; results noted on this task.
+      Touches: Source/UnderTheMountain/Dragon/   Depends: T-011   Gated: none
 - [ ] T-027 — Dragon scale-colour picker (RGB slider)
       Why: owner request 2026-10-27 — players set their dragon's scale colour; canonical art stays gold/crimson (docs/ART-DIRECTION.md), the picker tints from that base.
       Accept: In PIE, an RGB slider picker changes the dragon's scale tint live (material parameter, crimson membranes stay crimson unless separately tinted), choice persists across a PIE restart; automation test for the tint parameter passing via Scripts/gate.sh.
@@ -63,6 +63,7 @@
 ## Dropped
 
 ## Done
+- [x] T-011 — Dragon flight feel: flap/dive/stamina/landing damage (2026-10-28, this commit) — HP pool + landing-damage curve (0 ≤800 cm/s, 5–25 to 2200), flap cost 3, glide 1/s / hover 8/s / dive 0, exhaustion HP burn 2/s, Landed() damage, velocity debug HUD; FDragonFlightTest + existing tests pass, coverage 31.6%. PIE feel NOT verified (running editor is an 11h instance with no MCP listener; human/MCP PIE check + dive-release fix filed as T-030)
 - [x] T-029 — Dragon rig + quadruped walk cycle (Meshy V4 source) (2026-10-28, this commit) — V4 rigged in Blender: 33 bones (quadruped spine, wing chains, tail.01-06, 4×3 leg chains), voxel-proxy bone-heat weights transferred (posed test renders clean: legs/neck/tail; wing membrane crumples only when lifted — flight posing is T-011); 24f diagonal-gait Walk in UE as SK_Dragon_v4 + SK_Dragon_v4_Anim (frames verified mid-stride both phases). Also added Scripts/run-loop.sh (fires board loop only once T-029 is [x]). Known limit: skinning verified at gait/test amplitudes; extreme poses untested.
 - [x] T-028 — Blender dragon rig fixup: quadruped + wing + tail bones (2026-10-28, this commit) — ultra mesh rock base cut at feet plane, decimated 309k→79k, 27-bone rig (pelvis/spine/chest/neck/head, wing_shoulder/elbow/wrist/finger L+R, 4 leg chains, tail.01-05) envelope-skinned in Blender; FBX (dragon_rigged_v2.fbx + .blend) replaced SK_Dragon_Rigged in UE (loads verified). NOTE: bind pose is the source crouch/perch (reposing the fragmented AI mesh risked tearing it); standing/flight poses come from AnimBP posing in T-011. Evidence: Content/Meshy/Dragon/armature-diagram.png, dragon_v2_side.png
 - [x] T-010 — Dragon asset gate: Meshy dragon → UE, rig verdict (2026-10-28, this commit) — Meshy multi-image-to-3D (30 cr) + rig (5 cr) via pinned meshy MCP server over stdio (plugin tools absent this session); 82,933-tri textured dragon imported as SK_Dragon_Rigged; VERDICT: humanoid 24-joint rig unusable (no wing/tail bones) → Blender fixup filed as T-028, verdict in goose-deuce 2026-10-28

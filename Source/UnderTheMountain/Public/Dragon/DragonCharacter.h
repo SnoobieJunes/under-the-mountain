@@ -2,8 +2,11 @@
 // Purpose: the playable dragon (walking skeleton, T-003). A placeholder mesh
 // today; the Meshy dragon replaces BodyMesh in T-010 without touching movement
 // code. Created 2026-10-27.
+// [2026-10-28 T-011] Flight feel pass: per-mode stamina drain
+// (dive/glide/hover), exhaustion HP burn, hard-landing damage on Landed,
+// and an on-screen flight debug readout (all tuning in GAMEPLAY.md s2).
 // Invariants: movement mode is the single source of "flying" truth; stamina
-// is only mutated through UDragonStatsComponent.
+// and HP are only mutated through UDragonStatsComponent.
 
 #pragma once
 
@@ -53,6 +56,11 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
+	// [2026-10-28 T-011] Hard-landing damage: ACharacter::Landed fires
+	// after the movement component has already zeroed vertical velocity,
+	// so the impact speed comes from LastVelocityZ (stored every Tick),
+	// never from a live read in here.
+	virtual void Landed(const FHitResult& Hit) override;
 
   private:
 	// [2026-10-27 T-003] Enhanced Input actions are instantiated in code for
@@ -72,4 +80,9 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	void HandleToggleFlight();
 	void HandleDive(const struct FInputActionValue& Value);
 	bool bDiving = false;
+
+	// [2026-10-28 T-011] Last Tick's vertical velocity (cm/s, signed).
+	// Captured before Tick's flight logic runs so Landed() can recover
+	// the impact speed the movement component has already discarded.
+	float LastVelocityZ = 0.0f;
 };

@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-10-28 — T-011 — Flight feel systems: flap/glide/hover/dive stamina economy, hard-landing HP damage, velocity debug HUD (PIE feel check filed as T-030) (no user-visible change)
+
 2026-10-28 — T-029 — Dragon rigged and walking: 33-bone quadruped rig on Meshy V4, diagonal-gait walk cycle in UE (SK_Dragon_v4 + AnimSequence); Scripts/run-loop.sh added (no user-visible change)
 
 2026-10-28 — T-029 — Meshy V4 dragon: rock-free, single regular eyes, 310k tris textured (980k pre-remesh master) imported as SM_Dragon_v4; rig/walk blocked on owner decision (no user-visible change)

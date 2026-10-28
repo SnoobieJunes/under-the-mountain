@@ -2,12 +2,17 @@
 // [2026-10-27 T-003] Dragon walking-skeleton movement: ACharacter gives us
 // walking + flying movement modes; flap/dive are velocity work on top, so
 // T-011 feel tuning changes numbers, not architecture.
+// [2026-10-28 T-011] The feel tuning that line promised: drain rate is
+// chosen per tick from what the dragon is actually doing (dive/glide/
+// hover), exhaustion burns HP, Landed() pays for hard impacts, and a
+// debug readout makes velocity/drain visible while tuning in PIE.
 
 #include "Dragon/DragonCharacter.h"
 #include "Dragon/DragonStatsComponent.h"
 #include "UnderTheMountain.h"
 
 #include "Camera/CameraComponent.h"
+#include "Engine/Engine.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -180,12 +185,47 @@ void ADragonCharacter::HandleDive(const FInputActionValue& Value)
 	bDiving = Value.Get<bool>();
 }
 
+void ADragonCharacter::Landed(const FHitResult& Hit)
+{
+	Super::Landed(Hit);
+	// [2026-10-28 T-011] By the time Landed fires, CMC has zeroed the
+	// velocity that hit the ground, so the impact speed is the abs of
+	// the value Tick stored last frame (LastVelocityZ). The curve itself
+	// (threshold/min/max) belongs to Stats so it is testable headless.
+	const float ImpactSpeed = FMath::Abs(LastVelocityZ);
+	const float Damage = Stats->LandingDamageForImpactSpeed(ImpactSpeed);
+	if (Damage > 0.0f)
+	{
+		Stats->ApplyHPDamage(Damage);
+		UE_LOG(LogUnderTheMountain, Log,
+			   TEXT("Hard landing: impact %.1f cm/s, HP damage %.1f (HP now %.1f)"), ImpactSpeed, Damage,
+			   Stats->HP);
+	}
+}
+
 void ADragonCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	// [2026-10-28 T-011] Snapshot vertical velocity before any flight work
+	// this frame can change it; Landed() reads this when the ground wins.
+	LastVelocityZ = GetCharacterMovement()->Velocity.Z;
+
+	// [2026-10-28 T-011] Flight mode name + drain rate for this tick, in
+	// one place so the debug readout below can never disagree with what
+	// was actually charged. GAMEPLAY.md section 2: dive 0/s (altitude
+	// pays), hover 8/s (priced out), glide 1/s (the travel mode).
+	const FVector Velocity = GetCharacterMovement()->Velocity;
+	const float HorizontalSpeed = Velocity.Size2D();
+	const bool bHovering = IsFlying() && !bDiving && HorizontalSpeed < Stats->HoverSpeedThreshold;
+	const float FlightDrainRate =
+		bDiving ? 0.0f : (bHovering ? Stats->HoverDrainPerSecond : Stats->GlideDrainPerSecond);
+	const TCHAR* FlightModeName = TEXT("Ground");
 	if (IsFlying())
 	{
-		Stats->DrainForFlight(DeltaSeconds);
+		FlightModeName = bDiving ? TEXT("Dive") : (bHovering ? TEXT("Hover") : TEXT("Glide"));
+		// [2026-10-28 T-011] DrainForFlight clamps at 0, so calling it at
+		// empty is harmless; the exhaustion branch below owns empty.
+		Stats->DrainForFlight(DeltaSeconds, FlightDrainRate);
 		if (bDiving)
 		{
 			const FVector DiveDir = GetControlRotation().Vector();
@@ -193,13 +233,40 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 		}
 		if (Stats->Stamina <= 0.0f)
 		{
+			// [2026-10-28 T-011] GAMEPLAY.md section 2 zero-stamina rule:
+			// HP burns at 2/s while a *draining* action continues — a
+			// free dive (rate 0) deliberately skips the burn. Checked
+			// after the stamina drain so the tick that empties the pool
+			// is also the first tick that pays in HP.
+			if (FlightDrainRate > 0.0f)
+			{
+				Stats->DrainHPForExhaustion(DeltaSeconds);
+			}
 			// [2026-10-27 T-003] Exhausted dragon glides down, not falls out of
 			// control: force walking mode so landing logic takes over.
 			GetCharacterMovement()->SetMovementMode(MOVE_Falling);
 		}
 	}
+	else if (GetCharacterMovement()->MovementMode == MOVE_Falling)
+	{
+		FlightModeName = TEXT("Falling");
+	}
 	else if (GetCharacterMovement()->MovementMode == MOVE_Walking)
 	{
 		Stats->RegenOnGround(DeltaSeconds);
+	}
+
+	// [2026-10-28 T-011] Flight debug readout for PT-STAM feel work: one
+	// stable-key line (replaced in place, never scrolling) shown while
+	// airborne. GEngine is null in headless automation runs, hence the
+	// guard — the -nullrhi test path must never dereference it.
+	if (GEngine && (IsFlying() || GetCharacterMovement()->MovementMode == MOVE_Falling))
+	{
+		const FVector ShownVelocity = GetVelocity();
+		GEngine->AddOnScreenDebugMessage(
+			11011, 0.1f, FColor::Yellow,
+			FString::Printf(TEXT("Vel %s | speed %.0f | vSpeed %.0f | %s | stamina %.1f | HP %.1f"),
+							*ShownVelocity.ToString(), ShownVelocity.Size(), ShownVelocity.Z, FlightModeName,
+							Stats->Stamina, Stats->HP));
 	}
 }
