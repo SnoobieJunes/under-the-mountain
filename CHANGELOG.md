@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-10-28 — T-028 — Dragon re-rigged in Blender: rock base removed, quadruped rig with wing + tail bones (79k tris) replaces the broken humanoid rig in UE (no user-visible change)
+
 2026-10-28 — T-028 — Ultra-detail dragon source generated: dragon_ultra.glb/fbx (309,716 tris, 4K textures) in Content/Meshy/Raw/Dragon for the Blender re-rig (no user-visible change)
 
 2026-10-28 — T-010 — Dragon 3D asset in engine: Meshy gold/crimson dragon (82,933 tris) imported to Content/Meshy/Dragon; auto-rig verdict humanoid/unusable — Blender re-rig filed as T-028 (no user-visible change)
