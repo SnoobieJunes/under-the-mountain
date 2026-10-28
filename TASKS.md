@@ -75,6 +75,7 @@
 ## Dropped
 
 ## Done
+- [x] T-024 — Cold-clone gate fails on UBA cache: make builds deterministic (2026-10-27, this commit)
 - [x] T-002 — Toolchain and the test gate (2026-10-27, this commit)
 - [x] T-001 — Plan, backlog, and living docs (2026-10-27, this commit)
 - [x] T-000 — Scaffold Under the Mountain from templates (2026-10-27, this commit)

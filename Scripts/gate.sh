@@ -5,7 +5,7 @@ set -eu
 . "$(dirname "$0")/ue-env.sh"
 Scripts/setup.sh
 Scripts/build.sh
-"$UE_BUILD" UnderTheMountain Mac Development -Project="$UPROJECT" -WaitMutex -NoHotReload
+"$UE_BUILD" UnderTheMountain Mac Development -Project="$UPROJECT" -WaitMutex -NoHotReload -NoUba
 echo "OK: UnderTheMountain (game) built"
 CLANG_FORMAT="$(xcrun --find clang-format)"
 find Source -name '*.h' -o -name '*.cpp' | while read -r f; do

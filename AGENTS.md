@@ -65,7 +65,7 @@ green commit, record where the work lives on the task, and stop cleanly.
   ratchets up; a task may not lower it. (Other sections point here; this line is
   the single owner of the number.)
 - **Foot-guns already paid for** *(append as they are discovered — this list is why
-  the next session doesn't pay twice)*: "unreal-mcp MCP server ships disabled in Hermes config — enable it and open the editor before any live-editor work", "UE Mac builds use Metal by default; there is no Metal 4 toggle in UE 5.8", "Meshy auto-rig is unreliable for winged quadrupeds — dragon rig is a Day-1 gate, not an assumption"
+  the next session doesn't pay twice)*: "unreal-mcp MCP server ships disabled in Hermes config — enable it and open the editor before any live-editor work", "UE Mac builds use Metal by default; there is no Metal 4 toggle in UE 5.8", "Meshy auto-rig is unreliable for winged quadrupeds — dragon rig is a Day-1 gate, not an assumption", "UBA cache can serve compile actions to a cold clone without materialising .o files (link fails, retry passes) — all gate builds use -NoUba (T-024)", "the editor appends an AndroidFileServer section with a machine SecurityToken to Config/DefaultEngine.ini on open — strip it before committing; DefaultInput.ini is editor-generated, not authored"
 
 ## Session ritual
 
