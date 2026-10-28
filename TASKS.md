@@ -3,10 +3,6 @@
      acceptance criteria are not pickable — sharpen them first. -->
 
 ## Now
-- [ ] T-026 — Gameplay detail spec (docs/GAMEPLAY.md)
-      Why: PLAN.md pillars are not yet implementable numbers; thief/scent/notoriety tasks (T-013+) need tables, not prose.
-      Accept: docs/GAMEPLAY.md covers loop timings, stamina/food economy numbers, scent readability rules, wave table, per-thief behaviour + tells + counters, artifact specs (all idea.md artifacts), intro beat script, win/lose thresholds, sleep/tribute rules for M2; every number either marked [tuning] with its test, or derived from a stated reason.
-      Touches: docs/GAMEPLAY.md, docs/PLAN.md   Depends: T-003   Gated: none
 - [ ] T-010 — Dragon asset gate: Meshy dragon → UE, rig verdict
       Why: winged-dragon auto-rig is the project's biggest asset risk; verdict must land before flight animation is designed around it.
       Accept: Meshy dragon generated via docs/ASSET-PIPELINE.md, imported to Content/Meshy/Dragon; written verdict in goose-deuce.md ([decision]): rig usable, or Blender fixup task filed with the failing evidence (screenshot + bone list).
@@ -75,6 +71,7 @@
 ## Dropped
 
 ## Done
+- [x] T-026 — Gameplay detail spec (docs/GAMEPLAY.md) (2026-10-27, this commit) — docs/GAMEPLAY.md 596 lines: loop timings, stamina/food, scent brackets, wave+notoriety tables, 3 thief types w/ tells+counters, all 11 idea.md artifacts, intro beats, win/lose, M2 sleep/tribute; every number [tuning:test] or [derived:reason]
 - [x] T-025 — Concept art pack (Style B) via Muse Image + SAM 3.1 (2026-10-27, this commit) — OWNER APPROVED 2026-10-27 (gold/crimson dragon, other renders approved as-is); muse-harness tools verified live: muse_turn only (model muse-wonder-full-1.0, live call returned MUSE_LIVE); Muse Image called directly via Meta API (muse-image-1.0 + image_generation tool — hermes chat refuses function tools, proven 400); 10 concepts in docs/concepts/, docs/ART-DIRECTION.md written with SAM 3.1 segmentation step (runs under T-010)
 - [x] T-003 — Walking skeleton: dragon in an empty lair, playable in PIE (2026-10-27, this commit) — PIE via MCP: pawn spawned at PlayerStart (0,0,150), IsPIERunning true; gate green incl. Dragon.Stats tests; keyboard/gamepad bindings in code (Enhanced Input), interactive feel unverified until human play (T-011 owns feel)
 - [x] T-023 — Prove unreal-mcp live against the editor (2026-10-27, this commit) — hermes mcp test ✓ Connected (3 meta-tools); list_toolsets returned EditorApp/Niagara/PCG/AgentSkill/Logs; proof path substituted, see goose-deuce.md 2026-10-27 "T-023 proof path substituted"
