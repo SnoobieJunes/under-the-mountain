@@ -79,6 +79,9 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	void HandleFlap();
 	void HandleToggleFlight();
 	void HandleDive(const struct FInputActionValue& Value);
+	// [2026-10-28 T-030] Dive release: Triggered alone never fires on key-up,
+	// so bDiving latched forever; Completed/Canceled clear it.
+	void HandleDiveEnd();
 	bool bDiving = false;
 
 	// [2026-10-28 T-011] Last Tick's vertical velocity (cm/s, signed).

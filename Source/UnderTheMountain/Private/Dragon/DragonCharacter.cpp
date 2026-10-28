@@ -136,6 +136,10 @@ void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	EIC->BindAction(FlapAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleFlap);
 	EIC->BindAction(ToggleFlightAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleToggleFlight);
 	EIC->BindAction(DiveAction, ETriggerEvent::Triggered, this, &ADragonCharacter::HandleDive);
+	// [2026-10-28 T-030] Release paths: without these, bDiving stayed true
+	// after Shift/trigger release and the dragon kept accelerating.
+	EIC->BindAction(DiveAction, ETriggerEvent::Completed, this, &ADragonCharacter::HandleDiveEnd);
+	EIC->BindAction(DiveAction, ETriggerEvent::Canceled, this, &ADragonCharacter::HandleDiveEnd);
 }
 
 void ADragonCharacter::HandleMove(const FInputActionValue& Value)
@@ -183,6 +187,12 @@ void ADragonCharacter::HandleToggleFlight()
 void ADragonCharacter::HandleDive(const FInputActionValue& Value)
 {
 	bDiving = Value.Get<bool>();
+}
+
+void ADragonCharacter::HandleDiveEnd()
+{
+	// [2026-10-28 T-030] See SetupPlayerInputComponent: release clears dive.
+	bDiving = false;
 }
 
 void ADragonCharacter::Landed(const FHitResult& Hit)

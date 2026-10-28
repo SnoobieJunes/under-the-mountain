@@ -41,10 +41,6 @@
       Touches: docs/SUBMISSION.md   Depends: T-020   Gated: owner
 
 ## Later
-- [ ] T-030 — Dive input never clears on key release + PIE flight-feel check
-      Why: found in T-011 (Muse review): HandleDive is bound only to Triggered, so bDiving may stay true after Shift/trigger release; and T-011's PIE feel (flap altitude feel, dive speed feel, HUD readability) is unverified by a human.
-      Accept: Dive action binds Started/Completed so bDiving clears on release (test or PIE log shows dive acceleration stops on release); a human or MCP-driven PIE session records flap→altitude gain, dive→speed gain with the debug HUD visible, one hard landing taking HP damage; results noted on this task.
-      Touches: Source/UnderTheMountain/Dragon/   Depends: T-011   Gated: none
 - [ ] T-027 — Dragon scale-colour picker (RGB slider)
       Why: owner request 2026-10-27 — players set their dragon's scale colour; canonical art stays gold/crimson (docs/ART-DIRECTION.md), the picker tints from that base.
       Accept: In PIE, an RGB slider picker changes the dragon's scale tint live (material parameter, crimson membranes stay crimson unless separately tinted), choice persists across a PIE restart; automation test for the tint parameter passing via Scripts/gate.sh.
@@ -55,6 +51,7 @@
       Touches: goose-deuce.md, docs/PLAN.md, TASKS.md   Depends: none   Gated: cadence
 
 ## Blocked
+- [!] T-030 — Dive input never clears on key release + PIE flight-feel check — BLOCKED 2026-10-28: code half DONE in the park commit (Dive Completed/Canceled now clear bDiving; gate green, coverage 31.0%). Remaining: PIE session (human or MCP — needs GUI editor with live MCP, currently a stale instance) recording flap→altitude, dive→speed with HUD, hard-landing HP damage.
 - [!] T-012 — Lair level: 3 chambers + hoard room + peak exit, dressed — BLOCKED 2026-10-28: headless level build wedges against the running GUI editor's project lock (UnrealEditor-Cmd wrote no log in 7 min; killed). READY TO RUN when the GUI editor is closed (or its MCP server is live): Scripts/create_lair.py (builds Content/Maps/Lair/Lair.umap: 3 chambers + hoard room + peak shaft, materials/props/lights) then Scripts/verify_lair.py (actor counts + chamber-to-chamber/shaft line traces). Remaining after that: PIE traversal + 60 fps stat capture (needs the GUI editor).
 
 ## Dropped
