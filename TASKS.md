@@ -33,8 +33,40 @@
       Touches: docs/SUBMISSION.md   Depends: T-020   Gated: owner
 
 ## Later
-- [ ] T-004 — goose-deuce sweep
-      Why: standing audit cadence (AGENTS.md → Deviations).
+- [ ] T-035 — UObject ownership audit: non-UPROPERTY TObjectPtr members (GC risk)
+      Why: T-004 sweep review (high): Dragon input actions, mapping context, and TintWidget are TObjectPtr without UPROPERTY (DragonCharacter.h private members) — GC reachability depends on external state, not the owning pawn; a collected tint widget can be dereferenced on toggle.
+      Accept: All UObject-holding members in Source/ are UPROPERTY-tracked (or proven rooted elsewhere with a comment); a soak PIE session (open/close tint picker repeatedly, force GC via console) shows no crash; gate passes.
+      Touches: Source/UnderTheMountain/Public/Dragon/DragonCharacter.h, Source/ (audit)   Depends: none   Gated: none
+- [ ] T-036 — Zero-stamina dive contradiction: free dive is cancelled by the exhaustion branch
+      Why: T-004 sweep review (med): DragonCharacter Tick forces MOVE_Falling whenever stamina <= 0 even when bDiving with drain rate 0 — the code/comments say a free dive skips the exhaustion penalty, but flight is cancelled anyway.
+      Accept: A dragon at 0 stamina mid-dive keeps diving (no HP burn, per GAMEPLAY §2) and only non-dive draining flight forces the fall; regression test in the suite; gate passes.
+      Touches: Source/UnderTheMountain/Private/Dragon/DragonCharacter.cpp, Source/UnderTheMountain/Tests/   Depends: none   Gated: none
+- [ ] T-037 — Scripts fail honestly: gate format masking, verifier exit codes, generator result checks
+      Why: T-004 sweep review (med/high): gate.sh's find|while format loop can mask a clang-format failure (last file wins); verify_lair.py prints FAIL but exits 0; generator scripts (create_lair/create_treasures/create_thieves/create_dragon_material/create_greybox_lair) delete assets before rebuild and ignore create/save/load results — create_treasures can also operate on the wrong level (load_level result ignored).
+      Accept: Deliberately breaking format in one file, geometry in the lair, and an asset path each make the corresponding command exit non-zero with a clear message; happy paths still pass; gate passes.
+      Touches: Scripts/   Depends: none   Gated: none
+- [ ] T-038 — ScentComponent/registry lifetime + location correctness
+      Why: T-004 sweep review (med): cached UTreasureSubsystem is never revalidated across worlds; tick's null path skips ribbon/marker cleanup (stale visuals); SpawnActor failures are swallowed and retried silently every tick; ATreasureActor registry locations never refresh after BeginPlay despite the header claim, and a failed Register still logs "registered".
+      Accept: Tests or scripted PIE prove visuals die with their world, spawn failure logs once, register failure logs as failure, and a moved/carried treasure's scent endpoint follows it; gate passes.
+      Touches: Source/UnderTheMountain/Scent/, Source/UnderTheMountain/Treasure/   Depends: none   Gated: none
+- [ ] T-039 — Tint persistence integrity: test must not destroy the player's saved tint
+      Why: T-004 sweep review (high/med): DragonTintTest writes the real DragonScaleTint slot and "restores" white, permanently destroying any real saved tint (and an abort leaves test blue); SetScaleTint/SaveGameToSlot failures and corrupt-slot loads are silently swallowed.
+      Accept: Tint tests use an isolated slot (or backup/restore the real bytes); save failure and corrupt load log warnings; the real slot survives a test run byte-identical; gate passes.
+      Touches: Source/UnderTheMountain/Tests/DragonTintTest.cpp, Source/UnderTheMountain/Private/Dragon/DragonAppearanceComponent.cpp   Depends: none   Gated: none
+- [ ] T-040 — Scent ribbon does not span long segments (sweep/lifetime math)
+      Why: T-004 sweep review (med): lifetime 0.6s at sweep 6000cm/s leaves only ~3600cm of live trail, but lair segments reach 19000cm — the ScentRibbonActor comments claiming the ribbon "always spans the full scent line" are false (the T-031 screenshot shows a foreshortened stream).
+      Accept: In PIE, a ribbon to a far-chamber treasure reads as a continuous nose-to-treasure line (any mechanism: lifetime/speed scaling per segment, or multi-emitter); misleading comments corrected; RibbonWidthPassThrough still passes; gate passes.
+      Touches: Source/UnderTheMountain/Scent/, Content/Gameplay/Treasures/NS_ScentRibbon.uasset   Depends: none   Gated: none
+- [ ] T-041 — Comment/dead-code honesty pass (low sweep findings)
+      Why: T-004 sweep review (low): stale placeholder comments in DragonCharacter.h and GameMode.h; Build.cs coverage comment describes the abandoned UTM_COVERAGE path as current; "only this component writes" invariants are bypassable (public Stamina/HP/ScaleTint fields); empty UDragonStatsComponent::TickComponent; unused TrueSightMagicDrainPerSecond; unconsumed FScentRibbonParams.Color; M_ScentGold authored but unreferenced; hidden PlaceholderBody created every pawn.
+      Accept: Each item is corrected, removed, or explicitly kept with a true comment; no behaviour change; gate passes.
+      Touches: Source/, Scripts/create_treasures.py   Depends: none   Gated: none
+- [ ] T-042 — AGENTS.md snapshot corrections (owner-approval needed to edit)
+      Why: T-004 sweep: measured coverage is 39.7% but the floor still says 29% (guide step 5 ratchets just under measured); the version line still says 2026-10-27 though the snapshot holds 2026-10-28 material (stranger-test finding); the adaptive-unity/coverage foot-gun (clean the module Intermediate dir before coverage.sh after a stash or bulk file adds) is unrecorded. Edits to AGENTS.md from this harness hit a write-approval block, so an owner-approved edit is owed.
+      Accept: Owner approves/applies: floor 29% -> 37%, version line re-stamped, foot-gun appended — or explicitly declines, recorded here.
+      Touches: AGENTS.md   Depends: none   Gated: owner
+- [ ] T-034 — goose-deuce sweep (successor to T-004)
+      Why: standing audit cadence (AGENTS.md → Deviations); filed by the T-004 sweep 2026-10-28.
       Accept: NEW-PROJECT-GUIDE step-5 checklist run; [process] marker entry filed; successor sweep task filed.
       Touches: goose-deuce.md, docs/PLAN.md, TASKS.md   Depends: none   Gated: cadence
 
@@ -45,6 +77,7 @@
 ## Dropped
 
 ## Done
+- [x] T-004 — goose-deuce sweep #1 (2026-10-28, this commit) — Range: repo start (T-000) through T-033. Checklist: (1) goose audit — no orphans (sole [tech-debt] resolved by T-022; T-012's owed PIE walk lives on T-030; T-013's Niagara debt corrected/closed by T-031); (2) docs audit — README status/coverage/controls were stale, rewritten; PLAN architecture table amended (ADragonCharacter, WorldSubsystem+registry, plain-UObject thief brain); setup.sh runs as written; (3) test audit — coverage 39.7% vs floor 29%, ratchet filed as T-042 (AGENTS.md edits are approval-blocked from this harness); no flaky tests observed; (4) adversarial review (independent sub-agent, parent spot-verified) filed as T-035–T-041; TODO scan clean; (5) upstream — nothing proposed to masters this pass; the one foot-gun found (adaptive-unity vs coverage) rides in T-042; (6) token audit — AGENTS.md +1.5% since scaffold, no trim; stranger test PASSED overall: the sub-agent correctly resolved the board and quoted the gate — its ambiguities (Gated field on the claimed task, successor filed at promotion, stale version line) are recorded in the goose entry and T-042. Successor filed: T-034.
 - [x] T-033 — Dragon input dead: input actions are bound before they exist (2026-10-28, this commit) — EnsureInputActions() builds actions+context at the top of SetupPlayerInputComponent and BeginPlay (idempotent); bindings are null-guarded with a warning. NOT built in the constructor: that crashed module load (FObjectInitializer::AssertIfInConstructor, fatal — muse's first attempt, parent-corrected after the crash log). Proven: new Dragon.Input regression test passes (fresh pawn has none, ensured pawn has all; 9/9 suite); live PIE session in the fixed editor logged dragon spawn then three hard landings up to 2094 cm/s — altitude only input-driven flap/flight produces (spawn drop is ~325 cm/s, below the damage threshold).
 - [x] T-027 — Dragon scale-colour picker (RGB slider) (2026-10-28, this commit) — UDragonAppearanceComponent owns the tint (clamped, MID ScaleTint write, SaveGame slot 'DragonScaleTint' persistence); code-built UDragonTintWidget (3 sliders) toggled with C / gamepad right face. M_DragonScales authored from the V4 maps (Scripts/create_dragon_material.py): final = base x ScaleTint except crimson-dominant pixels (membranes/spines protected in-graph); assigned to SK_Dragon_v4 slot 0, which had been WorldGridMaterial — the mesh shipped untextured. Proven: Dragon.Tint test passes (clamp + save/load round-trip + MID parameter readback; the strengthened test failed before its mesh-slot fix); PIE screenshot Content/Meshy/Dragon/dragon_textured_pie.png shows textured gold/tan dragon with crimson ridge at canonical white. Slider drag itself not live-exercised (same MCP-input limit as T-030; binding follows the proven input pattern).
 - [x] T-031 — Niagara scent ribbons (replace cube-geometry ribbons) (2026-10-28, this commit) — NS_ScentRibbon authored via Niagara toolsets (LocationBasedRibbon emitter + SpawnRate 240/s, infinite, lifetime 0.6s, particle colour tarnished gold, RibbonWidth DirectSet linked to User.RibbonWidth, ScaleColor alpha linked to User.RibbonOpacity); AScentRibbonActor is now a Niagara component ping-pong sweeping nose<->treasure at 6000cm/s (location-based particles make the sweep the ribbon), cube mesh path deleted. Proven: 7/7 tests incl. new Scent.RibbonWidthPassThrough (actor carries exact FScentMath widths); -game log compiles NS in 0.097s with 4 ribbons active, no Niagara errors; PIE screenshot Content/Gameplay/Treasures/niagara_ribbon_pie.png (thin tan line at lair scale — readability at gameplay distance is PT-SCENT tuning, still owed by playtest, not this task).

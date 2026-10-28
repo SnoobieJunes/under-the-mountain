@@ -123,6 +123,14 @@ tag, choose the owing one.
 <!-- Real entries accumulate below, NEWEST AT THE TOP. The top entries are
      session-start required reading (count: AGENTS.md → Session ritual). -->
 
+## 2026-10-28 — Sweep #1 (T-004): range repo start (T-000) through T-033  [process]
+- Task: T-004 (AGENTS.md → Deviations cadence; NEW-PROJECT-GUIDE step 5)
+- What: First sweep. Docs amended (PLAN architecture names, README status/coverage/controls); adversarial review + stranger test run by independent sub-agents; findings filed as T-035–T-042; successor sweep T-034 filed. This entry is the starting marker for sweep #2's range.
+- Why: 19 tasks had closed with no sweep (cadence is 10). Orphan audit: no [deferred]/[tech-debt] orphans — the sole tech-debt entry was resolved by T-022, T-012's owed PIE walk lives on T-030, T-013's Niagara debt was corrected/closed by T-031. Stranger test passed overall; its three ambiguities (claimed task's Gated field left as 'cadence', successor filed at promotion rather than at close, AGENTS.md version line stale at 2026-10-27) are recorded here and in T-042 — the first two are board bookkeeping habits now on record, the third needs an owner-approved AGENTS.md edit (writes are approval-blocked from this harness).
+- Where: docs/PLAN.md, README.md, TASKS.md (T-035–T-042, T-034), goose-deuce.md (this entry).
+- Plan: AGENTS.md → Deviations said sweep every 10 closed tasks → sweep #1 done at 19 (late — the cadence promotion step was missed at closes #10–#19; this entry is the record). docs/PLAN.md amended in this commit (architecture table). TASKS.md corrected in this commit (findings + successor).
+- Commit(s): this commit
+
 ## 2026-10-28 — T-013 scent ribbon is cube geometry, not Niagara  [approach]
 - Task: T-013 (docs/GAMEPLAY.md section 3 scent rendering)
 - What: AScentRibbonActor renders each scent ribbon as a stretched engine cube with the M_ScentGold material (width = value-bracket width), spawned/pooled by UScentComponent. No Niagara system is authored or spawned. The T-key/gamepad true-sight toggle is bound like every other dragon action but was not exercised by a live key press (Slate PressKey did not reach the PIE pawn; two attempts, no log line).

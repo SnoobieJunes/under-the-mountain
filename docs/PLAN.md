@@ -51,10 +51,10 @@ so automation tests run without a live level (AGENTS.md → Engineering):
 
 | System | Owns | Seam |
 |---|---|---|
-| `ADragonPawn` + `UDragonFlightComponent` | walk/flight movement, stamina, landing damage | input via Enhanced Input actions only |
-| `UTreasureSubsystem` (GameInstanceSubsystem) | treasure registry, value, carried/stolen state | scent + HUD read through it, never direct actor refs |
+| `ADragonCharacter` + `UDragonStatsComponent` | walk/flight movement, stamina, landing damage | input via Enhanced Input actions only (amended at the T-004 sweep, 2026-10-28: the T-003 skeleton shipped as one Character class, not Pawn+FlightComponent) |
+| `UTreasureSubsystem` (WorldSubsystem) + `UTreasureRegistry` | treasure registry, value, carried/stolen state | scent + HUD read through it, never direct actor refs (amended at the T-004 sweep: WorldSubsystem, with the pure registry UObject as the testable seam) |
 | `UScentComponent` + Niagara ribbons | scent streams to every registered treasure | thickness from treasure value; toggleable by Seeing Stone |
-| `AThiefCharacter` + `UThiefBrain` (StateTree) | sneak → grab → flee → scared/trapped/dead | thief type is data (DataAsset): burglar, dwarf party, adventurer |
+| `AThiefCharacter` + `UThiefBrain` (plain UObject state machine) | sneak → grab → flee → scared/trapped/dead | thief type is data (DataAsset): burglar, dwarf party, adventurer (amended at the T-004 sweep: the brain shipped as a hermetic UObject, not a StateTree — same states, no level needed to test) |
 | `UNotorietySubsystem` | stars, decay (sleep), wave scaling | single writer; HUD + spawner subscribe |
 | `UHoardSubsystem` | hoard total, win/lose thresholds, dragon XP/level | — |
 | `UDragonStatsComponent` | HP / magic / stamina, artifacts & effects | artifacts are DataAssets applied as modifiers |

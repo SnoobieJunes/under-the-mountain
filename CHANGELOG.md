@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-10-28 — T-004 — Sweep #1: plan/readme brought back in line with the shipped game; 8 audit findings filed as T-035–T-042 (no user-visible change)
+
 2026-10-28 — T-033 — Fixed dead dragon controls: input actions are now built before any binding can store them (they were bound as nulls, so no key ever fired); WASD/mouse/Space/F/Shift/T/C and gamepad work in PIE
 
 2026-10-28 — T-027 — Dragon scale-colour picker: press C (or gamepad right face) in play for RGB sliders that retint the dragon's scales live — crimson wing membranes and spine stay crimson — and the choice persists across restarts; the dragon also gains its real textured material (M_DragonScales from the Meshy V4 maps — it previously rendered in WorldGridMaterial)
