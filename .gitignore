@@ -1,0 +1,14 @@
+# Unreal generated
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+Build/
+*.sln
+*.xcworkspace
+.DS_Store
+# secrets
+.env
+*.p8
+# Meshy task payloads with keys, if any
+*_secret*
