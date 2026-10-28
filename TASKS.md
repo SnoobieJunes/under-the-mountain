@@ -3,10 +3,6 @@
      acceptance criteria are not pickable — sharpen them first. -->
 
 ## Now
-- [ ] T-003 — Walking skeleton: dragon in an empty lair, playable in PIE
-      Why: smallest end-to-end slice proving the architecture (input → dragon pawn → camera → flight) on real hardware.
-      Accept: PIE on this Mac: dragon pawn spawns in a greybox lair, walks, flaps/dives with stamina drain, gamepad + keyboard; automation smoke test passes via Scripts/gate.sh.
-      Touches: Source/UnderTheMountain/, Content/Maps/, Config/   Depends: T-023   Gated: none
 - [ ] T-010 — Dragon asset gate: Meshy dragon → UE, rig verdict
       Why: winged-dragon auto-rig is the project's biggest asset risk; verdict must land before flight animation is designed around it.
       Accept: Meshy dragon generated via docs/ASSET-PIPELINE.md, imported to Content/Meshy/Dragon; written verdict in goose-deuce.md ([decision]): rig usable, or Blender fixup task filed with the failing evidence (screenshot + bone list).
@@ -71,6 +67,7 @@
 ## Dropped
 
 ## Done
+- [x] T-003 — Walking skeleton: dragon in an empty lair, playable in PIE (2026-10-27, this commit) — PIE via MCP: pawn spawned at PlayerStart (0,0,150), IsPIERunning true; gate green incl. Dragon.Stats tests; keyboard/gamepad bindings in code (Enhanced Input), interactive feel unverified until human play (T-011 owns feel)
 - [x] T-023 — Prove unreal-mcp live against the editor (2026-10-27, this commit) — hermes mcp test ✓ Connected (3 meta-tools); list_toolsets returned EditorApp/Niagara/PCG/AgentSkill/Logs; proof path substituted, see goose-deuce.md 2026-10-27 "T-023 proof path substituted"
 - [x] T-024 — Cold-clone gate fails on UBA cache: make builds deterministic (2026-10-27, this commit)
 - [x] T-002 — Toolchain and the test gate (2026-10-27, this commit)

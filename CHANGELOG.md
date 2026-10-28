@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-10-27 — T-003 — Playable walking skeleton: dragon pawn (walk/fly/flap/dive, stamina) spawns in the greybox lair in PIE on Mac
+
 2026-10-27 — T-023 — unreal-mcp proven live against the editor (Hermes connects; toolsets listed) (no user-visible change)
 
 2026-10-27 — T-024 — Gate builds made deterministic cold (-nocache); UBA + editor-token foot-guns recorded (no user-visible change)
