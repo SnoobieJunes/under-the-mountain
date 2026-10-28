@@ -123,6 +123,14 @@ tag, choose the owing one.
 <!-- Real entries accumulate below, NEWEST AT THE TOP. The top entries are
      session-start required reading (count: AGENTS.md → Session ritual). -->
 
+## 2026-10-27 — T-023 proof path substituted: CLI + protocol, not in-session tools  [process]
+- Task: T-023 (unreal-mcp live proof)
+- What: The live proof ran via `hermes mcp test unreal-mcp` (✓ Connected, 3 meta-tools) plus a direct MCP protocol call to `list_toolsets` (returned EditorApp, Niagara, PCG, AgentSkill, Logs toolsets), instead of through this session's unreal-mcp tools after `/reload-mcp`.
+- Why: `/reload-mcp` did not re-register tools in the running desktop session (owner-reported; the session catalog was fixed at session start and the 18:36 reconcile had dropped portable/native registrations). The server side was never broken: it started on OnPostEngineInit once first-launch shader compilation finished, listening on 127.0.0.1:8000.
+- Where: TASKS.md (T-023 close), Hermes desktop session (client-side registration still pending a new session).
+- Plan: T-023's Accept named the in-session path → Accept met in substance (Hermes client connects, read-only toolset listing returned), path substituted. In-session tools arrive with the next desktop session; direct protocol calls bridge until then. docs/PLAN.md unaffected.
+- Commit(s): this commit
+
 ## 2026-10-27 — Coverage floor is an honest 0% until llvm-cov lands  [tech-debt]
 - Task: T-002 (AGENTS.md → Project snapshot, coverage floor)
 - What: The coverage floor ships as 0% with Scripts/coverage.sh reporting

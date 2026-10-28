@@ -3,10 +3,6 @@
      acceptance criteria are not pickable — sharpen them first. -->
 
 ## Now
-- [ ] T-023 — Prove unreal-mcp live against the editor
-      Why: MCP is the editor-work channel for T-003+; config is wired (plugins + auto-start) but no live tool call has succeeded yet — a configured server is not a working one.
-      Accept: With the editor open on this project, `hermes mcp test unreal-mcp` connects and a read-only `list_toolsets` call (via the session's unreal-mcp tools, after /reload-mcp) returns toolsets; result recorded in the task close.
-      Touches: UnderTheMountain.uproject, Saved/Config/MacEditor/EditorPerProjectUserSettings.ini (per-user, uncommitted)   Depends: T-002   Gated: hardware
 - [ ] T-003 — Walking skeleton: dragon in an empty lair, playable in PIE
       Why: smallest end-to-end slice proving the architecture (input → dragon pawn → camera → flight) on real hardware.
       Accept: PIE on this Mac: dragon pawn spawns in a greybox lair, walks, flaps/dives with stamina drain, gamepad + keyboard; automation smoke test passes via Scripts/gate.sh.
@@ -75,6 +71,7 @@
 ## Dropped
 
 ## Done
+- [x] T-023 — Prove unreal-mcp live against the editor (2026-10-27, this commit) — hermes mcp test ✓ Connected (3 meta-tools); list_toolsets returned EditorApp/Niagara/PCG/AgentSkill/Logs; proof path substituted, see goose-deuce.md 2026-10-27 "T-023 proof path substituted"
 - [x] T-024 — Cold-clone gate fails on UBA cache: make builds deterministic (2026-10-27, this commit)
 - [x] T-002 — Toolchain and the test gate (2026-10-27, this commit)
 - [x] T-001 — Plan, backlog, and living docs (2026-10-27, this commit)
