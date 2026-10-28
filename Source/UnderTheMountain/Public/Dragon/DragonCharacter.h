@@ -15,6 +15,7 @@
 #include "DragonCharacter.generated.h"
 
 class UDragonStatsComponent;
+class UScentComponent;
 class UInputAction;
 class UInputMappingContext;
 class USpringArmComponent;
@@ -31,6 +32,12 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 
 	UPROPERTY(VisibleAnywhere, Category = "Dragon")
 	TObjectPtr<UDragonStatsComponent> Stats;
+
+	// [2026-10-28 T-013] The nose: owns scent ribbons + true-sight
+	// markers driven by the treasure registry. The pawn only forwards
+	// the toggle input; all scent rules live in the component.
+	UPROPERTY(VisibleAnywhere, Category = "Dragon")
+	TObjectPtr<UScentComponent> Scent;
 
 	UPROPERTY(VisibleAnywhere, Category = "Dragon")
 	TObjectPtr<USpringArmComponent> CameraBoom;
@@ -71,6 +78,7 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	TObjectPtr<UInputAction> FlapAction;
 	TObjectPtr<UInputAction> ToggleFlightAction;
 	TObjectPtr<UInputAction> DiveAction;
+	TObjectPtr<UInputAction> TrueSightAction;
 	TObjectPtr<UInputMappingContext> MappingContext;
 
 	void BuildInputActions();
@@ -82,6 +90,8 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// [2026-10-28 T-030] Dive release: Triggered alone never fires on key-up,
 	// so bDiving latched forever; Completed/Canceled clear it.
 	void HandleDiveEnd();
+	// [2026-10-28 T-013] Seeing Stone toggle (key T / gamepad left face).
+	void HandleTrueSight();
 	bool bDiving = false;
 
 	// [2026-10-28 T-011] Last Tick's vertical velocity (cm/s, signed).

@@ -123,6 +123,14 @@ tag, choose the owing one.
 <!-- Real entries accumulate below, NEWEST AT THE TOP. The top entries are
      session-start required reading (count: AGENTS.md → Session ritual). -->
 
+## 2026-10-28 — T-013 scent ribbon is cube geometry, not Niagara  [approach]
+- Task: T-013 (docs/GAMEPLAY.md section 3 scent rendering)
+- What: AScentRibbonActor renders each scent ribbon as a stretched engine cube with the M_ScentGold material (width = value-bracket width), spawned/pooled by UScentComponent. No Niagara system is authored or spawned. The T-key/gamepad true-sight toggle is bound like every other dragon action but was not exercised by a live key press (Slate PressKey did not reach the PIE pawn; two attempts, no log line).
+- Why: The registry/math contract (value-only encoding, brackets, carried pulse, 30% dim, cap) is the design pillar and is fully test-proven; a Niagara ribbon asset is visual polish that would have consumed the iteration in asset authoring. Input-driven checks of all bindings are already owed by T-030.
+- Where: Source/UnderTheMountain/Scent/, Content/Gameplay/Treasures/ (M_ScentGold), Scripts/create_treasures.py.
+- Plan: GAMEPLAY.md section 3 said "One Niagara ribbon per registered treasure" → now: ribbon visuals are cube geometry in M1; Niagara ribbon upgrade is filed as T-031 in this commit. docs/PLAN.md unaffected (it does not prescribe the ribbon renderer).
+- Commit(s): this commit
+
 ## 2026-10-28 — T-012 traversal verified geometrically; PIE walk deferred to T-030  [approach]
 - Task: T-012 (lair level; TASKS.md Accept)
 - What: Scripted traversal is verified by segment-vs-AABB tests in Scripts/verify_lair.py (14/14, controls live) instead of physics traces, and the PIE check proved level load + dragon pawn spawn at DragonStart rather than an input-driven chamber walk. The 60 fps evidence is a standalone -game CSV capture (last 120 frames avg 16.81 ms at the 60 Hz vsync cap), not a PIE stat capture.

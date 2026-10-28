@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-10-28 — T-013 — Treasure + scent: treasures placed in the lair (goblet, cup, chest, Seeing Stone) register on spawn and project scent ribbons whose thickness scales with gold value; Seeing Stone true-sight toggle (T / gamepad left face) dims scent and reveals teal treasure markers; ribbon is cube geometry pending Niagara upgrade T-031
+
 2026-10-28 — T-012 — Lair level built: 3 chambers + hoard room + peak shaft, dressed with gold piles, crates, and torch lights (Content/Maps/Lair/Lair.umap); scripted traversal 14/14 and 60 fps at vsync cap measured on this Mac
 
 2026-10-28 — T-011 — Flight feel systems: flap/glide/hover/dive stamina economy, hard-landing HP damage, velocity debug HUD (PIE feel check filed as T-030) (no user-visible change)

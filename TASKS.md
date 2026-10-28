@@ -3,10 +3,6 @@
      acceptance criteria are not pickable — sharpen them first. -->
 
 ## Now
-- [ ] T-013 — Treasure + scent system
-      Why: design pillar 1, the signature mechanic.
-      Accept: Placing a treasure DataAsset in the lair produces a scent ribbon whose thickness scales with value; Seeing Stone toggle switches to true-sight markers; automation tests for registry/value scaling pass.
-      Touches: Source/UnderTheMountain/Treasure/, Source/UnderTheMountain/Scent/, Content/Gameplay/Treasures/   Depends: T-012   Gated: none
 - [ ] T-014 — Thief AI: burglar, dwarf party, adventurer
       Why: the antagonist of the core loop; three behaviours from one data-driven brain.
       Accept: Each type, spawned in PIE, sneaks to a treasure, grabs it, and flees to the exit; adventurer drops loot when roared at; dwarf trap slows the dragon once; outcomes logged by an automation test scenario.
@@ -41,6 +37,10 @@
       Touches: docs/SUBMISSION.md   Depends: T-020   Gated: owner
 
 ## Later
+- [ ] T-031 — Niagara scent ribbons (replace cube-geometry ribbons)
+      Why: docs/GAMEPLAY.md section 3 prescribes one Niagara ribbon per treasure; T-013 shipped stretched-cube ribbons so the registry/math contract landed first (goose-deuce 2026-10-28).
+      Accept: In PIE, each registered treasure shows a Niagara ribbon (pooled, MaxActiveRibbons cap honoured) whose width matches FScentMath output for its value; automation tests still pass via Scripts/gate.sh; cube ScentRibbonActor path removed or kept only as fallback with the goose entry updated.
+      Touches: Source/UnderTheMountain/Scent/, Content/Gameplay/Treasures/   Depends: T-013   Gated: none
 - [ ] T-027 — Dragon scale-colour picker (RGB slider)
       Why: owner request 2026-10-27 — players set their dragon's scale colour; canonical art stays gold/crimson (docs/ART-DIRECTION.md), the picker tints from that base.
       Accept: In PIE, an RGB slider picker changes the dragon's scale tint live (material parameter, crimson membranes stay crimson unless separately tinted), choice persists across a PIE restart; automation test for the tint parameter passing via Scripts/gate.sh.
@@ -56,6 +56,7 @@
 ## Dropped
 
 ## Done
+- [x] T-013 — Treasure + scent system (2026-10-28, this commit) — UTreasureDataAsset/Registry/Subsystem + ATreasureActor; UScentComponent spawns value-scaled scent ribbons (GAMEPLAY §3 brackets 4/8/14/22/32cm + micro-variation, carried pulse, no-distance encoding) and Seeing Stone true-sight (30% dim, teal through-rock markers, refused while stone carried); 4 treasures authored + placed in Lair. Proven: 3 new automation tests pass (Registry/Width/NoDistanceAndTrueSight, 6/6 total), standalone -game log shows 4 registrations + "Scent ribbons active: 4", coverage 33.5%. Deviations: cube-geometry ribbon not Niagara (T-031 filed); T-key toggle bound but not live-pressed (T-030 owns input checks) — goose-deuce 2026-10-28.
 - [x] T-012 — Lair level: 3 chambers + hoard room + peak exit, dressed (2026-10-28, this commit) — Lair.umap built headless (203 actors: 190 static meshes, gold/rock/wood materials, 10 point lights + shaft sun/sky); verify_lair.py geometric traversal 14/14 with live controls (physics traces return None headless — probed, see goose-deuce 2026-10-28); PIE loads with dragon pawn spawning at DragonStart (editor log); standalone -game CSV capture last 120 frames avg 16.81 ms ≈ 60 fps at vsync cap on this Mac (Saved/Profiling/lair_fps.csv). Input-driven in-PIE chamber walk remains on T-030.
 - [x] T-011 — Dragon flight feel: flap/dive/stamina/landing damage (2026-10-28, this commit) — HP pool + landing-damage curve (0 ≤800 cm/s, 5–25 to 2200), flap cost 3, glide 1/s / hover 8/s / dive 0, exhaustion HP burn 2/s, Landed() damage, velocity debug HUD; FDragonFlightTest + existing tests pass, coverage 31.6%. PIE feel NOT verified (running editor is an 11h instance with no MCP listener; human/MCP PIE check + dive-release fix filed as T-030)
 - [x] T-029 — Dragon rig + quadruped walk cycle (Meshy V4 source) (2026-10-28, this commit) — V4 rigged in Blender: 33 bones (quadruped spine, wing chains, tail.01-06, 4×3 leg chains), voxel-proxy bone-heat weights transferred (posed test renders clean: legs/neck/tail; wing membrane crumples only when lifted — flight posing is T-011); 24f diagonal-gait Walk in UE as SK_Dragon_v4 + SK_Dragon_v4_Anim (frames verified mid-stride both phases). Also added Scripts/run-loop.sh (fires board loop only once T-029 is [x]). Known limit: skinning verified at gait/test amplitudes; extreme poses untested.

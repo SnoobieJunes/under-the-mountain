@@ -9,6 +9,7 @@
 
 #include "Dragon/DragonCharacter.h"
 #include "Dragon/DragonStatsComponent.h"
+#include "Scent/ScentComponent.h"
 #include "UnderTheMountain.h"
 
 #include "Camera/CameraComponent.h"
@@ -29,6 +30,7 @@ ADragonCharacter::ADragonCharacter()
 	PrimaryActorTick.bCanEverTick = true;
 
 	Stats = CreateDefaultSubobject<UDragonStatsComponent>(TEXT("Stats"));
+	Scent = CreateDefaultSubobject<UScentComponent>(TEXT("Scent"));
 
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(GetCapsuleComponent());
@@ -95,6 +97,7 @@ void ADragonCharacter::BuildInputActions()
 	FlapAction = MakeAction(TEXT("IA_Flap"), EInputActionValueType::Boolean);
 	ToggleFlightAction = MakeAction(TEXT("IA_ToggleFlight"), EInputActionValueType::Boolean);
 	DiveAction = MakeAction(TEXT("IA_Dive"), EInputActionValueType::Boolean);
+	TrueSightAction = MakeAction(TEXT("IA_TrueSight"), EInputActionValueType::Boolean);
 
 	MappingContext = NewObject<UInputMappingContext>(this, TEXT("IMC_Dragon"));
 	auto Map = [this](UInputAction* Action, FKey Key)
@@ -118,6 +121,7 @@ void ADragonCharacter::BuildInputActions()
 	Map(FlapAction, EKeys::SpaceBar);
 	Map(ToggleFlightAction, EKeys::F);
 	Map(DiveAction, EKeys::LeftShift);
+	Map(TrueSightAction, EKeys::T);
 	// Gamepad: left stick move, right stick look, bottom face flap,
 	// top face toggle flight, right trigger dive.
 	Map(MoveAction, EKeys::Gamepad_Left2D);
@@ -125,6 +129,7 @@ void ADragonCharacter::BuildInputActions()
 	Map(FlapAction, EKeys::Gamepad_FaceButton_Bottom);
 	Map(ToggleFlightAction, EKeys::Gamepad_FaceButton_Top);
 	Map(DiveAction, EKeys::Gamepad_RightTrigger);
+	Map(TrueSightAction, EKeys::Gamepad_FaceButton_Left);
 }
 
 void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -140,6 +145,7 @@ void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	// after Shift/trigger release and the dragon kept accelerating.
 	EIC->BindAction(DiveAction, ETriggerEvent::Completed, this, &ADragonCharacter::HandleDiveEnd);
 	EIC->BindAction(DiveAction, ETriggerEvent::Canceled, this, &ADragonCharacter::HandleDiveEnd);
+	EIC->BindAction(TrueSightAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleTrueSight);
 }
 
 void ADragonCharacter::HandleMove(const FInputActionValue& Value)
@@ -193,6 +199,15 @@ void ADragonCharacter::HandleDiveEnd()
 {
 	// [2026-10-28 T-030] See SetupPlayerInputComponent: release clears dive.
 	bDiving = false;
+}
+
+void ADragonCharacter::HandleTrueSight()
+{
+	// [2026-10-28 T-013] Forward-only: the component owns the Seeing
+	// Stone rules (refusal while stolen) and logs refusals itself.
+	const bool bActive = Scent->ToggleTrueSight();
+	UE_LOG(LogUnderTheMountain, Log, TEXT("True-sight toggled: %s"),
+		   bActive ? TEXT("ACTIVE (scent dimmed, treasure markers on)") : TEXT("off"));
 }
 
 void ADragonCharacter::Landed(const FHitResult& Hit)
