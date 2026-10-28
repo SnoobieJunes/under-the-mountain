@@ -3,10 +3,6 @@
      acceptance criteria are not pickable — sharpen them first. -->
 
 ## Now
-- [ ] T-032 — Real dragon mesh on the pawn (replace placeholder ball)
-      Why: owner request 2026-10-28 — the playable dragon is still the greybox sphere; SK_Dragon_v4 has been in the project since T-029 but was never wired to ADragonCharacter.
-      Accept: In PIE on Lair, the pawn renders as SK_Dragon_v4 (screenshot/log evidence), placeholder ball gone or hidden, pawn still spawns/moves and the automation suite passes via Scripts/gate.sh; mesh offset/scale so the body sits sensibly in the capsule.
-      Touches: Source/UnderTheMountain/Private/Dragon/DragonCharacter.cpp, Source/UnderTheMountain/Public/Dragon/DragonCharacter.h   Depends: T-029   Gated: none
 - [ ] T-015 — Combat: fire breath, roar, eat
       Why: the verbs the notoriety choice is made with.
       Accept: Fire breath kills a thief in PIE (cone + damage over time), roar scares within radius, eating a corpse/livestock restores stamina; each covered by an automation test.
@@ -57,6 +53,7 @@
 ## Dropped
 
 ## Done
+- [x] T-032 — Real dragon mesh on the pawn (replace placeholder ball) (2026-10-28, this commit) — ADragonCharacter loads SK_Dragon_v4 onto GetMesh() (visible, NoCollision; capsule still owns movement), probed bounds 190x48x72cm scaled 2x at z-24 so feet sit on the capsule floor, yaw -90 verified correct in PIE (tail to camera, head down the corridor: Content/Meshy/Dragon/dragon_pawn_pie.png); placeholder sphere hidden; walk cycle plays single-node while moving, bind pose at rest. Flight posing/AnimBP remains with the flight-feel work (mesh holds bind/walk pose in flight — known limit, not new). Gate green; coverage 34.2%.
 - [x] T-013 — Treasure + scent system (2026-10-28, this commit) — UTreasureDataAsset/Registry/Subsystem + ATreasureActor; UScentComponent spawns value-scaled scent ribbons (GAMEPLAY §3 brackets 4/8/14/22/32cm + micro-variation, carried pulse, no-distance encoding) and Seeing Stone true-sight (30% dim, teal through-rock markers, refused while stone carried); 4 treasures authored + placed in Lair. Proven: 3 new automation tests pass (Registry/Width/NoDistanceAndTrueSight, 6/6 total), standalone -game log shows 4 registrations + "Scent ribbons active: 4", coverage 33.5%. Deviations: cube-geometry ribbon not Niagara (T-031 filed); T-key toggle bound but not live-pressed (T-030 owns input checks) — goose-deuce 2026-10-28.
 - [x] T-012 — Lair level: 3 chambers + hoard room + peak exit, dressed (2026-10-28, this commit) — Lair.umap built headless (203 actors: 190 static meshes, gold/rock/wood materials, 10 point lights + shaft sun/sky); verify_lair.py geometric traversal 14/14 with live controls (physics traces return None headless — probed, see goose-deuce 2026-10-28); PIE loads with dragon pawn spawning at DragonStart (editor log); standalone -game CSV capture last 120 frames avg 16.81 ms ≈ 60 fps at vsync cap on this Mac (Saved/Profiling/lair_fps.csv). Input-driven in-PIE chamber walk remains on T-030.
 - [x] T-011 — Dragon flight feel: flap/dive/stamina/landing damage (2026-10-28, this commit) — HP pool + landing-damage curve (0 ≤800 cm/s, 5–25 to 2200), flap cost 3, glide 1/s / hover 8/s / dive 0, exhaustion HP burn 2/s, Landed() damage, velocity debug HUD; FDragonFlightTest + existing tests pass, coverage 31.6%. PIE feel NOT verified (running editor is an 11h instance with no MCP listener; human/MCP PIE check + dive-release fix filed as T-030)

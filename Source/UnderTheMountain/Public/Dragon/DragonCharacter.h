@@ -20,6 +20,7 @@ class UInputAction;
 class UInputMappingContext;
 class USpringArmComponent;
 class UCameraComponent;
+class UAnimSequence;
 class UStaticMeshComponent;
 
 UCLASS()
@@ -59,6 +60,12 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 
 	bool IsFlying() const;
 
+	// [2026-10-28 T-032] Walk cycle (T-029) played single-node while
+	// the pawn actually moves; nullptr if the asset failed to load,
+	// in which case the mesh holds its standing bind pose.
+	UPROPERTY(VisibleAnywhere, Category = "Dragon")
+	TObjectPtr<UAnimSequence> WalkAnim;
+
   protected:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
@@ -93,6 +100,10 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// [2026-10-28 T-013] Seeing Stone toggle (key T / gamepad left face).
 	void HandleTrueSight();
 	bool bDiving = false;
+
+	// [2026-10-28 T-032] True while the single-node walk cycle is
+	// playing, so Tick only calls Play/Stop on transitions.
+	bool bPlayingWalk = false;
 
 	// [2026-10-28 T-011] Last Tick's vertical velocity (cm/s, signed).
 	// Captured before Tick's flight logic runs so Landed() can recover

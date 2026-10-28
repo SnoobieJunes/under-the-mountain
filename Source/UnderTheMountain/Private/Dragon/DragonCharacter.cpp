@@ -13,6 +13,7 @@
 #include "UnderTheMountain.h"
 
 #include "Camera/CameraComponent.h"
+#include "Animation/AnimSequence.h"
 #include "Engine/Engine.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -40,14 +41,46 @@ ADragonCharacter::ADragonCharacter()
 	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
 	Camera->SetupAttachment(CameraBoom);
 
-	// [2026-10-27 T-003] Placeholder body: capsule mesh hidden in favour of
-	// the capsule itself scaled long — reads as a creature silhouette in
-	// greybox without pretending to be the T-010 dragon.
-	GetMesh()->SetVisibility(false);
+	// [2026-10-28 T-032] The real dragon: SK_Dragon_v4 (T-029 rig/walk)
+	// replaces the greybox ball as the visible body. Probed bounds are
+	// 190 long (local Y, head at -Y in the source rig) x 48 wide x 72
+	// tall (cm), origin at body centre — so scale 2 gives a 380cm
+	// dragon whose feet (local z -72 after scaling) sit exactly on the
+	// capsule floor at pawn z -96 when the mesh is at z -24. Yaw -90
+	// turns the mesh's -Y head onto the pawn's +X forward; the PIE
+	// screenshot in this task is the evidence that sign is right.
+	// Collision stays on the capsule: the mesh is display only.
+	GetMesh()->SetVisibility(true);
+	GetMesh()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	static ConstructorHelpers::FObjectFinder<USkeletalMesh> DragonMesh(
+		TEXT("/Game/Meshy/Dragon/SK_Dragon_v4.SK_Dragon_v4"));
+	if (DragonMesh.Succeeded())
+	{
+		GetMesh()->SetSkeletalMeshAsset(DragonMesh.Object);
+	}
+	else
+	{
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("SK_Dragon_v4 not found; dragon pawn will be invisible (capsule only)"));
+	}
+	GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, -24.0f));
+	GetMesh()->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
+	GetMesh()->SetRelativeScale3D(FVector(2.0f, 2.0f, 2.0f));
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> WalkAnimAsset(
+		TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_Anim.SK_Dragon_v4_Anim"));
+	if (WalkAnimAsset.Succeeded())
+	{
+		WalkAnim = WalkAnimAsset.Object;
+		GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+	}
 
 	PlaceholderBody = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PlaceholderBody"));
 	PlaceholderBody->SetupAttachment(GetCapsuleComponent());
 	PlaceholderBody->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	// [2026-10-28 T-032] Placeholder retired as the visible body (kept
+	// as a component so nothing referencing it breaks); the skeletal
+	// mesh above is what renders now.
+	PlaceholderBody->SetVisibility(false);
 	PlaceholderBody->SetRelativeScale3D(FVector(1.0f, 2.2f, 1.0f));
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(
 		TEXT("/Engine/BasicShapes/Sphere.Sphere"));
@@ -231,6 +264,24 @@ void ADragonCharacter::Landed(const FHitResult& Hit)
 void ADragonCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	// [2026-10-28 T-032] Walk cycle follows actual movement: play the
+	// single-node anim while the pawn has ground/flight speed, stop
+	// it (back to the standing bind pose) when it doesn't. Transition
+	// -only calls so PlayAnimation never restarts every frame.
+	if (WalkAnim != nullptr)
+	{
+		const bool bMoving = GetVelocity().Size2D() > 20.0f;
+		if (bMoving && !bPlayingWalk)
+		{
+			GetMesh()->PlayAnimation(WalkAnim, true);
+			bPlayingWalk = true;
+		}
+		else if (!bMoving && bPlayingWalk)
+		{
+			GetMesh()->Stop();
+			bPlayingWalk = false;
+		}
+	}
 	// [2026-10-28 T-011] Snapshot vertical velocity before any flight work
 	// this frame can change it; Landed() reads this when the ground wins.
 	LastVelocityZ = GetCharacterMovement()->Velocity.Z;
