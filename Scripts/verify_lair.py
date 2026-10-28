@@ -25,41 +25,59 @@ for k in sorted(counts):
 for k in sorted(mats):
     print("LAIR_MAT", k, mats[k])
 
-world = ues.get_editor_world()
-ksl = unreal.KismetSystemLibrary
-CHAN = unreal.TraceTypeQuery.TRACE_TYPE_QUERY1  # Visibility
-NONE = unreal.DrawDebugTrace.NONE
+# [2026-10-28 T-012] Physics traces are unusable here: probed live, every
+# SystemLibrary trace variant (channel/profile/objects) returns None in the
+# headless editor world even straight into a BlockAll cube floor — there is
+# no physics scene in a commandlet. So traversal is verified geometrically:
+# segment-vs-AABB against each StaticMeshActor's world bounds (conservative
+# for yaw-rotated props, since world AABB contains the mesh). The controls
+# below prove the geometry test itself can register hits.
+BOXES = []  # (label, min_xyz, max_xyz)
+for a in actors:
+    if a.get_class().get_name() != "StaticMeshActor":
+        continue
+    origin, extent = a.get_actor_bounds(False)
+    lo = (origin.x - extent.x, origin.y - extent.y, origin.z - extent.z)
+    hi = (origin.x + extent.x, origin.y + extent.y, origin.z + extent.z)
+    BOXES.append((a.get_actor_label(), lo, hi))
+print("LAIR_BOXES", len(BOXES))
 
-def unpack(res):
-    # UE python: (return_value, OutHit) tuple, defensively handle bare HitResult.
-    if isinstance(res, tuple):
-        return bool(res[0]), (res[1] if len(res) > 1 else None)
-    return False, res
+def seg_hits_box(a, b, lo, hi, pad=0.0):
+    # Slab test: parametric segment a->b against the (padded) AABB.
+    tmin, tmax = 0.0, 1.0
+    for i in range(3):
+        d = b[i] - a[i]
+        mn, mx = lo[i] - pad, hi[i] + pad
+        if abs(d) < 1e-9:
+            if a[i] < mn or a[i] > mx:
+                return False
+            continue
+        t1, t2 = (mn - a[i]) / d, (mx - a[i]) / d
+        if t1 > t2:
+            t1, t2 = t2, t1
+        tmin, tmax = max(tmin, t1), min(tmax, t2)
+        if tmin > tmax:
+            return False
+    return True
+
+def first_hit(a, b, pad=0.0):
+    for label, lo, hi in BOXES:
+        if seg_hits_box(a, b, lo, hi, pad):
+            return label
+    return None
 
 def line(name, a, b, expect_hit):
-    res = ksl.line_trace_single(world, unreal.Vector(*a), unreal.Vector(*b), CHAN, False, [], NONE, True)
-    hit, hr = unpack(res)
-    who = ""
-    if hit and hr is not None:
-        try:
-            who = " hit_actor=%s at=%s" % (hr.get_editor_property("hit_actor"), hr.get_editor_property("location"))
-        except Exception as e:
-            who = " hit_actor=? (%s)" % e
+    who = first_hit(a, b)
+    hit = who is not None
     verdict = "PASS" if hit == expect_hit else "FAIL"
-    print("LAIR_TRACE line %-28s %s -> %s hit=%s expect_hit=%s %s%s" % (name, a, b, hit, expect_hit, verdict, who))
+    print("LAIR_TRACE line %-28s %s -> %s hit=%s expect_hit=%s %s%s" % (name, a, b, hit, expect_hit, verdict, (" hit_actor=" + who) if who else ""))
     return hit == expect_hit
 
 def sphere(name, a, b, radius):
-    res = ksl.sphere_trace_single(world, unreal.Vector(*a), unreal.Vector(*b), radius, CHAN, False, [], NONE, True)
-    hit, hr = unpack(res)
-    who = ""
-    if hit and hr is not None:
-        try:
-            who = " hit_actor=%s at=%s" % (hr.get_editor_property("hit_actor"), hr.get_editor_property("location"))
-        except Exception as e:
-            who = " hit_actor=? (%s)" % e
+    who = first_hit(a, b, pad=radius)
+    hit = who is not None
     verdict = "PASS" if not hit else "FAIL"
-    print("LAIR_TRACE sphere(r=%s) %-22s %s -> %s hit=%s %s%s" % (radius, name, a, b, hit, verdict, who))
+    print("LAIR_TRACE sphere(r=%s) %-22s %s -> %s hit=%s %s%s" % (radius, name, a, b, hit, verdict, (" hit_actor=" + who) if who else ""))
     return not hit
 
 C1, C2, C3, HOARD = 0.0, 6000.0, 12000.0, 19000.0

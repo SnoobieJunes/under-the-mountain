@@ -123,6 +123,14 @@ tag, choose the owing one.
 <!-- Real entries accumulate below, NEWEST AT THE TOP. The top entries are
      session-start required reading (count: AGENTS.md → Session ritual). -->
 
+## 2026-10-28 — T-012 traversal verified geometrically; PIE walk deferred to T-030  [approach]
+- Task: T-012 (lair level; TASKS.md Accept)
+- What: Scripted traversal is verified by segment-vs-AABB tests in Scripts/verify_lair.py (14/14, controls live) instead of physics traces, and the PIE check proved level load + dragon pawn spawn at DragonStart rather than an input-driven chamber walk. The 60 fps evidence is a standalone -game CSV capture (last 120 frames avg 16.81 ms at the 60 Hz vsync cap), not a PIE stat capture.
+- Why: Probed live in the headless editor: every SystemLibrary trace variant returns None even into a BlockAll cube floor (no physics scene in a commandlet; `unreal.KismetSystemLibrary` does not exist in UE 5.8 Python). In the GUI editor, MCP ActorTools address only the editor world, not PIE actors, so a scripted PIE walk/teleport of the pawn is not available; input-driven feel is already T-030's human/MCP check.
+- Where: Scripts/verify_lair.py, Content/Maps/Lair/ (Lair.umap + M_RockDark/M_GoldWarm/M_WoodDark), Saved/Profiling/lair_fps.csv (evidence, gitignored).
+- Plan: T-012 Accept said "scripted traversal" + PIE + 60 fps → met by substitution above; the input-driven in-PIE chamber traversal remains owed and is recorded on T-030 in this commit. docs/PLAN.md unaffected.
+- Commit(s): this commit
+
 ## 2026-10-28 — T-010 dragon rig verdict: Meshy auto-rig unusable, Blender fixup  [decision]
 - Task: T-010 (docs/PLAN.md → Risks, Meshy dragon rig gate)
 - What: Meshy multi-image-to-3D (tasks 01a181bc…, 30 cr; rig 01a181c9…, 5 cr; balance 1150→1115 approx) produced a clean textured dragon (82,933 tris, GLB/FBX in Content/Meshy/Raw/Dragon/, imported as SK_Dragon_Rigged in Content/Meshy/Dragon/). The auto-rig SUCCEEDED but is a 24-joint HUMANOID biped skeleton (Hips/Spine/Spine01/Spine02, neck/Head, Left/Right Shoulder-Arm-ForeArm-Hand, 2× UpLeg-Leg-Foot-Toe) mapped onto a quadruped: no wing bones, no tail bones, only 2 leg chains for 4 legs. Verdict: rig NOT usable for dragon flight/walk.
