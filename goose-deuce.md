@@ -131,6 +131,24 @@ tag, choose the owing one.
 - Plan: T-023's Accept named the in-session path → Accept met in substance (Hermes client connects, read-only toolset listing returned), path substituted. In-session tools arrive with the next desktop session; direct protocol calls bridge until then. docs/PLAN.md unaffected.
 - Commit(s): this commit
 
+## 2026-10-27 — Art direction: Style B (realism, texture-carried dragon)  [decision]
+- Task: T-025 (docs/PLAN.md → Art direction; hackathon submission)
+- What: Style B (grounded realism) chosen over Style A (stylised painterly)
+  and C (dark gothic). World realism via UE lighting/materials; dragon
+  realism carried by texture/normal maps over clean geometry.
+- Why: Owner decision 2026-10-27 after mockups (dragon, countryside, flight,
+  lair in A and B). B has the wow factor; the perf risk on the M1 Max is
+  lighting/resolution (managed: dynamic res, Lumen software RT, 2K cap,
+  per-level 60 fps gates), not triangle count. Selection mockups were
+  generated on the session image backend (fal), NOT Muse Image — no Meta API
+  key exists in the profile; official concepts regenerate via the muse-harness
+  plugin (Muse Image + SAM 3.1) in T-025 after restart.
+- Where: docs/PLAN.md, docs/ART-DIRECTION.md (T-025), TASKS.md (T-010 now
+  depends on T-025), idea.md art line.
+- Plan: PLAN.md had no art direction → section added in this commit; grade
+  fallback to Style A lighting recorded there if dragon iterations stall.
+- Commit(s): this commit
+
 ## 2026-10-27 — Coverage floor is an honest 0% until llvm-cov lands  [tech-debt]
 - Task: T-002 (AGENTS.md → Project snapshot, coverage floor)
 - What: The coverage floor ships as 0% with Scripts/coverage.sh reporting

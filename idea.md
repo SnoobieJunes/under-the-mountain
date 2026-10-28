@@ -29,6 +29,9 @@ crown jewels) and pay for it in Notoriety.
 ## Controls
 Keyboard/mouse + gamepad, both first-class (flight on sticks must feel right).
 
+## Art direction (as decided 2026-10-27)
+Style B — grounded realism, texture-carried dragon (docs/PLAN.md → Art direction).
+
 ## Tech (as decided 2026-10-27)
 Unreal Engine 5.8.4 (native Apple Silicon/Metal), Meshy for models, Blender
 fallback for the dragon rig, Hermes/Muse as the agentic coding harness,

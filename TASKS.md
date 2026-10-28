@@ -3,10 +3,18 @@
      acceptance criteria are not pickable — sharpen them first. -->
 
 ## Now
+- [ ] T-025 — Concept art pack (Style B) via Muse Image + SAM 3.1
+      Why: every asset task needs an approved visual target; Style B was chosen 2026-10-27 from mockups, official concepts must be Muse Image renders approved by the owner (see docs/PLAN.md → Art direction). START HERE after the muse-harness restart.
+      Accept: muse-harness tools verified live (list them in the close); Muse Image concepts for dragon (multi-view), lair, countryside/village, 3 thieves, hoard/artifacts saved under docs/concepts/ with owner approval recorded on this task; docs/ART-DIRECTION.md written (palette, lighting, texture rules, SAM 3.1 segmentation step for the dragon).
+      Touches: docs/concepts/, docs/ART-DIRECTION.md, TASKS.md   Depends: T-003   Gated: owner
+- [ ] T-026 — Gameplay detail spec (docs/GAMEPLAY.md)
+      Why: PLAN.md pillars are not yet implementable numbers; thief/scent/notoriety tasks (T-013+) need tables, not prose.
+      Accept: docs/GAMEPLAY.md covers loop timings, stamina/food economy numbers, scent readability rules, wave table, per-thief behaviour + tells + counters, artifact specs (all idea.md artifacts), intro beat script, win/lose thresholds, sleep/tribute rules for M2; every number either marked [tuning] with its test, or derived from a stated reason.
+      Touches: docs/GAMEPLAY.md, docs/PLAN.md   Depends: T-003   Gated: none
 - [ ] T-010 — Dragon asset gate: Meshy dragon → UE, rig verdict
       Why: winged-dragon auto-rig is the project's biggest asset risk; verdict must land before flight animation is designed around it.
       Accept: Meshy dragon generated via docs/ASSET-PIPELINE.md, imported to Content/Meshy/Dragon; written verdict in goose-deuce.md ([decision]): rig usable, or Blender fixup task filed with the failing evidence (screenshot + bone list).
-      Touches: Content/Meshy/Dragon/, docs/ASSET-PIPELINE.md, goose-deuce.md   Depends: T-003   Gated: none
+      Touches: Content/Meshy/Dragon/, docs/ASSET-PIPELINE.md, goose-deuce.md   Depends: T-025   Gated: none
 - [ ] T-011 — Dragon flight feel: flap/dive/stamina/landing damage
       Why: flight is design pillar 3; feel gates every exterior decision.
       Accept: In PIE, flap gains altitude, dive gains speed (velocity readout in debug HUD), landing above threshold speed deals damage; automation tests for stamina drain + landing damage pass via Scripts/gate.sh.

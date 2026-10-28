@@ -98,11 +98,28 @@ Kaigen3D (evaluated 2026-10-27, rejected for the submission: closed beta,
 licence-gated, no local install, unproven Meshy/animation pipeline — see
 goose-deuce.md 2026-10-27 "Engine and scope").
 
+## Art direction (owner decision 2026-10-27)
+
+**Style B — grounded realism.** Realistic world (terrain, village, lair) lit
+cinematically; the dragon's realism is carried by texture/normal maps over a
+clean silhouette, not by raw mesh detail (Meshy "photoreal" geometry melts at
+fine detail). Mockups (dragon / countryside / flight / lair, styles A+B) were
+generated during selection; the *official* concepts are regenerated with Muse
+Image through the muse-harness plugin and approved by the owner before any 3D
+spend (T-025). SAM 3.1's role is segmentation: cutting the approved dragon out
+of its concept background for a clean Meshy image-to-3D input. If dragon
+iterations stall below bar, fallback is an A-style colour grade on the same
+assets — a lighting change, not a rebuild. Perf contract unchanged: 60 fps on
+this M1 Max, measured per level, dynamic resolution + Lumen software RT +
+2K texture cap (docs/ASSET-PIPELINE.md budgets).
+
 ## Risks with a gate, not a hope
 
 - **Meshy dragon rig** (wings/quadruped auto-rig is unreliable): Day-1 gate
   in M1 — Meshy dragon → remesh → rig test in UE; fail → Blender fixup path
   (Blender MCP) with code-driven wing flap. Decided by test, not optimism.
+  Budget for Style B texture-carried realism: 3–5 dragon iterations
+  (~150–250 Meshy credits of the 1150 balance) before the grade fallback.
 - **Open-world performance on M1 Max:** M1 flight zone is the perf proxy;
   Nanite/Lumen settings tuned there before M2 streaming is attempted.
 - **Timeline:** 8 days to submission. M1 tasks are sized ≤1 session each on
