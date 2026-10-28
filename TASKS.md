@@ -3,10 +3,10 @@
      acceptance criteria are not pickable — sharpen them first. -->
 
 ## Now
-- [ ] T-014 — Thief AI: burglar, dwarf party, adventurer
-      Why: the antagonist of the core loop; three behaviours from one data-driven brain.
-      Accept: Each type, spawned in PIE, sneaks to a treasure, grabs it, and flees to the exit; adventurer drops loot when roared at; dwarf trap slows the dragon once; outcomes logged by an automation test scenario.
-      Touches: Source/UnderTheMountain/Thief/, Content/Gameplay/Thieves/, Content/Meshy/Thieves/   Depends: T-013   Gated: none
+- [ ] T-032 — Real dragon mesh on the pawn (replace placeholder ball)
+      Why: owner request 2026-10-28 — the playable dragon is still the greybox sphere; SK_Dragon_v4 has been in the project since T-029 but was never wired to ADragonCharacter.
+      Accept: In PIE on Lair, the pawn renders as SK_Dragon_v4 (screenshot/log evidence), placeholder ball gone or hidden, pawn still spawns/moves and the automation suite passes via Scripts/gate.sh; mesh offset/scale so the body sits sensibly in the capsule.
+      Touches: Source/UnderTheMountain/Private/Dragon/DragonCharacter.cpp, Source/UnderTheMountain/Public/Dragon/DragonCharacter.h   Depends: T-029   Gated: none
 - [ ] T-015 — Combat: fire breath, roar, eat
       Why: the verbs the notoriety choice is made with.
       Accept: Fire breath kills a thief in PIE (cone + damage over time), roar scares within radius, eating a corpse/livestock restores stamina; each covered by an automation test.
@@ -51,6 +51,7 @@
       Touches: goose-deuce.md, docs/PLAN.md, TASKS.md   Depends: none   Gated: cadence
 
 ## Blocked
+- [!] T-014 — Thief AI: burglar, dwarf party, adventurer — PARKED 2026-10-28 in git stash "T-014" (apply with `git stash apply stash^{/T-014}`; do not pop until claimed). Done in the stash: Thief brain/character/trap C++ (muse-drafted, parent-reviewed), dragon ApplyTrapSlow hook, Scripts/create_thieves.py, 3 thief DataAssets placed in Lair.umap, tests Thief.States + Thief.Traps passing (8/8 suite at park time). Left: (1) add `float DebugLogTimer = 0.0f;` to ThiefCharacter.h — the debug-log code in the stash references it and will not compile without it; (2) rebuild and re-run the -game scenario to prove the new chamber-waypoint steering produces grab→flee→exit logs for all 3 thieves (straight-line steering wedged on walls; waypoint fix is in the stash, unverified in-game); (3) prove dwarf trap slows the dragon once in-game and roar-drop in a live session; (4) coverage + full gate + close-out docs/commit. Owner preempted with the dragon-mesh task (T-032) on 2026-10-28.
 - [!] T-030 — Dive input never clears on key release + PIE flight-feel check — BLOCKED 2026-10-28: code half DONE in the park commit (Dive Completed/Canceled now clear bDiving; gate green, coverage 31.0%). Remaining: PIE session (human or MCP — needs GUI editor with live MCP, currently a stale instance) recording flap→altitude, dive→speed with HUD, hard-landing HP damage; plus (added 2026-10-28, T-012) an input-driven chamber→hoard→peak traversal of Lair.umap in PIE — scripted geometric traversal is proven, the in-PIE walk is not.
 
 ## Dropped
