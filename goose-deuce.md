@@ -123,6 +123,14 @@ tag, choose the owing one.
 <!-- Real entries accumulate below, NEWEST AT THE TOP. The top entries are
      session-start required reading (count: AGENTS.md → Session ritual). -->
 
+## 2026-10-28 — T-010 dragon rig verdict: Meshy auto-rig unusable, Blender fixup  [decision]
+- Task: T-010 (docs/PLAN.md → Risks, Meshy dragon rig gate)
+- What: Meshy multi-image-to-3D (tasks 01a181bc…, 30 cr; rig 01a181c9…, 5 cr; balance 1150→1115 approx) produced a clean textured dragon (82,933 tris, GLB/FBX in Content/Meshy/Raw/Dragon/, imported as SK_Dragon_Rigged in Content/Meshy/Dragon/). The auto-rig SUCCEEDED but is a 24-joint HUMANOID biped skeleton (Hips/Spine/Spine01/Spine02, neck/Head, Left/Right Shoulder-Arm-ForeArm-Hand, 2× UpLeg-Leg-Foot-Toe) mapped onto a quadruped: no wing bones, no tail bones, only 2 leg chains for 4 legs. Verdict: rig NOT usable for dragon flight/walk.
+- Why: Meshy rigging is humanoid-only (tool schema: 'textured humanoid model'), exactly the foot-gun AGENTS.md records. Mesh itself is good (preview verified gold/crimson, wings/tail complete) but is in a perched display pose on a rock base, which the fixup must also address (remove base, neutral pose).
+- Where: Content/Meshy/Raw/Dragon/ (raw, untouchable), Content/Meshy/Dragon/ (SK_Dragon_Rigged + preview evidence), docs/ASSET-PIPELINE.md dragon gate.
+- Plan: PLAN.md dragon gate said fail → Blender fixup path with code-driven wing flap → stands unchanged; that is now T-028 with the bone list + preview as failing evidence. docs/PLAN.md unaffected.
+- Commit(s): this commit
+
 ## 2026-10-27 — T-023 proof path substituted: CLI + protocol, not in-session tools  [process]
 - Task: T-023 (unreal-mcp live proof)
 - What: The live proof ran via `hermes mcp test unreal-mcp` (✓ Connected, 3 meta-tools) plus a direct MCP protocol call to `list_toolsets` (returned EditorApp, Niagara, PCG, AgentSkill, Logs toolsets), instead of through this session's unreal-mcp tools after `/reload-mcp`.

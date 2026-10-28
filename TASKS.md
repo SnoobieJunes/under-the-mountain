@@ -49,6 +49,10 @@
       Touches: docs/SUBMISSION.md   Depends: T-020   Gated: owner
 
 ## Later
+- [ ] T-028 — Blender dragon rig fixup: quadruped + wing + tail bones
+      Why: T-010 verdict (goose-deuce 2026-10-28): Meshy auto-rig is a 24-joint humanoid biped on a quadruped — no wing/tail bones, 2 leg chains for 4 legs; flight (T-011) needs wing bones.
+      Accept: In Blender, dragon mesh from Content/Meshy/Raw/Dragon/dragon.glb re-rigged: quadruped spine chain, 2 wing armatures (shoulder/elbow/wrist + membrane fingers), tail chain (≥5 bones), 4 leg chains; rock base removed, neutral standing pose; exported FBX replaces SK_Dragon_Rigged in Content/Meshy/Dragon and loads in UE with wing bones listed in the skeleton; screenshot of the armature in the task evidence. Evidence from T-010: bone list in goose-deuce 2026-10-28, preview Content/Meshy/Dragon/dragon-preview.png.
+      Touches: Content/Meshy/Dragon/, Content/Meshy/Raw/ (read-only)   Depends: T-010   Gated: none
 - [ ] T-027 — Dragon scale-colour picker (RGB slider)
       Why: owner request 2026-10-27 — players set their dragon's scale colour; canonical art stays gold/crimson (docs/ART-DIRECTION.md), the picker tints from that base.
       Accept: In PIE, an RGB slider picker changes the dragon's scale tint live (material parameter, crimson membranes stay crimson unless separately tinted), choice persists across a PIE restart; automation test for the tint parameter passing via Scripts/gate.sh.
@@ -59,11 +63,11 @@
       Touches: goose-deuce.md, docs/PLAN.md, TASKS.md   Depends: none   Gated: cadence
 
 ## Blocked
-- [!] T-010 — Dragon asset gate: Meshy dragon → UE, rig verdict — BLOCKED 2026-10-27: Meshy MCP tools absent from this Hermes session (portable plugin dropped on MCP reconcile; owner must /reload-mcp or start a new session to restore them). DONE SO FAR: SAM 3.1 cutout verified clean at docs/concepts/dragon-side-cutout.png (Meta API sam-3.1, input_image data-URL, mask decoded — ART-DIRECTION §5). NEXT: Meshy image-to-3D from the cutout → remesh → rig → import Content/Meshy/Dragon → rig verdict in goose-deuce [decision].
 
 ## Dropped
 
 ## Done
+- [x] T-010 — Dragon asset gate: Meshy dragon → UE, rig verdict (2026-10-28, this commit) — Meshy multi-image-to-3D (30 cr) + rig (5 cr) via pinned meshy MCP server over stdio (plugin tools absent this session); 82,933-tri textured dragon imported as SK_Dragon_Rigged; VERDICT: humanoid 24-joint rig unusable (no wing/tail bones) → Blender fixup filed as T-028, verdict in goose-deuce 2026-10-28
 - [x] T-022 — Instrument C++ line coverage (llvm-cov) and ratchet the floor (2026-10-28, this commit) — Scripts/coverage.sh prints real llvm-cov (module-only rsp-relink, LLVM continuous mode; measured 31.1% product lines, Tests/ excluded); AGENTS.md floor 0%→29%; gate.sh enforces fresh artifact ≥ floor
 - [x] T-026 — Gameplay detail spec (docs/GAMEPLAY.md) (2026-10-27, this commit) — docs/GAMEPLAY.md 596 lines: loop timings, stamina/food, scent brackets, wave+notoriety tables, 3 thief types w/ tells+counters, all 11 idea.md artifacts, intro beats, win/lose, M2 sleep/tribute; every number [tuning:test] or [derived:reason]
 - [x] T-025 — Concept art pack (Style B) via Muse Image + SAM 3.1 (2026-10-27, this commit) — OWNER APPROVED 2026-10-27 (gold/crimson dragon, other renders approved as-is); muse-harness tools verified live: muse_turn only (model muse-wonder-full-1.0, live call returned MUSE_LIVE); Muse Image called directly via Meta API (muse-image-1.0 + image_generation tool — hermes chat refuses function tools, proven 400); 10 concepts in docs/concepts/, docs/ART-DIRECTION.md written with SAM 3.1 segmentation step (runs under T-010)
