@@ -99,15 +99,28 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// [2026-10-27 T-003] Enhanced Input actions are instantiated in code for
 	// the skeleton: one C++ source of truth, no hand-authored .uassets to
 	// drift. Migration to data assets is a later decision, not an accident.
+	// [2026-10-28 T-035] Every UObject member below is UPROPERTY-tracked:
+	// without reflection the GC cannot see these TObjectPtrs from the
+	// pawn, so the actions/widget survived only via external Enhanced
+	// Input/widget-tree references (T-004 sweep finding, high).
+	UPROPERTY()
 	TObjectPtr<UInputAction> MoveAction;
+	UPROPERTY()
 	TObjectPtr<UInputAction> LookAction;
+	UPROPERTY()
 	TObjectPtr<UInputAction> FlapAction;
+	UPROPERTY()
 	TObjectPtr<UInputAction> ToggleFlightAction;
+	UPROPERTY()
 	TObjectPtr<UInputAction> DiveAction;
+	UPROPERTY()
 	TObjectPtr<UInputAction> TrueSightAction;
+	UPROPERTY()
 	TObjectPtr<UInputAction> TintAction;
+	UPROPERTY()
 	TObjectPtr<UDragonTintWidget> TintWidget;
 	bool bTintPickerOpen = false;
+	UPROPERTY()
 	TObjectPtr<UInputMappingContext> MappingContext;
 
 	void BuildInputActions();

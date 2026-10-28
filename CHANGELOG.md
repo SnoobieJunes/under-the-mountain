@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-10-28 — T-035 — Fixed a GC ownership bug: the dragon pawn’s input actions, mapping context and tint-picker widget are now reflection-tracked so the garbage collector cannot collect them under the pawn (no user-visible change)
+
 2026-10-28 — T-004 — Sweep #1: plan/readme brought back in line with the shipped game; 8 audit findings filed as T-035–T-042 (no user-visible change)
 
 2026-10-28 — T-033 — Fixed dead dragon controls: input actions are now built before any binding can store them (they were bound as nulls, so no key ever fired); WASD/mouse/Space/F/Shift/T/C and gamepad work in PIE

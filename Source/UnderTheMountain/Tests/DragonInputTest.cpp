@@ -33,6 +33,20 @@ bool FDragonInputTest::RunTest(const FString& Parameters)
 		Pawn->EnsureInputActions();
 		TestTrue(TEXT("ensure is idempotent"), Pawn->HasInputActions());
 	}
+
+	// [2026-10-28 T-035] The GC must be able to see the pawn's
+	// UObject members: every action/context/widget member must be a
+	// reflected UPROPERTY, or the GC can collect objects the pawn
+	// still points at (T-004 sweep finding).
+	UClass* PawnClass = ADragonCharacter::StaticClass();
+	for (const TCHAR* Member :
+		 {TEXT("MoveAction"), TEXT("LookAction"), TEXT("FlapAction"), TEXT("ToggleFlightAction"),
+		  TEXT("DiveAction"), TEXT("TrueSightAction"), TEXT("TintAction"), TEXT("TintWidget"),
+		  TEXT("MappingContext")})
+	{
+		TestNotNull(FString::Printf(TEXT("%s is a reflected UPROPERTY"), Member),
+					PawnClass->FindPropertyByName(FName(Member)));
+	}
 	return true;
 }
 
