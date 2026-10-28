@@ -3,10 +3,6 @@
      acceptance criteria are not pickable — sharpen them first. -->
 
 ## Now
-- [ ] T-025 — Concept art pack (Style B) via Muse Image + SAM 3.1
-      Why: every asset task needs an approved visual target; Style B was chosen 2026-10-27 from mockups, official concepts must be Muse Image renders approved by the owner (see docs/PLAN.md → Art direction). START HERE after the muse-harness restart.
-      Accept: muse-harness tools verified live (list them in the close); Muse Image concepts for dragon (multi-view), lair, countryside/village, 3 thieves, hoard/artifacts saved under docs/concepts/ with owner approval recorded on this task; docs/ART-DIRECTION.md written (palette, lighting, texture rules, SAM 3.1 segmentation step for the dragon).
-      Touches: docs/concepts/, docs/ART-DIRECTION.md, TASKS.md   Depends: T-003   Gated: owner
 - [ ] T-026 — Gameplay detail spec (docs/GAMEPLAY.md)
       Why: PLAN.md pillars are not yet implementable numbers; thief/scent/notoriety tasks (T-013+) need tables, not prose.
       Accept: docs/GAMEPLAY.md covers loop timings, stamina/food economy numbers, scent readability rules, wave table, per-thief behaviour + tells + counters, artifact specs (all idea.md artifacts), intro beat script, win/lose thresholds, sleep/tribute rules for M2; every number either marked [tuning] with its test, or derived from a stated reason.
@@ -61,6 +57,10 @@
       Touches: docs/SUBMISSION.md   Depends: T-020   Gated: owner
 
 ## Later
+- [ ] T-027 — Dragon scale-colour picker (RGB slider)
+      Why: owner request 2026-10-27 — players set their dragon's scale colour; canonical art stays gold/crimson (docs/ART-DIRECTION.md), the picker tints from that base.
+      Accept: In PIE, an RGB slider picker changes the dragon's scale tint live (material parameter, crimson membranes stay crimson unless separately tinted), choice persists across a PIE restart; automation test for the tint parameter passing via Scripts/gate.sh.
+      Touches: Source/UnderTheMountain/Dragon/, Source/UnderTheMountain/UI/, Content/Meshy/Dragon/   Depends: T-010   Gated: none
 - [ ] T-022 — Instrument C++ line coverage (llvm-cov) and ratchet the floor
       Why: T-002 coverage floor is an honest 0% — UE C++ line coverage is not instrumented; a measured floor is owed before M1 code grows.
       Accept: Scripts/coverage.sh prints a real line-coverage percentage for Source/UnderTheMountain; AGENTS.md floor set to just under the measured number; gate fails below it.
@@ -75,6 +75,7 @@
 ## Dropped
 
 ## Done
+- [x] T-025 — Concept art pack (Style B) via Muse Image + SAM 3.1 (2026-10-27, this commit) — OWNER APPROVED 2026-10-27 (gold/crimson dragon, other renders approved as-is); muse-harness tools verified live: muse_turn only (model muse-wonder-full-1.0, live call returned MUSE_LIVE); Muse Image called directly via Meta API (muse-image-1.0 + image_generation tool — hermes chat refuses function tools, proven 400); 10 concepts in docs/concepts/, docs/ART-DIRECTION.md written with SAM 3.1 segmentation step (runs under T-010)
 - [x] T-003 — Walking skeleton: dragon in an empty lair, playable in PIE (2026-10-27, this commit) — PIE via MCP: pawn spawned at PlayerStart (0,0,150), IsPIERunning true; gate green incl. Dragon.Stats tests; keyboard/gamepad bindings in code (Enhanced Input), interactive feel unverified until human play (T-011 owns feel)
 - [x] T-023 — Prove unreal-mcp live against the editor (2026-10-27, this commit) — hermes mcp test ✓ Connected (3 meta-tools); list_toolsets returned EditorApp/Niagara/PCG/AgentSkill/Logs; proof path substituted, see goose-deuce.md 2026-10-27 "T-023 proof path substituted"
 - [x] T-024 — Cold-clone gate fails on UBA cache: make builds deterministic (2026-10-27, this commit)

@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-10-27 — T-025 — Concept art pack approved: gold/crimson dragon (multi-view), lair, village, 3 thieves, hoard in docs/concepts/ + docs/ART-DIRECTION.md; player scale-colour picker filed as T-027 (no user-visible change)
+
 2026-10-27 — T-025/T-026 filed — Art direction locked to Style B (realism); concept pack + gameplay spec queued (no user-visible change)
 
 2026-10-27 — T-003 — Playable walking skeleton: dragon pawn (walk/fly/flap/dive, stamina) spawns in the greybox lair in PIE on Mac
