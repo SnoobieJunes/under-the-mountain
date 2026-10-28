@@ -52,6 +52,22 @@ class UNDERTHEMOUNTAIN_API UDragonAppearanceComponent : public UActorComponent
 	// ask here instead of spelling the string, so a rename is one edit.
 	static FName TintParameterName();
 
+	// [2026-10-28 T-039] Separate save slot for automation tests, so the
+	// suite never writes the player's real 'DragonScaleTint' slot (the
+	// T-004 sweep found the old test destroyed a saved tint and an
+	// aborted run left its probe colour behind).
+	static const FString& TestSaveSlotName();
+
+	// [2026-10-28 T-039] Point SaveTint/LoadTint at another slot. Tests
+	// pass TestSaveSlotName() on every component they save/load with;
+	// production code never calls this, so a normally-constructed
+	// component keeps the production default (see SaveSlotName below).
+	void SetSaveSlotForTesting(const FString& SlotName);
+
+	// [2026-10-28 T-039] The slot SaveTint/LoadTint currently use —
+	// production by default, the test slot after SetSaveSlotForTesting.
+	FString GetSaveSlotName() const;
+
 	// [2026-10-28 T-027] Current tint. Always clamped (see SetScaleTint),
 	// so readers never need to re-validate it.
 	FLinearColor GetScaleTint() const;
@@ -91,8 +107,15 @@ class UNDERTHEMOUNTAIN_API UDragonAppearanceComponent : public UActorComponent
 	// No-ops when there is no owner or no skeletal mesh.
 	void ApplyTint();
 
-	// [2026-10-28 T-027] Write ScaleTint to the DragonScaleTint slot.
+	// [2026-10-28 T-039] Write ScaleTint to the SaveSlotName slot
+	// (production 'DragonScaleTint' unless a test swapped it).
 	void SaveTint() const;
+
+	// [2026-10-28 T-039] Slot SaveTint/LoadTint use. Defaults to the
+	// production UDragonTintSaveGame::SaveSlotName ('DragonScaleTint')
+	// and is swappable only for tests via SetSaveSlotForTesting, so
+	// automation never overwrites the player's saved tint.
+	FString SaveSlotName = UDragonTintSaveGame::SaveSlotName;
 
 	// [2026-10-28 T-027] Per-slot dynamic instances created by ApplyTint.
 	// UPROPERTY so the GC keeps them alive between applies.
