@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-10-28 — T-029 — Dragon rigged and walking: 33-bone quadruped rig on Meshy V4, diagonal-gait walk cycle in UE (SK_Dragon_v4 + AnimSequence); Scripts/run-loop.sh added (no user-visible change)
+
 2026-10-28 — T-029 — Meshy V4 dragon: rock-free, single regular eyes, 310k tris textured (980k pre-remesh master) imported as SM_Dragon_v4; rig/walk blocked on owner decision (no user-visible change)
 
 2026-10-28 — T-028 — Dragon re-rigged in Blender: rock base removed, quadruped rig with wing + tail bones (79k tris) replaces the broken humanoid rig in UE (no user-visible change)
