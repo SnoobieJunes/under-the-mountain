@@ -230,9 +230,10 @@ void UScentComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		}
 		Ribbon->SetEndpoints(NoseLocation, Entry->Location, Params.Width);
 		Ribbon->SetOpacityFactor(Params.Opacity);
-		// [2026-10-28 T-013] Params.Color is recorded for the future
-		// ribbon material; the placeholder cube has no color scalar
-		// contract yet, so opacity is the only value pushed today.
+		// [2026-10-28 T-031] Params.Color is baked into NS_ScentRibbon's
+		// particle colour at authoring time (tarnished gold); per-entry
+		// colour variation is not a scent cue, so only width and opacity
+		// are pushed per ribbon today.
 
 		TObjectPtr<ATrueSightMarkerActor>* MarkerSlot = Markers.Find(Entry->Id);
 		ATrueSightMarkerActor* Marker = MarkerSlot != nullptr ? MarkerSlot->Get() : nullptr;

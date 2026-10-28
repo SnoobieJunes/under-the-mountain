@@ -130,6 +130,7 @@ tag, choose the owing one.
 - Where: Source/UnderTheMountain/Scent/, Content/Gameplay/Treasures/ (M_ScentGold), Scripts/create_treasures.py.
 - Plan: GAMEPLAY.md section 3 said "One Niagara ribbon per registered treasure" → now: ribbon visuals are cube geometry in M1; Niagara ribbon upgrade is filed as T-031 in this commit. docs/PLAN.md unaffected (it does not prescribe the ribbon renderer).
 - Commit(s): this commit
+- [Correction, 2026-10-28: resolved by T-031 — NS_ScentRibbon (location-based ribbon emitter, SpawnRate 240/s, 0.6s lifetime, RibbonWidth linked to FScentMath via User.RibbonWidth, ScaleColor alpha linked to User.RibbonOpacity) replaces the cube; AScentRibbonActor sweeps the emitter nose<->treasure. PIE evidence Content/Gameplay/Treasures/niagara_ribbon_pie.png; 7/7 tests.]
 
 ## 2026-10-28 — T-012 traversal verified geometrically; PIE walk deferred to T-030  [approach]
 - Task: T-012 (lair level; TASKS.md Accept)

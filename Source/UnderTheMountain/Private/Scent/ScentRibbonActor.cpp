@@ -1,47 +1,36 @@
 // Copyright Under the Mountain contributors.
-// [2026-10-28 T-013] AScentRibbonActor implementation: stretches one
-// engine cube between two points. All scent meaning (how wide, how
-// opaque) is decided by FScentMath/UScentComponent; this actor only
-// knows endpoint geometry and one material scalar.
+// [2026-10-28 T-031] AScentRibbonActor implementation: a Niagara
+// component swept nose<->treasure. The NS_ScentRibbon emitter spawns
+// location-based particles (they stay where they were spawned), so
+// the ribbon the renderer draws through them is the swept path.
+// Replaces the T-013 stretched-cube placeholder wholesale — same
+// SetEndpoints/SetOpacityFactor contract for UScentComponent.
 
 #include "Scent/ScentRibbonActor.h"
+#include "UnderTheMountain.h"
 
-#include "Components/StaticMeshComponent.h"
-#include "Materials/MaterialInstanceDynamic.h"
-#include "Materials/MaterialInterface.h"
-#include "Math/RotationMatrix.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
 #include "UObject/ConstructorHelpers.h"
 
 AScentRibbonActor::AScentRibbonActor()
 {
-	// [2026-10-28 T-013] No tick: UScentComponent drives endpoint and
-	// opacity updates each frame.
-	PrimaryActorTick.bCanEverTick = false;
+	// [2026-10-28 T-031] Ticks because the emitter sweep is the
+	// ribbon; without the sweep there is no line to render.
+	PrimaryActorTick.bCanEverTick = true;
 
-	Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Mesh"));
-	SetRootComponent(Mesh);
-	// [2026-10-28 T-013] A smell blocks nothing and is hit by nothing.
-	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	FX = CreateDefaultSubobject<UNiagaraComponent>(TEXT("FX"));
+	SetRootComponent(FX);
+	// [2026-10-28 T-031] A smell blocks nothing and is hit by
+	// nothing; Niagara components do not collide in any case.
+	FX->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
-	// [2026-10-28 T-013] Engine cube (100 cm) as the ribbon body; the
-	// /100 terms in SetEndpoints assume exactly this unit size.
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMesh(
-		TEXT("/Engine/BasicShapes/Cube.Cube"));
-	if (CubeMesh.Succeeded())
+	static ConstructorHelpers::FObjectFinder<UNiagaraSystem> SystemAsset(
+		TEXT("/Game/Gameplay/Treasures/NS_ScentRibbon.NS_ScentRibbon"));
+	if (SystemAsset.Succeeded())
 	{
-		Mesh->SetStaticMesh(CubeMesh.Object);
-	}
-
-	// [2026-10-28 T-013] Scent-gold material authored by
-	// Scripts/create_treasures.py; absent in a fresh clone until that
-	// script runs, in which case the ribbon renders in the cube's
-	// default material — geometry (and its value-scaled width) still
-	// reads, colour is the only thing lost.
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> ScentMaterial(
-		TEXT("/Game/Gameplay/Treasures/M_ScentGold.M_ScentGold"));
-	if (ScentMaterial.Succeeded())
-	{
-		Mesh->SetMaterial(0, ScentMaterial.Object);
+		RibbonSystem = SystemAsset.Object;
+		FX->SetAsset(RibbonSystem);
 	}
 }
 
@@ -49,45 +38,68 @@ void AScentRibbonActor::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// [2026-10-28 T-013] One dynamic instance per ribbon so opacity is
-	// per-treasure. A mesh with no material is valid (greybox), so a
-	// null instance just means SetOpacityFactor stores without
-	// applying — guarded there, not treated as an error here.
-	if (Mesh != nullptr && Mesh->GetMaterial(0) != nullptr)
+	if (RibbonSystem == nullptr)
 	{
-		DynamicMaterial = Mesh->CreateDynamicMaterialInstance(0);
-		if (DynamicMaterial != nullptr)
-		{
-			DynamicMaterial->SetScalarParameterValue(TEXT("Opacity"), VisibleOpacity);
-		}
+		// [2026-10-28 T-031] Surfaced, never swallowed: without the
+		// authored system this ribbon renders nothing, and the scent
+		// system would otherwise fail invisibly.
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("ScentRibbonActor: NS_ScentRibbon not found; ribbon will not render."));
+		return;
 	}
+	FX->SetVariableFloat(FName(TEXT("User.RibbonWidth")), RibbonWidthCm);
+	FX->SetVariableFloat(FName(TEXT("User.RibbonOpacity")), VisibleOpacity);
+	FX->Activate(true);
 }
 
 void AScentRibbonActor::SetEndpoints(const FVector& From, const FVector& To, float WidthCm)
 {
-	const FVector Delta = To - From;
-	const float LengthCm = Delta.Size();
-	const float WidthScale = WidthCm / 100.0f;
-
-	SetActorLocation((From + To) * 0.5f);
-	if (LengthCm <= KINDA_SMALL_NUMBER)
+	SegmentFrom = From;
+	SegmentTo = To;
+	RibbonWidthCm = WidthCm;
+	if (FX != nullptr && RibbonSystem != nullptr)
 	{
-		// [2026-10-28 T-013] Degenerate ribbon (dragon standing on the
-		// treasure): zero length, keep the last rotation — MakeFromX
-		// on a zero vector would be meaningless.
-		SetActorScale3D(FVector(0.0f, WidthScale, WidthScale));
-		return;
+		FX->SetVariableFloat(FName(TEXT("User.RibbonWidth")), RibbonWidthCm);
 	}
-
-	SetActorRotation(FRotationMatrix::MakeFromX(Delta / LengthCm).Rotator());
-	SetActorScale3D(FVector(LengthCm / 100.0f, WidthScale, WidthScale));
 }
 
 void AScentRibbonActor::SetOpacityFactor(float Opacity)
 {
 	VisibleOpacity = Opacity;
-	if (DynamicMaterial != nullptr)
+	if (FX != nullptr && RibbonSystem != nullptr)
 	{
-		DynamicMaterial->SetScalarParameterValue(TEXT("Opacity"), VisibleOpacity);
+		FX->SetVariableFloat(FName(TEXT("User.RibbonOpacity")), VisibleOpacity);
 	}
+}
+
+void AScentRibbonActor::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	if (FX == nullptr || RibbonSystem == nullptr)
+	{
+		return;
+	}
+
+	const float LengthCm = FVector::Dist(SegmentFrom, SegmentTo);
+	if (LengthCm <= KINDA_SMALL_NUMBER)
+	{
+		FX->SetWorldLocation(SegmentFrom);
+		return;
+	}
+
+	// [2026-10-28 T-031] Ping-pong sweep: phase advances at a fixed
+	// world speed so long lair ribbons and short hoard ribbons lay
+	// particles at the same density.
+	SweepPhase += SweepDirection * (SweepSpeed * DeltaSeconds / LengthCm);
+	if (SweepPhase >= 1.0f)
+	{
+		SweepPhase = 1.0f;
+		SweepDirection = -1.0f;
+	}
+	else if (SweepPhase <= 0.0f)
+	{
+		SweepPhase = 0.0f;
+		SweepDirection = 1.0f;
+	}
+	FX->SetWorldLocation(FMath::Lerp(SegmentFrom, SegmentTo, SweepPhase));
 }

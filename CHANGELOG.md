@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-10-28 — T-031 — Scent ribbons are now Niagara: NS_ScentRibbon sweeps nose-to-treasure per registered item, width set by its gold value, true-sight dimming via particle alpha (replaces the cube-geometry ribbons)
+
 2026-10-28 — T-032 — The playable dragon is now the real dragon: SK_Dragon_v4 renders on the pawn (placeholder ball hidden), standing in the capsule at 2x scale with the T-029 walk cycle playing while moving; evidence Content/Meshy/Dragon/dragon_pawn_pie.png
 
 2026-10-28 — T-013 — Treasure + scent: treasures placed in the lair (goblet, cup, chest, Seeing Stone) register on spawn and project scent ribbons whose thickness scales with gold value; Seeing Stone true-sight toggle (T / gamepad left face) dims scent and reveals teal treasure markers; ribbon is cube geometry pending Niagara upgrade T-031

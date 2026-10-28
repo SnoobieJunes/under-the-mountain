@@ -7,6 +7,7 @@
 
 #include "Misc/AutomationTest.h"
 #include "Scent/ScentMath.h"
+#include "Scent/ScentRibbonActor.h"
 #include "Treasure/TreasureRegistry.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -162,6 +163,30 @@ bool FScentNoDistanceTest::RunTest(const FString& Parameters)
 			  BaseWidth);
 	TestEqual(TEXT("resting width static at other times too"),
 			  FScentMath::PulsedWidth(BaseWidth, 3.75f, false), BaseWidth);
+	return true;
+}
+
+// [2026-10-28 T-031] The Niagara actor must carry exactly the width
+// FScentMath computed — this is the seam where a value-scaled ribbon
+// could silently become a fixed-width one.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScentRibbonWidthPassThroughTest,
+								 "UnderTheMountain.Scent.RibbonWidthPassThrough",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FScentRibbonWidthPassThroughTest::RunTest(const FString& Parameters)
+{
+	AScentRibbonActor* Ribbon = NewObject<AScentRibbonActor>();
+	const float CrownWidth = FScentMath::RibbonWidthForValue(1200);
+	Ribbon->SetEndpoints(FVector::ZeroVector, FVector(5000.0f, 0.0f, 0.0f), CrownWidth);
+	TestEqual(TEXT("ribbon keeps the FScentMath crown width"), Ribbon->CurrentWidth(), CrownWidth);
+
+	const float TrinketWidth = FScentMath::RibbonWidthForValue(10);
+	Ribbon->SetEndpoints(FVector::ZeroVector, FVector(100.0f, 0.0f, 0.0f), TrinketWidth);
+	TestEqual(TEXT("ribbon keeps the FScentMath trinket width"), Ribbon->CurrentWidth(),
+			  TrinketWidth);
+	TestTrue(TEXT("crown ribbon is wider than trinket ribbon"), CrownWidth > TrinketWidth);
+	Ribbon->SetOpacityFactor(0.3f);
+	TestEqual(TEXT("ribbon keeps the true-sight opacity factor"), Ribbon->VisibleOpacity, 0.3f);
 	return true;
 }
 
