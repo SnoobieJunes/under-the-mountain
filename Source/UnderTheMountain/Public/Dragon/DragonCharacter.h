@@ -67,6 +67,18 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 
 	bool IsFlying() const;
 
+	// [2026-10-28 T-033] Input contract: true only when every
+	// code-created action and the mapping context exist.
+	// EnsureInputActions() guarantees this before SetupPlayerInput
+	// Component binds anything (bindings store the action pointer,
+	// so a null bound early can never fire).
+	bool HasInputActions() const;
+	// [2026-10-28 T-033] Build the actions if they don't exist yet.
+	// Lazy because UObjects cannot be created inside the class
+	// constructor (CDO creation asserts); called at the top of
+	// SetupPlayerInputComponent and BeginPlay.
+	void EnsureInputActions();
+
 	// [2026-10-28 T-032] Walk cycle (T-029) played single-node while
 	// the pawn actually moves; nullptr if the asset failed to load,
 	// in which case the mesh holds its standing bind pose.

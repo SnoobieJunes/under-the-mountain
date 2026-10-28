@@ -98,6 +98,12 @@ ADragonCharacter::ADragonCharacter()
 	Move->BrakingDecelerationFlying = 300.0f;
 	bUseControllerRotationYaw = false;
 	Move->bOrientRotationToMovement = true;
+
+	// [2026-10-28 T-033] NOTE: input actions are NOT built here —
+	// creating UObjects inside a class constructor asserts during
+	// CDO creation (FObjectInitializer::AssertIfInConstructor, fatal
+	// at module load; proven by the first T-033 attempt). They are
+	// built lazily by EnsureInputActions() before first use.
 }
 
 bool ADragonCharacter::IsFlying() const
@@ -105,16 +111,45 @@ bool ADragonCharacter::IsFlying() const
 	return GetCharacterMovement()->MovementMode == MOVE_Flying;
 }
 
+bool ADragonCharacter::HasInputActions() const
+{
+	// [2026-10-28 T-033] Non-null check for the full code-created
+	// input set; EnsureInputActions must have run (it does, at the
+	// top of SetupPlayerInputComponent and BeginPlay).
+	return MoveAction != nullptr && LookAction != nullptr && FlapAction != nullptr &&
+		   ToggleFlightAction != nullptr && DiveAction != nullptr && TrueSightAction != nullptr &&
+		   TintAction != nullptr && MappingContext != nullptr;
+}
+
+void ADragonCharacter::EnsureInputActions()
+{
+	// [2026-10-28 T-033] Lazy build, idempotent: the original bug
+	// was SetupPlayerInputComponent binding null actions (created
+	// only in BeginPlay, which can run after possession). Building
+	// here — first thing in both entry points — guarantees the
+	// pointers BindAction stores are the real actions.
+	if (!HasInputActions())
+	{
+		BuildInputActions();
+	}
+}
+
 void ADragonCharacter::BeginPlay()
 {
 	Super::BeginPlay();
-	BuildInputActions();
+	// [2026-10-28 T-033] Ensure before registering the context (see
+	// EnsureInputActions); SetupPlayerInputComponent does the same
+	// before binding, so either order is now safe.
+	EnsureInputActions();
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
 	{
 		if (UEnhancedInputLocalPlayerSubsystem* Sub =
 				ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
 		{
-			Sub->AddMappingContext(MappingContext, 0);
+			if (MappingContext != nullptr)
+			{
+				Sub->AddMappingContext(MappingContext, 0);
+			}
 		}
 	}
 	UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon pawn spawned at %s"), *GetActorLocation().ToString());
@@ -174,18 +209,52 @@ void ADragonCharacter::BuildInputActions()
 void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
+	// [2026-10-28 T-033] First: guarantee the actions exist, THEN
+	// bind them (the original order bound nulls — see header).
+	EnsureInputActions();
 	UEnhancedInputComponent* EIC = CastChecked<UEnhancedInputComponent>(PlayerInputComponent);
-	EIC->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ADragonCharacter::HandleMove);
-	EIC->BindAction(LookAction, ETriggerEvent::Triggered, this, &ADragonCharacter::HandleLook);
-	EIC->BindAction(FlapAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleFlap);
-	EIC->BindAction(ToggleFlightAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleToggleFlight);
-	EIC->BindAction(DiveAction, ETriggerEvent::Triggered, this, &ADragonCharacter::HandleDive);
-	// [2026-10-28 T-030] Release paths: without these, bDiving stayed true
-	// after Shift/trigger release and the dragon kept accelerating.
-	EIC->BindAction(DiveAction, ETriggerEvent::Completed, this, &ADragonCharacter::HandleDiveEnd);
-	EIC->BindAction(DiveAction, ETriggerEvent::Canceled, this, &ADragonCharacter::HandleDiveEnd);
-	EIC->BindAction(TrueSightAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleTrueSight);
-	EIC->BindAction(TintAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleToggleTintPicker);
+	// [2026-10-28 T-033] Bind defensively: a null action stores a
+	// binding that can never fire, so skip nulls and surface the
+	// core Move/Look failure instead of swallowing it silently.
+	if (MoveAction == nullptr || LookAction == nullptr)
+	{
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("Dragon input binding skipped: Move/Look action is null (Move=%s, Look=%s)"),
+			   MoveAction != nullptr ? TEXT("set") : TEXT("null"),
+			   LookAction != nullptr ? TEXT("set") : TEXT("null"));
+	}
+	if (MoveAction != nullptr)
+	{
+		EIC->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ADragonCharacter::HandleMove);
+	}
+	if (LookAction != nullptr)
+	{
+		EIC->BindAction(LookAction, ETriggerEvent::Triggered, this, &ADragonCharacter::HandleLook);
+	}
+	if (FlapAction != nullptr)
+	{
+		EIC->BindAction(FlapAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleFlap);
+	}
+	if (ToggleFlightAction != nullptr)
+	{
+		EIC->BindAction(ToggleFlightAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleToggleFlight);
+	}
+	if (DiveAction != nullptr)
+	{
+		EIC->BindAction(DiveAction, ETriggerEvent::Triggered, this, &ADragonCharacter::HandleDive);
+		// [2026-10-28 T-030] Release paths: without these, bDiving stayed true
+		// after Shift/trigger release and the dragon kept accelerating.
+		EIC->BindAction(DiveAction, ETriggerEvent::Completed, this, &ADragonCharacter::HandleDiveEnd);
+		EIC->BindAction(DiveAction, ETriggerEvent::Canceled, this, &ADragonCharacter::HandleDiveEnd);
+	}
+	if (TrueSightAction != nullptr)
+	{
+		EIC->BindAction(TrueSightAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleTrueSight);
+	}
+	if (TintAction != nullptr)
+	{
+		EIC->BindAction(TintAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleToggleTintPicker);
+	}
 }
 
 void ADragonCharacter::HandleMove(const FInputActionValue& Value)
