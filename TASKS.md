@@ -3,10 +3,6 @@
      acceptance criteria are not pickable — sharpen them first. -->
 
 ## Now
-- [ ] T-012 — Lair level: 3 chambers + hoard room + peak exit, dressed
-      Why: the patrol space the scent mechanic is played in.
-      Accept: Level loads in PIE, dragon traverses all chambers on foot and exits via the peak in flight; no collision soft-locks found in a scripted traversal; 60 fps in lair on this Mac (stat fps capture in task evidence).
-      Touches: Content/Maps/Lair/, Content/Meshy/   Depends: T-011   Gated: none
 - [ ] T-013 — Treasure + scent system
       Why: design pillar 1, the signature mechanic.
       Accept: Placing a treasure DataAsset in the lair produces a scent ribbon whose thickness scales with value; Seeing Stone toggle switches to true-sight markers; automation tests for registry/value scaling pass.
@@ -59,6 +55,7 @@
       Touches: goose-deuce.md, docs/PLAN.md, TASKS.md   Depends: none   Gated: cadence
 
 ## Blocked
+- [!] T-012 — Lair level: 3 chambers + hoard room + peak exit, dressed — BLOCKED 2026-10-28: headless level build wedges against the running GUI editor's project lock (UnrealEditor-Cmd wrote no log in 7 min; killed). READY TO RUN when the GUI editor is closed (or its MCP server is live): Scripts/create_lair.py (builds Content/Maps/Lair/Lair.umap: 3 chambers + hoard room + peak shaft, materials/props/lights) then Scripts/verify_lair.py (actor counts + chamber-to-chamber/shaft line traces). Remaining after that: PIE traversal + 60 fps stat capture (needs the GUI editor).
 
 ## Dropped
 
