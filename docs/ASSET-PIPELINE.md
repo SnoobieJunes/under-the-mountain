@@ -16,10 +16,19 @@ how for assets. Written 2026-10-27 (T-001); exercised first in the M1 asset task
 4. **Rig + animation (characters only).** `meshy_rig` then animation presets
    (`meshy_animate`, 600+ clips) for humanoids — thieves are humanoid, this
    path is proven. Quadruped/winged rigging is NOT assumed: see dragon gate.
-5. **Download.** `meshy_download_model` → `Content/Meshy/Raw/<asset>/`
-   (FBX for rigged characters, GLB for static props). Raw files are
-   untouchable once committed (AGENTS.md → LOOP untouchables) — re-download
-   instead of editing.
+5. **Download — always save locally, same session (owner rule, 2026-10-28).**
+   Every Meshy output is saved to this machine before the session ends —
+   never leave an asset only behind a signed Meshy link (links expire ~3 days
+   after the task finishes; saved files are permanent). `meshy_download_model`
+   → `Content/Meshy/Raw/<asset>/` (FBX for rigged characters, GLB for static
+   props), plus everything else the task produced that a link could lose:
+   the preview/thumbnail rendering (`<asset>_preview.png`), base-color
+   textures, and for rig tasks the free walk/run animation files (withSkin
+   GLB + FBX and armature GLB, fetched from the rigging task's URLs — rig
+   tasks are not saved by `meshy_download_model` itself). Verify every saved
+   file exists with non-zero size, and name the saved paths in the report.
+   Raw files are untouchable once committed (AGENTS.md → LOOP untouchables)
+   — re-download instead of editing.
 6. **Import to Unreal** via unreal-mcp / editor import: FBX → Skeletal Mesh
    (characters) or Static Mesh (props), GLB via Interchange. Imported assets
    live beside Raw as `.uasset`; materials rebuilt as project materials,

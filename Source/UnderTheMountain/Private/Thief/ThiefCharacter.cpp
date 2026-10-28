@@ -1,0 +1,202 @@
+// Copyright Under the Mountain contributors.
+// [2026-10-28 T-014] AThiefCharacter implementation: movement plumbing
+// only. The brain picks destinations; this actor feeds
+// AddMovementInput toward them and keeps the movement component's
+// speed in step with the brain's state.
+
+#include "Thief/ThiefCharacter.h"
+
+#include "Thief/ThiefBrain.h"
+#include "Thief/ThiefDataAsset.h"
+#include "Treasure/TreasureSubsystem.h"
+#include "UnderTheMountain.h"
+
+#include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "UObject/ConstructorHelpers.h"
+
+AThiefCharacter::AThiefCharacter()
+{
+	PrimaryActorTick.bCanEverTick = true;
+
+	// [2026-10-28 T-014] Placeholder body: skeletal mesh hidden in
+	// favour of an engine sphere, mirroring ADragonCharacter's greybox
+	// approach. Visual only (NoCollision) — the inherited capsule
+	// keeps its default character collision for movement.
+	GetMesh()->SetVisibility(false);
+
+	Body = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Body"));
+	Body->SetupAttachment(GetCapsuleComponent());
+	Body->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(
+		TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+	if (SphereMesh.Succeeded())
+	{
+		Body->SetStaticMesh(SphereMesh.Object);
+	}
+
+	// [2026-10-28 T-014] Walk toward the brain's destination facing
+	// travel direction; BeginPlay sets the actual speeds from data.
+	bUseControllerRotationYaw = false;
+	GetCharacterMovement()->bOrientRotationToMovement = true;
+}
+
+UThiefBrain* AThiefCharacter::GetBrain() const
+{
+	return Brain.Get();
+}
+
+void AThiefCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+
+	if (ThiefData == nullptr)
+	{
+		// [2026-10-28 T-014] Surfaced, not swallowed: without data the
+		// thief has no speeds/HP/loot rules — say so once and stand
+		// still (the brain no-ops on a null config too).
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("Thief %s: no ThiefData assigned — brain will no-op"), *GetName());
+	}
+
+	UTreasureRegistry* Registry = nullptr;
+	if (UWorld* World = GetWorld())
+	{
+		if (UTreasureSubsystem* TreasureSubsystem = World->GetSubsystem<UTreasureSubsystem>())
+		{
+			Registry = TreasureSubsystem->Registry();
+		}
+	}
+	if (Registry == nullptr)
+	{
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("Thief %s: no treasure registry in world — brain will no-op"), *GetName());
+	}
+
+	Brain = NewObject<UThiefBrain>(this);
+	Brain->Init(ThiefData.Get(), Registry, FName(GetName()));
+	Brain->SetExitLocation(ExitLocation);
+
+	if (ThiefData != nullptr)
+	{
+		Body->SetRelativeScale3D(ThiefData->BodyScale);
+		GetCharacterMovement()->MaxWalkSpeed = ThiefData->SneakSpeed;
+	}
+	UE_LOG(LogUnderTheMountain, Log, TEXT("Thief %s spawned at %s, exit %s"), *GetName(),
+		   *GetActorLocation().ToString(), *ExitLocation.ToString());
+}
+
+void AThiefCharacter::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	if (Brain == nullptr)
+	{
+		return;
+	}
+
+	Brain->Tick(DeltaSeconds, GetActorLocation());
+
+	// [2026-10-28 T-014] Debug cadence for PT-THIEF runs: one line
+	// per thief per 10 s so a -game log shows the scenario playing
+	// out (state, position, destination) without per-tick spam.
+	DebugLogTimer += DeltaSeconds;
+	if (DebugLogTimer >= 10.0f)
+	{
+		DebugLogTimer = 0.0f;
+		UE_LOG(LogUnderTheMountain, Log, TEXT("Thief %s state=%d at %s dest=%s carrying=%d"),
+			   *GetName(), static_cast<int32>(Brain->State()), *GetActorLocation().ToString(),
+			   *Brain->CurrentDestination().ToString(), Brain->CarriedItems().Num());
+	}
+
+	if (Brain->ReachedExit())
+	{
+		if (!bLoggedExit)
+		{
+			bLoggedExit = true;
+			UE_LOG(LogUnderTheMountain, Log, TEXT("Thief %s reached exit carrying %d items"),
+				   *GetName(), Brain->CarriedItems().Num());
+		}
+		// [2026-10-28 T-014] Escaped: stop spending ticks. Removal /
+		// notoriety bookkeeping for a successful theft is a later
+		// system's job; the actor stands at the exit until then.
+		SetActorTickEnabled(false);
+		return;
+	}
+
+	// [2026-10-28 T-014] Speed follows state: fleeing and scared are
+	// runs, everything else is the sneak pace.
+	if (ThiefData != nullptr)
+	{
+		const bool bRunning =
+			Brain->State() == EThiefState::Flee || Brain->State() == EThiefState::Scared;
+		GetCharacterMovement()->MaxWalkSpeed = bRunning ? ThiefData->FleeSpeed : ThiefData->SneakSpeed;
+	}
+
+	// [2026-10-28 T-014] Ground-plane steering with chamber waypoints:
+	// the lair's doors all sit on the y=0 corridor between chamber
+	// centres (Scripts/create_lair.py), so a thief heading to another
+	// chamber first makes for its own centre, then the next centre —
+	// straight-line steering to a cross-chamber target wedges on the
+	// chamber walls (proven in the first -game run: no thief ever
+	// arrived). Within a chamber, steering is direct.
+	static const float ChamberCentersX[] = {0.0f, 6000.0f, 12000.0f, 19000.0f};
+	auto ChamberIndex = [](float X)
+	{
+		if (X < 3000.0f)
+		{
+			return 0;
+		}
+		if (X < 9000.0f)
+		{
+			return 1;
+		}
+		if (X < 15500.0f)
+		{
+			return 2;
+		}
+		return 3;
+	};
+	const FVector MyLocation = GetActorLocation();
+	const FVector BrainDestination = Brain->CurrentDestination();
+	FVector SteerTarget = BrainDestination;
+	const int32 MyChamber = ChamberIndex(MyLocation.X);
+	const int32 DestChamber = ChamberIndex(BrainDestination.X);
+	if (MyChamber != DestChamber)
+	{
+		const FVector OwnCenter(ChamberCentersX[MyChamber], 0.0f, MyLocation.Z);
+		if (FVector::Dist2D(MyLocation, OwnCenter) > 200.0f)
+		{
+			SteerTarget = OwnCenter;
+		}
+		else
+		{
+			const int32 Next = MyChamber + (DestChamber > MyChamber ? 1 : -1);
+			SteerTarget = FVector(ChamberCentersX[Next], 0.0f, MyLocation.Z);
+		}
+	}
+	const FVector ToDestination = SteerTarget - MyLocation;
+	if (ToDestination.Size() > 10.0f)
+	{
+		FVector Direction = ToDestination;
+		Direction.Z = 0.0f;
+		if (!Direction.IsNearlyZero())
+		{
+			AddMovementInput(Direction.GetSafeNormal(), 1.0f);
+		}
+	}
+}
+
+void AThiefCharacter::OnRoarHeard()
+{
+	if (Brain != nullptr)
+	{
+		Brain->OnRoar(GetActorLocation());
+	}
+}
+
+bool AThiefCharacter::ApplyThiefDamage(float Damage)
+{
+	return Brain != nullptr && Brain->ApplyDamage(Damage, GetActorLocation());
+}
