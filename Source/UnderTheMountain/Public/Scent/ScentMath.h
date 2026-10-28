@@ -20,7 +20,6 @@ struct UNDERTHEMOUNTAIN_API FScentRibbonParams
 {
 	float Width = 0.0f;
 	float Opacity = 1.0f;
-	FLinearColor Color = FLinearColor::White;
 	bool bCarried = false;
 };
 
@@ -53,9 +52,10 @@ struct UNDERTHEMOUNTAIN_API FScentMath
 
 	// [2026-10-28 T-013] Full ribbon parameters for one registry entry.
 	// Reads Entry.GoldValue and Entry.bCarried only; Entry.Location is
-	// deliberately never touched (no-information rule). Color is the
-	// tarnished gold (0.686, 0.525, 0.345) from docs/GAMEPLAY.md
-	// section 3 for every treasure alike.
+	// deliberately never touched (no-information rule).
+	// [2026-10-28 T-041] No colour here: the tarnished-gold scent
+	// colour is baked into NS_ScentRibbon at authoring time, so the
+	// params carry only width, opacity and carried state.
 	static FScentRibbonParams ParamsForEntry(const FTreasureEntry& Entry, float TimeSeconds,
 											 bool bTrueSightActive);
 };

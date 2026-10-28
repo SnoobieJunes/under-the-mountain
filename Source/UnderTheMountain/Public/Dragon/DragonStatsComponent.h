@@ -4,9 +4,14 @@
 // [2026-10-28 T-011] Extended with the HP pool, flight-mode drain rates
 // (glide/hover/dives are classified by the pawn), exhaustion HP drain and
 // the hard-landing damage curve from docs/GAMEPLAY.md section 2.
-// Invariants: stamina is always clamped to [0, MaxStamina] and HP to
-// [0, MaxHP]; only this component writes either pool — the pawn asks,
-// never sets (PLAN.md seams).
+// Invariants: stamina is clamped to [0, MaxStamina] and HP to
+// [0, MaxHP] when written through this component's methods.
+// [2026-10-28 T-041] Honest contract, not encapsulation: Stamina, HP
+// and the tuning fields below are public UPROPERTYs, so the editor
+// and tests can (and tests do) write them directly, bypassing the
+// clamping. In production code paths this component's methods are
+// the only writers of either pool — the pawn asks through them and
+// never assigns the pools directly (PLAN.md seams).
 
 #pragma once
 
@@ -65,8 +70,10 @@ class UNDERTHEMOUNTAIN_API UDragonStatsComponent : public UActorComponent
 	float Stamina;
 
 	// [2026-10-28 T-011] HP pool (GAMEPLAY.md section 2: 100 so damage
-	// values below read as percent of pool). Same write-only-via-this-
-	// component invariant as stamina.
+	// values below read as percent of pool).
+	// [2026-10-28 T-041] Same public-UPROPERTY contract as stamina
+	// (file header): production writes go through this component's
+	// HP methods; the editor/tests may set the fields directly.
 	UPROPERTY(EditAnywhere, Category = "Dragon|Stats")
 	float MaxHP = 100.0f;
 
@@ -125,7 +132,4 @@ class UNDERTHEMOUNTAIN_API UDragonStatsComponent : public UActorComponent
 	// neither. Keeping the decision here makes the rule testable
 	// without spawning the pawn or a world.
 	bool ShouldForceFallAtZeroStamina(float RatePerSecond) const;
-
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
-							   FActorComponentTickFunction* ThisTickFunction) override;
 };

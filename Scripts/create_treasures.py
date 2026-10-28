@@ -1,5 +1,7 @@
 # [2026-10-28 T-013] Author Content/Gameplay/Treasures/: treasure DataAssets,
-# scent/true-sight materials, and place treasure actors in Lair.umap.
+# the true-sight material, and place treasure actors in Lair.umap.
+# [2026-10-28 T-041] Scent colour is not a material here any more: it
+# lives in NS_ScentRibbon (see the make_material calls below).
 # Values are docs/GAMEPLAY.md section 3/6 examples; brackets do the rest.
 import unreal
 
@@ -40,7 +42,9 @@ def make_material(name, color, emissive_scale, disable_depth=False, translucent=
     require(eal.save_asset(path), "save material %s" % path)
     return mat
 
-make_material("M_ScentGold", (0.686, 0.525, 0.345), True, translucent=True)
+# [2026-10-28 T-041] No M_ScentGold: scent colour is baked into
+# NS_ScentRibbon (Niagara), so nothing references that material. Any
+# existing M_ScentGold.uasset on disk is left untouched by this script.
 make_material("M_TrueSight", (0.46, 0.68, 0.64), True, disable_depth=True)
 
 TREASURES = [

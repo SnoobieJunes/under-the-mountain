@@ -1,9 +1,9 @@
 // Copyright Under the Mountain contributors.
 // [2026-10-28 T-027] Scale-tint implementation. All clamping, mesh
 // writes and slot I/O live here; UI only ever calls SetScaleTint and
-// the pawn never touches the material parameter directly (PLAN.md
-// seams, mirroring UDragonStatsComponent's write-only-via-component
-// rule).
+// the pawn never touches the material parameter directly (PLAN.md seams).
+// [2026-10-28 T-041] That is the production-path contract, not
+// encapsulation: ScaleTint is a public UPROPERTY (see the header).
 
 #include "Dragon/DragonAppearanceComponent.h"
 #include "UnderTheMountain.h"

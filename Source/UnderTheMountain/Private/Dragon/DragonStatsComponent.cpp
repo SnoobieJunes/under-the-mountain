@@ -1,7 +1,9 @@
 // Copyright Under the Mountain contributors.
 // [2026-10-27 T-003] Stamina implementation. Flight drain is driven from the
-// pawn (it knows the movement mode); regen likewise, so TickComponent stays
-// empty — a component that guesses state it doesn't own was rejected.
+// pawn (it knows the movement mode); regen likewise — a component that
+// guesses state it doesn't own was rejected.
+// [2026-10-28 T-041] Tick stays disabled in the constructor and there
+// is no TickComponent override: the pawn drives every drain/regen call.
 // [2026-10-28 T-011] HP pool + landing-damage curve + exhaustion drain
 // added under the same contract: all math here, all state knowledge
 // (movement mode, impact speed) stays with the pawn.
@@ -104,10 +106,4 @@ bool UDragonStatsComponent::ShouldForceFallAtZeroStamina(float RatePerSecond) co
 	// burn. Glide and hover have positive rates, so continuing either
 	// at zero stamina has both consequences.
 	return RatePerSecond > 0.0f;
-}
-
-void UDragonStatsComponent::TickComponent(float DeltaTime, ELevelTick TickType,
-										  FActorComponentTickFunction* ThisTickFunction)
-{
-	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 }

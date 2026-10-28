@@ -1,12 +1,16 @@
 // Copyright Under the Mountain contributors.
-// Purpose: the playable dragon (walking skeleton, T-003). A placeholder mesh
-// today; the Meshy dragon replaces BodyMesh in T-010 without touching movement
-// code. Created 2026-10-27.
+// Purpose: the playable dragon (walking skeleton, T-003). Created 2026-10-27.
+// [2026-10-28 T-041] The visible body is SK_Dragon_v4 on the inherited
+// skeletal mesh (visible since T-032, set up in the constructor);
+// movement/collision stay on the capsule and movement component, so the
+// mesh is display only. There is no placeholder body any more.
 // [2026-10-28 T-011] Flight feel pass: per-mode stamina drain
 // (dive/glide/hover), exhaustion HP burn, hard-landing damage on Landed,
 // and an on-screen flight debug readout (all tuning in GAMEPLAY.md s2).
-// Invariants: movement mode is the single source of "flying" truth; stamina
-// and HP are only mutated through UDragonStatsComponent.
+// Invariants: movement mode is the single source of "flying" truth.
+// [2026-10-28 T-041] In production code paths the pawn mutates stamina
+// and HP only through UDragonStatsComponent methods; the pools
+// themselves are public UPROPERTYs (see that header) — not encapsulated.
 
 #pragma once
 
@@ -23,7 +27,6 @@ class UInputMappingContext;
 class USpringArmComponent;
 class UCameraComponent;
 class UAnimSequence;
-class UStaticMeshComponent;
 
 UCLASS()
 class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
@@ -49,11 +52,6 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 
 	UPROPERTY(VisibleAnywhere, Category = "Dragon")
 	TObjectPtr<USpringArmComponent> CameraBoom;
-
-	// [2026-10-27 T-003] Visible placeholder body (engine sphere, stretched).
-	// The skeletal mesh stays hidden; T-010 swaps this for the Meshy dragon.
-	UPROPERTY(VisibleAnywhere, Category = "Dragon")
-	TObjectPtr<UStaticMeshComponent> PlaceholderBody;
 
 	UPROPERTY(VisibleAnywhere, Category = "Dragon")
 	TObjectPtr<UCameraComponent> Camera;

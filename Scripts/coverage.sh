@@ -46,9 +46,9 @@
 #   end with the coverage flags; appending them again is harmless, and a
 #   normal Scripts/build.sh regenerates clean rsps anyway.
 # - Denominator is Source/UnderTheMountain product lines only (Tests/
-#   excluded since 2026-10-28 - see the report comment below). The bCodeCoverage
-#   block in UnderTheMountain.Build.cs stays in place, harmless and
-#   opt-in; this script does not use it or UTM_COVERAGE.
+#   excluded since 2026-10-28 - see the report comment below).
+#   [2026-10-28 T-041] There is no bCodeCoverage/UTM_COVERAGE block in
+#   UnderTheMountain.Build.cs (removed as dead); this script never used it.
 # - Only SIGKILL can skip the restore trap. The leftover-backup guard
 #   below restores the original on the next run, or run Scripts/build.sh
 #   to restore normal binaries outright.

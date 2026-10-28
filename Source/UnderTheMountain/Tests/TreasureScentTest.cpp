@@ -153,7 +153,6 @@ bool FScentNoDistanceTest::RunTest(const FString& Parameters)
 	const FScentRibbonParams FarParams = FScentMath::ParamsForEntry(Far, 1.25f, false);
 	TestEqual(TEXT("width ignores distance"), NearParams.Width, FarParams.Width);
 	TestEqual(TEXT("opacity ignores distance"), NearParams.Opacity, FarParams.Opacity);
-	TestTrue(TEXT("color ignores distance"), NearParams.Color == FarParams.Color);
 	TestTrue(TEXT("carried flag carried through"), NearParams.bCarried == FarParams.bCarried);
 
 	TestEqual(TEXT("true-sight dims ribbons to 0.3"), FScentMath::RibbonOpacity(true), 0.3f);

@@ -26,7 +26,6 @@
 #include "InputModifiers.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "Components/StaticMeshComponent.h"
 
 ADragonCharacter::ADragonCharacter()
 {
@@ -77,20 +76,9 @@ ADragonCharacter::ADragonCharacter()
 		GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode);
 	}
 
-	PlaceholderBody = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PlaceholderBody"));
-	PlaceholderBody->SetupAttachment(GetCapsuleComponent());
-	PlaceholderBody->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	// [2026-10-28 T-032] Placeholder retired as the visible body (kept
-	// as a component so nothing referencing it breaks); the skeletal
-	// mesh above is what renders now.
-	PlaceholderBody->SetVisibility(false);
-	PlaceholderBody->SetRelativeScale3D(FVector(1.0f, 2.2f, 1.0f));
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(
-		TEXT("/Engine/BasicShapes/Sphere.Sphere"));
-	if (SphereMesh.Succeeded())
-	{
-		PlaceholderBody->SetStaticMesh(SphereMesh.Object);
-	}
+	// [2026-10-28 T-041] PlaceholderBody removed: the skeletal mesh
+	// above is the visible body (T-032), and nothing referenced the
+	// permanently hidden placeholder sphere any more.
 
 	UCharacterMovementComponent* Move = GetCharacterMovement();
 	Move->MaxFlySpeed = 1800.0f;

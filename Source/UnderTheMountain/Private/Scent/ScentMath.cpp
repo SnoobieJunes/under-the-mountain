@@ -73,15 +73,14 @@ float FScentMath::PulsedWidth(float BaseWidth, float TimeSeconds, bool bCarried)
 FScentRibbonParams FScentMath::ParamsForEntry(const FTreasureEntry& Entry, float TimeSeconds,
 											  bool bTrueSightActive)
 {
-	// [2026-10-28 T-013] No-information rule enforced structurally:
-	// this function never reads Entry.Location, so width, opacity and
-	// color are identical for two equal-value treasures at any
-	// distance apart (pinned by the UnderTheMountain.Scent
+	// [2026-10-28 T-041] No-information rule enforced structurally:
+	// this function never reads Entry.Location, so width and opacity
+	// are identical for two equal-value treasures at any distance
+	// apart (pinned by the UnderTheMountain.Scent
 	// .NoDistanceAndTrueSight test).
 	FScentRibbonParams Params;
 	Params.Width = PulsedWidth(RibbonWidthForValue(Entry.GoldValue), TimeSeconds, Entry.bCarried);
 	Params.Opacity = RibbonOpacity(bTrueSightActive);
-	Params.Color = FLinearColor(0.686f, 0.525f, 0.345f, 1.0f);
 	Params.bCarried = Entry.bCarried;
 	return Params;
 }

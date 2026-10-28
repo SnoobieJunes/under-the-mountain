@@ -2,8 +2,12 @@
 // Purpose: own the dragon's player-chosen scale tint behind one component
 // so UI, the pawn and materials never reach into each other. Created
 // 2026-10-28 (T-027).
-// Invariants: ScaleTint channels are always in [0, 1] with alpha forced
-// to 1; only this component writes the tint and the matching save slot.
+// Invariants: ScaleTint channels are in [0, 1] with alpha forced to 1
+// when written through SetScaleTint/LoadTint (which clamp).
+// [2026-10-28 T-041] Honest contract, not encapsulation: ScaleTint
+// below is a public UPROPERTY, so the editor/tests can write it
+// directly, bypassing clamp/apply/save. In production code paths
+// only this component's methods write the tint and the save slot.
 // C++ only ever sets the 'ScaleTint' VectorParameter on M_DragonScales —
 // the crimson membranes are protected inside that material's graph, so
 // no code here needs (or gets) a way to recolour them.
@@ -18,9 +22,12 @@
 class UMaterialInstanceDynamic;
 
 // [2026-10-28 T-027] Save payload for the scale tint. It lives in this
-// header (not its own file) because nothing else reads the slot: the
-// component below is the single writer/reader, and a second file pair
-// for one FLinearColor was rejected as ceremony.
+// header (not its own file) because nothing else reads the slot in
+// production code paths, and a second file pair for one FLinearColor
+// was rejected as ceremony.
+// [2026-10-28 T-041] The payload field is a public UPROPERTY like the
+// component's ScaleTint; "single writer/reader" of the slot is the
+// production-path contract above, not an access restriction.
 UCLASS()
 class UNDERTHEMOUNTAIN_API UDragonTintSaveGame : public USaveGame
 {
@@ -68,8 +75,10 @@ class UNDERTHEMOUNTAIN_API UDragonAppearanceComponent : public UActorComponent
 	// production by default, the test slot after SetSaveSlotForTesting.
 	FString GetSaveSlotName() const;
 
-	// [2026-10-28 T-027] Current tint. Always clamped (see SetScaleTint),
-	// so readers never need to re-validate it.
+	// [2026-10-28 T-027] Current tint, returned as stored.
+	// [2026-10-28 T-041] It is clamped only if it arrived via
+	// SetScaleTint/LoadTint; a direct public-field write (editor/tests)
+	// is returned unclamped — this getter does not re-validate.
 	FLinearColor GetScaleTint() const;
 
 	// [2026-10-28 T-027] Store, apply and (unless bSave is false) persist
@@ -93,7 +102,9 @@ class UNDERTHEMOUNTAIN_API UDragonAppearanceComponent : public UActorComponent
 	void ApplyTintToMesh(class USkeletalMeshComponent* Mesh);
 
 	// [2026-10-28 T-027] Visible (not editable) in the editor: this is
-	// player state owned by SetScaleTint/LoadTint, not authored tuning.
+	// player state, not authored tuning.
+	// [2026-10-28 T-041] Public UPROPERTY for editor/tests; in
+	// production code paths SetScaleTint/LoadTint are the only writers.
 	UPROPERTY(VisibleAnywhere, Category = "Dragon|Appearance")
 	FLinearColor ScaleTint = FLinearColor::White;
 
