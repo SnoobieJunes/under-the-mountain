@@ -59,6 +59,7 @@
       Touches: goose-deuce.md, docs/PLAN.md, TASKS.md   Depends: none   Gated: cadence
 
 ## Blocked
+- [!] T-029 — Dragon 500k + eye fix + quadruped walk cycle — BLOCKED 2026-10-28: model side DONE via Meshy rerun (owner redirected off Blender): dragon_v4 (Meshy task 01a181fc, single-image from SAM cutout, 35 cr) is rock-free with single regular eyes, 310,196 tris textured + 980,286-tri pre-remesh master in Content/Meshy/Raw/Dragon/, imported as SM_Dragon_v4. Meshy textured cap is ~310k (500k textured does not exist in Meshy; pre-remesh is untextured). Rig/walk remains: Meshy rig is humanoid-only (will melt again — proven T-010), Blender rig attempt (T-028 + uncommitted dragon_500k.* in Content/Meshy/Dragon/) was rejected by owner as slop. Decision needed: (a) invest in a proper Blender/manual quadruped rig + walk, (b) accept Meshy humanoid rig knowing it deforms, (c) defer rig/walk to T-011 flight work and ship static dragon for now. Recommendation: (a) as its own focused task, or (c) if schedule pressure wins.
 
 ## Dropped
 
