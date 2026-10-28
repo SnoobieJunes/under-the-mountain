@@ -123,3 +123,22 @@ tag, choose the owing one.
 <!-- Real entries accumulate below, NEWEST AT THE TOP. The top entries are
      session-start required reading (count: AGENTS.md → Session ritual). -->
 
+## 2026-10-27 — Engine and scope: Unreal 5.8.4, full open-world retained  [decision]
+- Task: T-001 (docs/PLAN.md phases; hackathon submission 2026-11-04)
+- What: Unreal Engine 5.8.4 chosen for the submission over Kaigen3D; the full
+  open-world design from idea.md retained as the vision, delivered in phases
+  M1–M5 (docs/PLAN.md) instead of cut to a standalone slice.
+- Why: Owner decision 2026-10-27 after evaluation. Unreal is installed and
+  verified on this Mac (5.8.4 source, editor present) with a proven
+  Meshy FBX/GLB import path; Kaigen3D is closed-beta, licence-gated, not
+  installed locally, and its asset/animation pipeline is undocumented
+  (docs mostly "soon") — an unbounded risk inside 8 remaining days.
+  Kaigen remains a post-submission spike candidate. "Metal 4" corrected:
+  UE5.8 Mac renders via Metal already; the showcase claim is a native
+  Apple Silicon build at 60 fps, not custom renderer work.
+- Where: docs/PLAN.md, idea.md, docs/ASSET-PIPELINE.md, AGENTS.md snapshot.
+- Plan: no prior plan existed → docs/PLAN.md created in this commit carries
+  the phasing; the M1 phase is the hackathon-critical path and M2 absorbs
+  slips first. TASKS.md corrected in this commit (M1 backlog T-010+).
+- Commit(s): this commit
+

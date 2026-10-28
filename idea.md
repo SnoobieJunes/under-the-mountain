@@ -1,3 +1,43 @@
+# Under the Mountain — Dragon Simulator (refined 2026-10-27, T-001)
+
+> You are the dragon. Smell everything. Trust nothing.
+> Normative plan: docs/PLAN.md (phases, non-goals, gates). This file is the design vision.
+
+## Pitch
+You are a dragon with a hoard, a lair under a mountain, and a problem: you can
+smell *all* treasure — yours, theirs, everyone's — as golden streams in the air,
+but smell tells you value, never distance. Patrolling is your job. Thieves know it.
+
+## Core loop
+Smell (scent streams, thickness = value) → patrol the lair → catch thieves →
+choose: kill inside (safe) / chase outside (Notoriety ★↑) / roar-scare (loot
+dropped, thief flees and talks) → eat to restore stamina → defend the next,
+harder wave — or fly out and become the problem yourself (livestock, villages,
+crown jewels) and pay for it in Notoriety.
+
+## Systems (full vision — delivery phases in PLAN.md)
+- **Scent:** streams connect you to every treasure; bigger value = thicker stream. No range/room info, ever.
+- **Thieves:** solo burglars (quiet, fast), dwarf/human parties (traps, slows, escapes), adventurers (scare-able). Each carries loot worth stealing back.
+- **Notoriety:** invisible inside the lair; public kills/eaten livestock raise it; higher = more + better raiders, then dragonslayers, then an army. Decays by sleeping a generation away.
+- **Flight:** flap to climb, dive for speed, fire/roar from the air, dodge projectiles, hard landings damage you. Movement drains stamina; zero stamina drains HP.
+- **Resources:** HP / magic / stamina. Heal by magic, artifacts, or eating (wildlife < livestock < people in Notoriety cost).
+- **Hoard & artifacts:** treasure is score; artifacts are wearable power (Seeing Stone: true sight vs smell; hardened scales; pendant; mind-control crown; elemental rings; thief-glow helm) that a escaping thief can steal from you.
+- **Progression:** XP from kills + treasure, dragon levels, tribute from townsfolk/zealots at the right reputation.
+- **World:** rival dragons, settlements, castles with crown jewels — the open world the scent streams point into.
+- **Intro:** you wake buried in your hoard as a gnome steals in front of you. "WHO DARES ENTER MY LAIR?" — let him go (he talks) or chase (first Notoriety choice). The tutorial is the dilemma.
+
+## Controls
+Keyboard/mouse + gamepad, both first-class (flight on sticks must feel right).
+
+## Tech (as decided 2026-10-27)
+Unreal Engine 5.8.4 (native Apple Silicon/Metal), Meshy for models, Blender
+fallback for the dragon rig, Hermes/Muse as the agentic coding harness,
+unreal-mcp for live-editor work. Details: docs/ASSET-PIPELINE.md, AGENTS.md.
+
+---
+
+## Original brain-dump (verbatim, pre-refinement — kept for the record)
+
 **Dragon Simulator**
 You are a dragon, you have a hoard of treasure and a large lair.  You are able to ‘smell’ treasure which shows up as a gold floating stream in the air and it connects to every piece of treasure in the game.  You can smell it ALL.  The more valuable the treasure, the larger the scent.  The gotcha is that you can’t tell if the treasure is in the other room, or if its on the other side of the world.  So you are constantly moving from room to room checking on your treasure to ensure it hasn’t been stolen.   There are different thieves that will enter your lair, some are burglars like hobbits, others are parties of dwarves or humans and have traps / other was to slow, entrap or escape you, others are just adventurers and can be scared into dropping the treasure.  If you eat or kill intruders inside your lair, no one knows and you are fine.  It’s kinda like they asked for it, but if they get outside of the lair onto the open road or in the world, and the dragon comes out of its lair to kill them, even if they stole from it, it will gain notoriety.  This will cause more adventurers and thieves to descend upon the mountain, thus making it harder to keep your treasure (but also bringing more treasure to you - since the adventurers have magical artifacts and weapons of value on them).   As a dragon, you are free to leave the lair and follow any of the scents for treasure, the world is filled with it.  Including other kingdoms or crowned jewels that are outlaying towns/cities/castles.  It is possible to also just go full evil dragon and try destroy all the people but your “notoriety or infamy” level reaches a certain threshold, then dragonslayers will start showing up to try to kill you and they will be difficult.  Then if you keep killing without letting your level fall (which prolly involves having most of your treasure plundered) the countryside will band together and send an army which will be almost impossible to survive.   The dragon can lower its infamy by sleeping, since dragons can sleep for an entire generation and then those grievances become nothing but stories of their parents.  
 
