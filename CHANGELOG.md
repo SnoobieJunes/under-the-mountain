@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-10-28 — T-036 — A dragon that empties its stamina mid-dive now keeps diving instead of being forced out of flight; glide/hover exhaustion still burns HP and ends flight
+
 2026-10-28 — T-035 — Fixed a GC ownership bug: the dragon pawn’s input actions, mapping context and tint-picker widget are now reflection-tracked so the garbage collector cannot collect them under the pawn (no user-visible change)
 
 2026-10-28 — T-004 — Sweep #1: plan/readme brought back in line with the shipped game; 8 audit findings filed as T-035–T-042 (no user-visible change)

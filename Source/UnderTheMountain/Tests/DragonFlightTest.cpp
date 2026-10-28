@@ -101,6 +101,19 @@ bool FDragonFlightTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("glide-rate drain over 10 s"), Stats->Stamina, 90.0f);
 	Stats->DrainForFlight(10.0f, 0.0f);
 	TestEqual(TEXT("zero-rate (dive) drain is free"), Stats->Stamina, 90.0f);
+
+	// [2026-10-28 T-036] Regression: zero stamina must not end a free
+	// dive. Before this rule was extracted, the pawn drained HP only
+	// for positive rates but forced MOVE_Falling for every rate, so a
+	// dive at empty stamina was cancelled despite costing nothing.
+	TestFalse(TEXT("zero-stamina dive does not force a fall"),
+			  Stats->ShouldForceFallAtZeroStamina(0.0f));
+	TestFalse(TEXT("negative flight rate does not force a fall"),
+			  Stats->ShouldForceFallAtZeroStamina(-1.0f));
+	TestTrue(TEXT("zero-stamina glide forces a fall"),
+			 Stats->ShouldForceFallAtZeroStamina(Stats->GlideDrainPerSecond));
+	TestTrue(TEXT("zero-stamina hover forces a fall"),
+			 Stats->ShouldForceFallAtZeroStamina(Stats->HoverDrainPerSecond));
 	return true;
 }
 

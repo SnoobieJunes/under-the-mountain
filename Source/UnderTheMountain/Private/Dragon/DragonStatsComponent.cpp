@@ -96,6 +96,16 @@ bool UDragonStatsComponent::CanFlap() const
 	return Stamina >= FlapStaminaCost;
 }
 
+bool UDragonStatsComponent::ShouldForceFallAtZeroStamina(float RatePerSecond) const
+{
+	// [2026-10-28 T-036] A dive is deliberately free in GAMEPLAY.md
+	// section 2: altitude, not stamina, pays for it. Therefore zero
+	// stamina must not convert a dive into a fall or start the HP
+	// burn. Glide and hover have positive rates, so continuing either
+	// at zero stamina has both consequences.
+	return RatePerSecond > 0.0f;
+}
+
 void UDragonStatsComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 										  FActorComponentTickFunction* ThisTickFunction)
 {

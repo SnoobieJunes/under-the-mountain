@@ -117,6 +117,15 @@ class UNDERTHEMOUNTAIN_API UDragonStatsComponent : public UActorComponent
 	// clamped beyond. Reads only this component's tuning fields.
 	float LandingDamageForImpactSpeed(float Speed) const;
 
+	// [2026-10-28 T-036] Exhaustion only ends flight for an action that
+	// is actually spending stamina. The pawn classifies the current
+	// action as a rate (dive 0, glide/hover positive above), and this
+	// component owns the zero-stamina consequence for that rate: a
+	// positive rate burns HP and forces a fall, while a free dive does
+	// neither. Keeping the decision here makes the rule testable
+	// without spawning the pawn or a world.
+	bool ShouldForceFallAtZeroStamina(float RatePerSecond) const;
+
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
 							   FActorComponentTickFunction* ThisTickFunction) override;
 };

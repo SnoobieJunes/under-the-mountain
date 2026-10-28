@@ -418,17 +418,15 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 			const FVector DiveDir = GetControlRotation().Vector();
 			GetCharacterMovement()->Velocity += DiveDir * DiveAcceleration * DeltaSeconds;
 		}
-		if (Stats->Stamina <= 0.0f)
+		if (Stats->Stamina <= 0.0f && Stats->ShouldForceFallAtZeroStamina(FlightDrainRate))
 		{
-			// [2026-10-28 T-011] GAMEPLAY.md section 2 zero-stamina rule:
-			// HP burns at 2/s while a *draining* action continues — a
-			// free dive (rate 0) deliberately skips the burn. Checked
-			// after the stamina drain so the tick that empties the pool
-			// is also the first tick that pays in HP.
-			if (FlightDrainRate > 0.0f)
-			{
-				Stats->DrainHPForExhaustion(DeltaSeconds);
-			}
+			// [2026-10-28 T-036] Only a stamina-spending action has an
+			// exhaustion consequence. A dive reaches this point with a
+			// zero rate, so it keeps flying without HP burn; glide and
+			// hover have positive rates and therefore burn HP before
+			// flight ends. Checked after the stamina drain so the tick
+			// that empties the pool is also the first tick that pays.
+			Stats->DrainHPForExhaustion(DeltaSeconds);
 			// [2026-10-27 T-003] Exhausted dragon glides down, not falls out of
 			// control: force walking mode so landing logic takes over.
 			GetCharacterMovement()->SetMovementMode(MOVE_Falling);
