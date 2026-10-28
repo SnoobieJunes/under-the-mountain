@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-10-28 — T-038 — Scent/treasure lifetime fixes: scent ribbons and markers can no longer outlive their world or registry, moved treasure now keeps its scent endpoint, and failed treasure registration reports itself as failed (no user-visible change)
+
 2026-10-28 — T-037 — Build and level-generation scripts now fail loudly instead of reporting success after a masked format error, failed level check, or failed asset operation (no user-visible change)
 
 2026-10-28 — T-036 — A dragon that empties its stamina mid-dive now keeps diving instead of being forced out of flight; glide/hover exhaustion still burns HP and ends flight

@@ -3,6 +3,9 @@
 // scent visuals are spawned. Appearance math is FScentMath's, treasure
 // truth is UTreasureRegistry's; this component just keeps one ribbon
 // and one marker per live registry entry pointed at the right place.
+// [2026-10-28 T-038] Lifetime rule: visuals belong to exactly one
+// registry/world, so the cached subsystem is revalidated every call
+// and any world/registry loss or change destroys the old visuals.
 
 #include "Scent/ScentComponent.h"
 #include "Scent/ScentMath.h"
@@ -40,14 +43,24 @@ bool UScentComponent::IsSeeingStoneCarried(const UTreasureRegistry* Registry)
 
 UTreasureRegistry* UScentComponent::ResolveRegistry()
 {
+	// [2026-10-28 T-038] Validate the cache on EVERY call: world
+	// subsystems are per-world, so a cached pointer from a previous
+	// PIE/world must never be reused in the current one. With no
+	// world there is nothing to resolve from and the stale cache is
+	// dropped instead of lingering.
+	UWorld* CurrentWorld = GetWorld();
+	if (CurrentWorld == nullptr)
+	{
+		CachedSubsystem = nullptr;
+		return nullptr;
+	}
+	if (CachedSubsystem != nullptr && CachedSubsystem->GetWorld() != CurrentWorld)
+	{
+		CachedSubsystem = nullptr;
+	}
 	if (CachedSubsystem == nullptr)
 	{
-		UWorld* World = GetWorld();
-		if (World == nullptr)
-		{
-			return nullptr;
-		}
-		CachedSubsystem = World->GetSubsystem<UTreasureSubsystem>();
+		CachedSubsystem = CurrentWorld->GetSubsystem<UTreasureSubsystem>();
 	}
 	return CachedSubsystem != nullptr ? CachedSubsystem->Registry() : nullptr;
 }
@@ -104,14 +117,23 @@ void UScentComponent::BeginPlay()
 void UScentComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	DestroyAllVisuals();
+	// [2026-10-28 T-038] Drop the (per-world) subsystem cache and
+	// reset the transition-log state, so a later BeginPlay in a new
+	// world cannot resolve through the dead world's subsystem and
+	// logs its first ribbon count again.
+	CachedSubsystem = nullptr;
+	LastLoggedRibbonCount = -1;
 	Super::EndPlay(EndPlayReason);
 }
 
 void UScentComponent::DestroyAllVisuals()
 {
+	// [2026-10-28 T-038] IsValid (not just != nullptr) before Destroy:
+	// an actor already pending-kill from world teardown must not be
+	// destroyed twice just because our map still points at it.
 	for (TPair<FName, TObjectPtr<AScentRibbonActor>>& Pair : Ribbons)
 	{
-		if (Pair.Value != nullptr)
+		if (IsValid(Pair.Value.Get()))
 		{
 			Pair.Value->Destroy();
 		}
@@ -120,7 +142,7 @@ void UScentComponent::DestroyAllVisuals()
 
 	for (TPair<FName, TObjectPtr<ATrueSightMarkerActor>>& Pair : Markers)
 	{
-		if (Pair.Value != nullptr)
+		if (IsValid(Pair.Value.Get()))
 		{
 			Pair.Value->Destroy();
 		}
@@ -140,7 +162,28 @@ void UScentComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	{
 		// [2026-10-28 T-013] Nothing to smell with or from; quietly
 		// inert (this is the headless/no-world path, not an error).
+		// [2026-10-28 T-038] Inert must not mean orphaned: visuals
+		// belong to exactly one registry/world, so losing any hop
+		// destroys them and resets the transition-log/cap latches,
+		// letting a later healthy tick log and warn afresh.
+		if (!Ribbons.IsEmpty() || !Markers.IsEmpty())
+		{
+			DestroyAllVisuals();
+		}
+		LastSeenRegistry = Registry;
+		LastLoggedRibbonCount = -1;
+		bWarnedRibbonCap = false;
 		return;
+	}
+
+	// [2026-10-28 T-038] Registry identity change (new world/PIE
+	// session): visuals belong to exactly one registry/world, so
+	// destroy everything built from the previous registry before
+	// spawning from this one.
+	if (Registry != LastSeenRegistry.Get())
+	{
+		DestroyAllVisuals();
+		LastSeenRegistry = Registry;
 	}
 
 	// [2026-10-28 T-013] The stone can be stolen while true-sight is
@@ -224,12 +267,30 @@ void UScentComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 														  SpawnParams);
 			if (Ribbon == nullptr)
 			{
-				continue;
+				// [2026-10-28 T-038] A failed spawn must be surfaced
+				// once (naming the entry) instead of silently retried
+				// every tick — and it must not 'continue' past the
+				// marker handling below: a missing ribbon does not
+				// take this entry's true-sight marker down with it.
+				if (!bWarnedRibbonSpawnFailure)
+				{
+					UE_LOG(LogUnderTheMountain, Warning,
+						   TEXT("Scent ribbon spawn FAILED for treasure entry %s; retrying on later ticks."),
+						   *Entry->Id.ToString());
+					bWarnedRibbonSpawnFailure = true;
+				}
 			}
-			Ribbons.Add(Entry->Id, Ribbon);
+			else
+			{
+				bWarnedRibbonSpawnFailure = false;
+				Ribbons.Add(Entry->Id, Ribbon);
+			}
 		}
-		Ribbon->SetEndpoints(NoseLocation, Entry->Location, Params.Width);
-		Ribbon->SetOpacityFactor(Params.Opacity);
+		if (Ribbon != nullptr)
+		{
+			Ribbon->SetEndpoints(NoseLocation, Entry->Location, Params.Width);
+			Ribbon->SetOpacityFactor(Params.Opacity);
+		}
 		// [2026-10-28 T-031] Params.Color is baked into NS_ScentRibbon's
 		// particle colour at authoring time (tarnished gold); per-entry
 		// colour variation is not a scent cue, so only width and opacity
@@ -246,12 +307,29 @@ void UScentComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 				SpawnParams);
 			if (Marker == nullptr)
 			{
-				continue;
+				// [2026-10-28 T-038] Same one-shot surfacing as the
+				// ribbon path above: log once naming the entry, latch,
+				// and let the stale-visual sweep below still run for
+				// every other entry (no 'continue' skipping the tick).
+				if (!bWarnedMarkerSpawnFailure)
+				{
+					UE_LOG(LogUnderTheMountain, Warning,
+						   TEXT("True-sight marker spawn FAILED for treasure entry %s; retrying on later ticks."),
+						   *Entry->Id.ToString());
+					bWarnedMarkerSpawnFailure = true;
+				}
 			}
-			Markers.Add(Entry->Id, Marker);
+			else
+			{
+				bWarnedMarkerSpawnFailure = false;
+				Markers.Add(Entry->Id, Marker);
+			}
 		}
-		Marker->SetActorLocation(Entry->Location);
-		Marker->SetMarkerVisible(bTrueSightActive);
+		if (Marker != nullptr)
+		{
+			Marker->SetActorLocation(Entry->Location);
+			Marker->SetMarkerVisible(bTrueSightActive);
+		}
 	}
 
 	// [2026-10-28 T-013] Entries that vanished (unregistered, or

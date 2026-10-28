@@ -4,11 +4,18 @@
 // section 3 width brackets, and the no-information rule (equal-value
 // treasures look identical at any distance) — all exercised against
 // the pure registry/math with no world spawned.
+// [2026-10-28 T-038] Two tests added below pin the failure-honesty
+// and location-freshness seams: an uninitialised subsystem must fail
+// explicitly, and a moved ATreasureActor must refresh its registry
+// location instead of leaving it stale at registration time.
 
 #include "Misc/AutomationTest.h"
 #include "Scent/ScentMath.h"
 #include "Scent/ScentRibbonActor.h"
+#include "Treasure/TreasureActor.h"
+#include "Treasure/TreasureDataAsset.h"
 #include "Treasure/TreasureRegistry.h"
+#include "Treasure/TreasureSubsystem.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -187,6 +194,79 @@ bool FScentRibbonWidthPassThroughTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("crown ribbon is wider than trinket ribbon"), CrownWidth > TrinketWidth);
 	Ribbon->SetOpacityFactor(0.3f);
 	TestEqual(TEXT("ribbon keeps the true-sight opacity factor"), Ribbon->VisibleOpacity, 0.3f);
+	return true;
+}
+
+// [2026-10-28 T-038] Failure honesty at the subsystem seam: a
+// UTreasureSubsystem that was never Initialize()d owns no registry,
+// so every forwarding verb must fail explicitly (NAME_None/false)
+// rather than crash or pretend success — ATreasureActor::BeginPlay's
+// "Treasure registration FAILED" warning depends on exactly this.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTreasureSubsystemFailureTest,
+								 "UnderTheMountain.Treasure.SubsystemFailure",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FTreasureSubsystemFailureTest::RunTest(const FString& Parameters)
+{
+	UTreasureSubsystem* Subsystem = NewObject<UTreasureSubsystem>();
+	TestNull(TEXT("uninitialised subsystem has no registry"), Subsystem->Registry());
+
+	FTreasureEntry Entry;
+	Entry.GoldValue = 100;
+	TestEqual(TEXT("register on uninitialised subsystem returns NAME_None"),
+			  Subsystem->Register(Entry), NAME_None);
+	TestFalse(TEXT("unregister on uninitialised subsystem returns false"),
+			  Subsystem->Unregister(FName(TEXT("Anything"))));
+	return true;
+}
+
+// [2026-10-28 T-038] Location freshness: an actor that registers at
+// one location and then moves (carried/repositioned) must be able to
+// push its new location into the registry — this is the seam
+// ATreasureActor::Tick calls every frame, so the scent endpoint
+// follows the treasure instead of its spawn point. SetActorLocation
+// on this NewObject (unspawned) actor moves its root component
+// transform directly, which GetActorLocation then reports.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTreasureActorLocationRefreshTest,
+								 "UnderTheMountain.Treasure.ActorLocationRefresh",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FTreasureActorLocationRefreshTest::RunTest(const FString& Parameters)
+{
+	UTreasureRegistry* Registry = NewObject<UTreasureRegistry>();
+	ATreasureActor* Actor = NewObject<ATreasureActor>();
+
+	UTreasureDataAsset* Data = NewObject<UTreasureDataAsset>();
+	Data->GoldValue = 100;
+	Data->DisplayName = TEXT("Refresh Test Goblet");
+	Actor->TreasureData = Data;
+
+	Actor->SetActorLocation(FVector(100.0f, 0.0f, 0.0f));
+	const FName Id = Actor->RegisterWithRegistry(Registry);
+	TestFalse(TEXT("register with registry returns a real id"), Id == NAME_None);
+	const FTreasureEntry* Found = Registry->Find(Id);
+	TestNotNull(TEXT("registered entry is findable"), Found);
+	if (Found != nullptr)
+	{
+		TestEqual(TEXT("registered at the spawn location"), Found->Location,
+				  FVector(100.0f, 0.0f, 0.0f));
+	}
+
+	Actor->SetActorLocation(FVector(5000.0f, 200.0f, 0.0f));
+	TestTrue(TEXT("refresh after a move reports current"),
+			 Actor->RefreshRegisteredLocation(Registry));
+	Found = Registry->Find(Id);
+	TestNotNull(TEXT("entry still findable after refresh"), Found);
+	if (Found != nullptr)
+	{
+		TestEqual(TEXT("registry location follows the actor"), Found->Location,
+				  FVector(5000.0f, 200.0f, 0.0f));
+	}
+
+	TestTrue(TEXT("refresh with no move still reports current"),
+			 Actor->RefreshRegisteredLocation(Registry));
+	TestFalse(TEXT("refresh against a null registry fails explicitly"),
+			  Actor->RefreshRegisteredLocation(nullptr));
 	return true;
 }
 
