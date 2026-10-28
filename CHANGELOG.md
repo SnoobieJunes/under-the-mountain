@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-10-28 — T-027 — Dragon scale-colour picker: press C (or gamepad right face) in play for RGB sliders that retint the dragon's scales live — crimson wing membranes and spine stay crimson — and the choice persists across restarts; the dragon also gains its real textured material (M_DragonScales from the Meshy V4 maps — it previously rendered in WorldGridMaterial)
+
 2026-10-28 — T-031 — Scent ribbons are now Niagara: NS_ScentRibbon sweeps nose-to-treasure per registered item, width set by its gold value, true-sight dimming via particle alpha (replaces the cube-geometry ribbons)
 
 2026-10-28 — T-032 — The playable dragon is now the real dragon: SK_Dragon_v4 renders on the pawn (placeholder ball hidden), standing in the capsule at 2x scale with the T-029 walk cycle playing while moving; evidence Content/Meshy/Dragon/dragon_pawn_pie.png

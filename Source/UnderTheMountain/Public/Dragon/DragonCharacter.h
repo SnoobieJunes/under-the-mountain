@@ -16,6 +16,8 @@
 
 class UDragonStatsComponent;
 class UScentComponent;
+class UDragonAppearanceComponent;
+class UDragonTintWidget;
 class UInputAction;
 class UInputMappingContext;
 class USpringArmComponent;
@@ -39,6 +41,11 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// the toggle input; all scent rules live in the component.
 	UPROPERTY(VisibleAnywhere, Category = "Dragon")
 	TObjectPtr<UScentComponent> Scent;
+
+	// [2026-10-28 T-027] Scale tint owner: applies the player's RGB
+	// choice to the mesh material and persists it across sessions.
+	UPROPERTY(VisibleAnywhere, Category = "Dragon")
+	TObjectPtr<UDragonAppearanceComponent> Appearance;
 
 	UPROPERTY(VisibleAnywhere, Category = "Dragon")
 	TObjectPtr<USpringArmComponent> CameraBoom;
@@ -86,6 +93,9 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	TObjectPtr<UInputAction> ToggleFlightAction;
 	TObjectPtr<UInputAction> DiveAction;
 	TObjectPtr<UInputAction> TrueSightAction;
+	TObjectPtr<UInputAction> TintAction;
+	TObjectPtr<UDragonTintWidget> TintWidget;
+	bool bTintPickerOpen = false;
 	TObjectPtr<UInputMappingContext> MappingContext;
 
 	void BuildInputActions();
@@ -99,6 +109,8 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	void HandleDiveEnd();
 	// [2026-10-28 T-013] Seeing Stone toggle (key T / gamepad left face).
 	void HandleTrueSight();
+	// [2026-10-28 T-027] Scale-colour picker toggle (key C / gamepad right face).
+	void HandleToggleTintPicker();
 	bool bDiving = false;
 
 	// [2026-10-28 T-032] True while the single-node walk cycle is

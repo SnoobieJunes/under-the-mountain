@@ -8,8 +8,10 @@
 // debug readout makes velocity/drain visible while tuning in PIE.
 
 #include "Dragon/DragonCharacter.h"
+#include "Dragon/DragonAppearanceComponent.h"
 #include "Dragon/DragonStatsComponent.h"
 #include "Scent/ScentComponent.h"
+#include "UI/DragonTintWidget.h"
 #include "UnderTheMountain.h"
 
 #include "Camera/CameraComponent.h"
@@ -32,6 +34,7 @@ ADragonCharacter::ADragonCharacter()
 
 	Stats = CreateDefaultSubobject<UDragonStatsComponent>(TEXT("Stats"));
 	Scent = CreateDefaultSubobject<UScentComponent>(TEXT("Scent"));
+	Appearance = CreateDefaultSubobject<UDragonAppearanceComponent>(TEXT("Appearance"));
 
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(GetCapsuleComponent());
@@ -131,6 +134,7 @@ void ADragonCharacter::BuildInputActions()
 	ToggleFlightAction = MakeAction(TEXT("IA_ToggleFlight"), EInputActionValueType::Boolean);
 	DiveAction = MakeAction(TEXT("IA_Dive"), EInputActionValueType::Boolean);
 	TrueSightAction = MakeAction(TEXT("IA_TrueSight"), EInputActionValueType::Boolean);
+	TintAction = MakeAction(TEXT("IA_TintPicker"), EInputActionValueType::Boolean);
 
 	MappingContext = NewObject<UInputMappingContext>(this, TEXT("IMC_Dragon"));
 	auto Map = [this](UInputAction* Action, FKey Key)
@@ -155,6 +159,7 @@ void ADragonCharacter::BuildInputActions()
 	Map(ToggleFlightAction, EKeys::F);
 	Map(DiveAction, EKeys::LeftShift);
 	Map(TrueSightAction, EKeys::T);
+	Map(TintAction, EKeys::C);
 	// Gamepad: left stick move, right stick look, bottom face flap,
 	// top face toggle flight, right trigger dive.
 	Map(MoveAction, EKeys::Gamepad_Left2D);
@@ -163,6 +168,7 @@ void ADragonCharacter::BuildInputActions()
 	Map(ToggleFlightAction, EKeys::Gamepad_FaceButton_Top);
 	Map(DiveAction, EKeys::Gamepad_RightTrigger);
 	Map(TrueSightAction, EKeys::Gamepad_FaceButton_Left);
+	Map(TintAction, EKeys::Gamepad_FaceButton_Right);
 }
 
 void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -179,6 +185,7 @@ void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	EIC->BindAction(DiveAction, ETriggerEvent::Completed, this, &ADragonCharacter::HandleDiveEnd);
 	EIC->BindAction(DiveAction, ETriggerEvent::Canceled, this, &ADragonCharacter::HandleDiveEnd);
 	EIC->BindAction(TrueSightAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleTrueSight);
+	EIC->BindAction(TintAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleToggleTintPicker);
 }
 
 void ADragonCharacter::HandleMove(const FInputActionValue& Value)
@@ -241,6 +248,41 @@ void ADragonCharacter::HandleTrueSight()
 	const bool bActive = Scent->ToggleTrueSight();
 	UE_LOG(LogUnderTheMountain, Log, TEXT("True-sight toggled: %s"),
 		   bActive ? TEXT("ACTIVE (scent dimmed, treasure markers on)") : TEXT("off"));
+}
+
+void ADragonCharacter::HandleToggleTintPicker()
+{
+	// [2026-10-28 T-027] Lazy-create the code-built picker for the
+	// local player only; remote/PIE-server pawns never see UI.
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (PC == nullptr || !PC->IsLocalController())
+	{
+		return;
+	}
+	if (TintWidget == nullptr)
+	{
+		TintWidget = CreateWidget<UDragonTintWidget>(PC, UDragonTintWidget::StaticClass());
+		if (TintWidget == nullptr)
+		{
+			UE_LOG(LogUnderTheMountain, Warning, TEXT("Tint picker widget failed to create"));
+			return;
+		}
+		TintWidget->BindToAppearance(Appearance);
+	}
+	bTintPickerOpen = !bTintPickerOpen;
+	if (bTintPickerOpen)
+	{
+		TintWidget->InitializeFromCurrent();
+		TintWidget->AddToViewport(10);
+		PC->SetShowMouseCursor(true);
+	}
+	else
+	{
+		TintWidget->RemoveFromParent();
+		PC->SetShowMouseCursor(false);
+	}
+	UE_LOG(LogUnderTheMountain, Log, TEXT("Scale tint picker: %s"),
+		   bTintPickerOpen ? TEXT("open (C to close)") : TEXT("closed"));
 }
 
 void ADragonCharacter::Landed(const FHitResult& Hit)
