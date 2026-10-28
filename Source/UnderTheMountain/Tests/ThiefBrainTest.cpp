@@ -5,6 +5,8 @@
 // because the brain is pure logic by design.
 
 #include "Misc/AutomationTest.h"
+#include "Dragon/DragonCharacter.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Thief/ThiefBrain.h"
 #include "Thief/ThiefDataAsset.h"
 #include "Treasure/TreasureRegistry.h"
@@ -265,6 +267,37 @@ bool FThiefTrapTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("dwarf is scared after roar"), ScaredDwarf->State() == EThiefState::Scared);
 	TestFalse(TEXT("scared thief cannot place traps"), ScaredDwarf->TryPlaceTrap());
 
+	return true;
+}
+
+// [2026-10-28 T-014] The dragon half of the trap contract: one
+// application halves both speed caps and starts the clock; the
+// countdown in Tick restores the exact original speeds at expiry
+// and never stacks a second application into a quarter-speed trap.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FThiefTrapSlowTest, "UnderTheMountain.Thief.TrapSlow",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FThiefTrapSlowTest::RunTest(const FString& Parameters)
+{
+	ADragonCharacter* Dragon = NewObject<ADragonCharacter>();
+	UCharacterMovementComponent* Move = Dragon->GetCharacterMovement();
+	const float WalkBefore = Move->MaxWalkSpeed;
+	const float FlyBefore = Move->MaxFlySpeed;
+
+	Dragon->ApplyTrapSlow(0.5f, 1.0f);
+	TestTrue(TEXT("trap slow is active after application"), Dragon->IsTrapSlowed());
+	TestEqual(TEXT("walk speed halved"), Move->MaxWalkSpeed, WalkBefore * 0.5f);
+	TestEqual(TEXT("fly speed halved"), Move->MaxFlySpeed, FlyBefore * 0.5f);
+
+	Dragon->ApplyTrapSlow(0.5f, 1.0f);
+	TestEqual(TEXT("second trap refreshes, never stacks"), Move->MaxWalkSpeed, WalkBefore * 0.5f);
+
+	// AActor::Tick is the public entry; ADragonCharacter's override
+	// narrows it to protected.
+	static_cast<AActor*>(Dragon)->Tick(2.0f);
+	TestFalse(TEXT("trap slow expires on its countdown"), Dragon->IsTrapSlowed());
+	TestEqual(TEXT("walk speed restored exactly"), Move->MaxWalkSpeed, WalkBefore);
+	TestEqual(TEXT("fly speed restored exactly"), Move->MaxFlySpeed, FlyBefore);
 	return true;
 }
 

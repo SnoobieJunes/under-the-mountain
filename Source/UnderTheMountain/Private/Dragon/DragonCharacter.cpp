@@ -99,6 +99,23 @@ bool ADragonCharacter::IsFlying() const
 	return GetCharacterMovement()->MovementMode == MOVE_Flying;
 }
 
+void ADragonCharacter::ApplyTrapSlow(float Factor, float Seconds)
+{
+	// [2026-10-28 T-014] First application captures the true speeds;
+	// a re-trigger while slowed only refreshes the clock so the
+	// restore point can never be a slowed value.
+	UCharacterMovementComponent* Move = GetCharacterMovement();
+	if (TrapSlowTimeRemaining <= 0.0f)
+	{
+		UnslowedWalkSpeed = Move->MaxWalkSpeed;
+		UnslowedFlySpeed = Move->MaxFlySpeed;
+		Move->MaxWalkSpeed *= Factor;
+		Move->MaxFlySpeed *= Factor;
+	}
+	TrapSlowTimeRemaining = FMath::Max(TrapSlowTimeRemaining, Seconds);
+	UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon trap-slowed: factor %.2f for %.1fs"), Factor, Seconds);
+}
+
 bool ADragonCharacter::HasInputActions() const
 {
 	// [2026-10-28 T-033] Non-null check for the full code-created
@@ -363,6 +380,19 @@ void ADragonCharacter::Landed(const FHitResult& Hit)
 void ADragonCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	// [2026-10-28 T-014] Trap-slow expiry: restore the captured speeds
+	// in the same tick the clock runs out.
+	if (TrapSlowTimeRemaining > 0.0f)
+	{
+		TrapSlowTimeRemaining -= DeltaSeconds;
+		if (TrapSlowTimeRemaining <= 0.0f)
+		{
+			UCharacterMovementComponent* Move = GetCharacterMovement();
+			Move->MaxWalkSpeed = UnslowedWalkSpeed;
+			Move->MaxFlySpeed = UnslowedFlySpeed;
+			UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon trap slow expired; speeds restored"));
+		}
+	}
 	// [2026-10-28 T-032] Walk cycle follows actual movement: play the
 	// single-node anim while the pawn has ground/flight speed, stop
 	// it (back to the standing bind pose) when it doesn't. Transition

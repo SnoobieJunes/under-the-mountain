@@ -8,6 +8,7 @@
 
 #include "Thief/ThiefBrain.h"
 #include "Thief/ThiefDataAsset.h"
+#include "Thief/TrapActor.h"
 #include "Treasure/TreasureSubsystem.h"
 #include "UnderTheMountain.h"
 
@@ -98,6 +99,31 @@ void AThiefCharacter::Tick(float DeltaSeconds)
 
 	Brain->Tick(DeltaSeconds, GetActorLocation());
 
+	// [2026-10-28 T-014] Trap placement, timer-gated: docs/GAMEPLAY.md
+	// 5.2 says the trapper "pauses to place traps", so the actor
+	// attempts a placement every 5 s rather than every tick. The
+	// brain owns the budget/state rules (trap-capable configs only,
+	// Sneak state only, under MaxTraps); this actor owns the cadence
+	// and spawning the ATrapActor the brain's success authorises.
+	TrapPlaceTimer += DeltaSeconds;
+	if (TrapPlaceTimer >= 5.0f)
+	{
+		TrapPlaceTimer = 0.0f;
+		if (Brain->TryPlaceTrap())
+		{
+			if (UWorld* World = GetWorld())
+			{
+				const FVector TrapLocation = GetActorLocation() - FVector(0.0f, 0.0f, 80.0f);
+				if (ATrapActor* Trap = World->SpawnActor<ATrapActor>(
+						ATrapActor::StaticClass(), TrapLocation, FRotator::ZeroRotator))
+				{
+					Trap->SlowFactor = Brain->TrapSlowFactor();
+					Trap->SlowSeconds = Brain->TrapSlowSeconds();
+				}
+			}
+		}
+	}
+
 	// [2026-10-28 T-014] Debug cadence for PT-THIEF runs: one line
 	// per thief per 10 s so a -game log shows the scenario playing
 	// out (state, position, destination) without per-tick spam.
@@ -163,18 +189,33 @@ void AThiefCharacter::Tick(float DeltaSeconds)
 	FVector SteerTarget = BrainDestination;
 	const int32 MyChamber = ChamberIndex(MyLocation.X);
 	const int32 DestChamber = ChamberIndex(BrainDestination.X);
+	// [2026-10-28 T-014] Monotonic waypoint progress: entering a new
+	// chamber restarts the two-stage crossing at stage one (own
+	// centre). Without this latch the old distance-only test flipped
+	// the target back once the thief passed 200cm beyond its centre.
+	if (MyChamber != LastChamber)
+	{
+		LastChamber = MyChamber;
+		bHeadingToNextCenter = false;
+	}
 	if (MyChamber != DestChamber)
 	{
 		const FVector OwnCenter(ChamberCentersX[MyChamber], 0.0f, MyLocation.Z);
-		if (FVector::Dist2D(MyLocation, OwnCenter) > 200.0f)
+		if (!bHeadingToNextCenter && FVector::Dist2D(MyLocation, OwnCenter) <= 200.0f)
 		{
-			SteerTarget = OwnCenter;
+			bHeadingToNextCenter = true;
 		}
-		else
-		{
-			const int32 Next = MyChamber + (DestChamber > MyChamber ? 1 : -1);
-			SteerTarget = FVector(ChamberCentersX[Next], 0.0f, MyLocation.Z);
-		}
+		const int32 Next = MyChamber + (DestChamber > MyChamber ? 1 : -1);
+		SteerTarget = bHeadingToNextCenter
+						  ? FVector(ChamberCentersX[Next], 0.0f, MyLocation.Z)
+						  : OwnCenter;
+	}
+	else
+	{
+		// [2026-10-28 T-014] Same chamber: steer directly at the
+		// brain destination (SteerTarget already holds it) and reset
+		// the latch so the next crossing starts at stage one.
+		bHeadingToNextCenter = false;
 	}
 	const FVector ToDestination = SteerTarget - MyLocation;
 	if (ToDestination.Size() > 10.0f)

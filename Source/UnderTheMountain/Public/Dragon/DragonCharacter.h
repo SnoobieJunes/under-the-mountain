@@ -65,6 +65,16 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 
 	bool IsFlying() const;
 
+	// [2026-10-28 T-014] Dwarf trap effect (GAMEPLAY.md section 5.2):
+	// multiplies walk/fly speed by Factor for Seconds, then restores.
+	// Implemented as a Tick countdown (not a timer handle) so pausing
+	// the world pauses the trap; re-triggering refreshes, never stacks.
+	void ApplyTrapSlow(float Factor, float Seconds);
+	bool IsTrapSlowed() const
+	{
+		return TrapSlowTimeRemaining > 0.0f;
+	}
+
 	// [2026-10-28 T-033] Input contract: true only when every
 	// code-created action and the mapping context exist.
 	// EnsureInputActions() guarantees this before SetupPlayerInput
@@ -144,4 +154,10 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// Captured before Tick's flight logic runs so Landed() can recover
 	// the impact speed the movement component has already discarded.
 	float LastVelocityZ = 0.0f;
+
+	// [2026-10-28 T-014] Trap-slow countdown + the un-slowed speeds
+	// captured on first application (restored exactly at expiry).
+	float TrapSlowTimeRemaining = 0.0f;
+	float UnslowedWalkSpeed = 0.0f;
+	float UnslowedFlySpeed = 0.0f;
 };

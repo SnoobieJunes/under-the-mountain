@@ -64,4 +64,26 @@ class UNDERTHEMOUNTAIN_API AThiefCharacter : public ACharacter
 	// [2026-10-28 T-014] Latches after the escape is logged so the
 	// "reached exit" line prints exactly once.
 	bool bLoggedExit = false;
+
+	// [2026-10-28 T-014 resume] Accumulates toward the 10s
+	// position/state debug log in Tick. This field was missing when
+	// the task was parked (the stash would not compile without it).
+	float DebugLogTimer = 0.0f;
+
+	// [2026-10-28 T-014] Last chamber the steering latched onto; a
+	// change resets the two-stage waypoint so progress is monotonic.
+	int32 LastChamber = -1;
+
+	// [2026-10-28 T-014] Stage latch: false = steering to own centre,
+	// true = steering to the next centre. Once true it stays true
+	// until the chamber changes, so passing the centre cannot
+	// flip the target back (the pre-fix oscillation).
+	bool bHeadingToNextCenter = false;
+
+	// [2026-10-28 T-014] Trap-placement cadence accumulator: Tick
+	// adds DeltaSeconds each frame and attempts a placement every
+	// 5 s (docs/GAMEPLAY.md 5.2 — the trapper "pauses to place
+	// traps"). The brain owns budget/state rules; this actor owns
+	// the cadence and the ATrapActor spawn.
+	float TrapPlaceTimer = 0.0f;
 };
