@@ -28,6 +28,18 @@ class USpringArmComponent;
 class UCameraComponent;
 class UAnimSequence;
 
+// [2026-10-28 T-043] Flight animation state chosen purely from
+// movement facts by ADragonCharacter::SelectAnimState. Idle/Walk are
+// the grounded states from T-032; Fly is powered flight and Glide is
+// wings-held flight (the fly clip at a low play rate in Tick).
+enum class EDragonAnimState : uint8
+{
+	Idle,
+	Walk,
+	Fly,
+	Glide
+};
+
 UCLASS()
 class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 {
@@ -93,6 +105,24 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	UPROPERTY(VisibleAnywhere, Category = "Dragon")
 	TObjectPtr<UAnimSequence> WalkAnim;
 
+	// [2026-10-28 T-043] Flight cycle played single-node while flying;
+	// loaded in the constructor from SK_Dragon_v4_FlyAnim. A separate
+	// import step creates that asset; if it is missing FlyAnim stays
+	// null, BeginPlay logs one warning, and flight falls back to the
+	// bind pose in Tick (errors surfaced, never silent).
+	UPROPERTY(VisibleAnywhere, Category = "Dragon")
+	TObjectPtr<UAnimSequence> FlyAnim;
+
+	// [2026-10-28 T-043] Pure animation-state selection, testable
+	// without a world: flying and diving -> Fly (powered, fast flap
+	// in Tick); flying, not diving, slow (HorizontalSpeed < 50) and
+	// not climbing (VerticalSpeed <= 0) -> Glide (wings held; Tick
+	// plays FlyAnim at a low rate so it reads as a glide); flying
+	// otherwise -> Fly; not flying with HorizontalSpeed > 20 ->
+	// Walk; otherwise Idle. Dive only matters airborne.
+	static EDragonAnimState SelectAnimState(bool bFlying, bool bDiving, float HorizontalSpeed,
+											float VerticalSpeed);
+
   protected:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
@@ -146,9 +176,10 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	void HandleToggleTintPicker();
 	bool bDiving = false;
 
-	// [2026-10-28 T-032] True while the single-node walk cycle is
-	// playing, so Tick only calls Play/Stop on transitions.
-	bool bPlayingWalk = false;
+	// [2026-10-28 T-043] Last state Tick applied to the single-node
+	// mesh, so Tick only calls Play/Stop on SelectAnimState
+	// transitions (replaces the T-032 bPlayingWalk bool).
+	EDragonAnimState CurrentAnimState = EDragonAnimState::Idle;
 
 	// [2026-10-28 T-011] Last Tick's vertical velocity (cm/s, signed).
 	// Captured before Tick's flight logic runs so Landed() can recover

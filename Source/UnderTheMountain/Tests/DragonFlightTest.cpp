@@ -7,7 +7,11 @@
 // it delegates to is proven here.
 
 #include "Misc/AutomationTest.h"
+#include "Animation/AnimSequence.h"
+#include "Dragon/DragonCharacter.h"
 #include "Dragon/DragonStatsComponent.h"
+#include "Engine/SkeletalMesh.h"
+#include "Animation/Skeleton.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -114,6 +118,82 @@ bool FDragonFlightTest::RunTest(const FString& Parameters)
 			 Stats->ShouldForceFallAtZeroStamina(Stats->GlideDrainPerSecond));
 	TestTrue(TEXT("zero-stamina hover forces a fall"),
 			 Stats->ShouldForceFallAtZeroStamina(Stats->HoverDrainPerSecond));
+	return true;
+}
+
+// [2026-10-28 T-043] Pure SelectAnimState contract: dive is powered
+// flight, slow non-climbing flight is a glide, slow climbing is still
+// powered, and dive is ignored on the ground.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDragonAnimStateTest, "UnderTheMountain.Dragon.AnimState",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDragonAnimStateTest::RunTest(const FString& Parameters)
+{
+	TestTrue(TEXT("flying and diving is Fly"),
+			 ADragonCharacter::SelectAnimState(true, true, 900.0f, -500.0f) == EDragonAnimState::Fly);
+	TestTrue(TEXT("fast climbing flight is Fly"),
+			 ADragonCharacter::SelectAnimState(true, false, 900.0f, 300.0f) == EDragonAnimState::Fly);
+	TestTrue(TEXT("slow descending flight is Glide"),
+			 ADragonCharacter::SelectAnimState(true, false, 10.0f, -100.0f) == EDragonAnimState::Glide);
+	TestTrue(TEXT("slow climbing flight is Fly"),
+			 ADragonCharacter::SelectAnimState(true, false, 10.0f, 200.0f) == EDragonAnimState::Fly);
+	TestTrue(TEXT("moving on the ground is Walk"),
+			 ADragonCharacter::SelectAnimState(false, false, 300.0f, 0.0f) == EDragonAnimState::Walk);
+	TestTrue(TEXT("still on the ground is Idle"),
+			 ADragonCharacter::SelectAnimState(false, false, 0.0f, 0.0f) == EDragonAnimState::Idle);
+	TestTrue(TEXT("dive input on the ground is Walk"),
+			 ADragonCharacter::SelectAnimState(false, true, 900.0f, 0.0f) == EDragonAnimState::Walk);
+	return true;
+}
+
+// [2026-10-28 T-043] Pose-level flap proof: the imported Fly
+// AnimSequence must actually move the wing bones in UE (a
+// same-named asset with no wing tracks would pass every other
+// check while the dragon holds bind pose). Samples the raw
+// wing_finger_L track at the up key (t=0) and the down key
+// (t=0.5s of the 1s loop) and requires real travel.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDragonFlyAnimPoseTest, "UnderTheMountain.Dragon.FlyAnimPose",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDragonFlyAnimPoseTest::RunTest(const FString& Parameters)
+{
+	UAnimSequence* FlyAnim = LoadObject<UAnimSequence>(
+		nullptr, TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_FlyAnim.SK_Dragon_v4_FlyAnim"));
+	TestNotNull(TEXT("SK_Dragon_v4_FlyAnim loads"), FlyAnim);
+	USkeletalMesh* DragonMesh = LoadObject<USkeletalMesh>(
+		nullptr, TEXT("/Game/Meshy/Dragon/SK_Dragon_v4.SK_Dragon_v4"));
+	TestNotNull(TEXT("SK_Dragon_v4 loads"), DragonMesh);
+	if (FlyAnim == nullptr || DragonMesh == nullptr)
+	{
+		return false;
+	}
+	TestTrue(TEXT("fly anim is about a second long"), FlyAnim->GetPlayLength() > 0.8f);
+
+	const USkeleton* Skeleton = DragonMesh->GetSkeleton();
+	TestNotNull(TEXT("dragon skeleton loads"), Skeleton);
+	if (Skeleton == nullptr)
+	{
+		return false;
+	}
+	const int32 BoneIndex = Skeleton->GetReferenceSkeleton().FindBoneIndex(TEXT("wing_shoulder_L"));
+	TestTrue(TEXT("wing_shoulder_L bone exists"), BoneIndex != INDEX_NONE);
+	if (BoneIndex == INDEX_NONE)
+	{
+		return false;
+	}
+
+	// A bone's local LOCATION is constant under rotation animation;
+	// the flap lives in its local ROTATION, so compare orientations.
+	FTransform UpTransform;
+	FTransform DownTransform;
+	FlyAnim->GetBoneTransform(UpTransform, FSkeletonPoseBoneIndex(BoneIndex), FAnimExtractContext(0.0),
+							  true);
+	FlyAnim->GetBoneTransform(DownTransform, FSkeletonPoseBoneIndex(BoneIndex),
+							  FAnimExtractContext(0.5), true);
+	const double Swing =
+		UpTransform.GetRotation().AngularDistance(DownTransform.GetRotation());
+	TestTrue(FString::Printf(TEXT("wing shoulder swings between flap keys (%.3f rad)"), Swing),
+			 Swing > 0.15);
 	return true;
 }
 

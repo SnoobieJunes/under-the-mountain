@@ -75,6 +75,16 @@ ADragonCharacter::ADragonCharacter()
 		WalkAnim = WalkAnimAsset.Object;
 		GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode);
 	}
+	// [2026-10-28 T-043] Flight cycle, loaded like WalkAnim. The asset
+	// is created by a separate import step; if it is absent FlyAnim
+	// stays null (BeginPlay warns once, Tick falls back to bind pose).
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> FlyAnimAsset(
+		TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_FlyAnim.SK_Dragon_v4_FlyAnim"));
+	if (FlyAnimAsset.Succeeded())
+	{
+		FlyAnim = FlyAnimAsset.Object;
+		GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+	}
 
 	// [2026-10-28 T-041] PlaceholderBody removed: the skeletal mesh
 	// above is the visible body (T-032), and nothing referenced the
@@ -97,6 +107,32 @@ ADragonCharacter::ADragonCharacter()
 bool ADragonCharacter::IsFlying() const
 {
 	return GetCharacterMovement()->MovementMode == MOVE_Flying;
+}
+
+EDragonAnimState ADragonCharacter::SelectAnimState(bool bFlying, bool bDiving, float HorizontalSpeed,
+												   float VerticalSpeed)
+{
+	// [2026-10-28 T-043] Pure state selection (see header for the full
+	// rule). Glide is slow and not climbing: wings held, played as
+	// FlyAnim at a low rate in Tick; every other airborne case is
+	// powered Fly, and dive only matters while airborne.
+	if (bFlying)
+	{
+		if (bDiving)
+		{
+			return EDragonAnimState::Fly;
+		}
+		if (HorizontalSpeed < 50.0f && VerticalSpeed <= 0.0f)
+		{
+			return EDragonAnimState::Glide;
+		}
+		return EDragonAnimState::Fly;
+	}
+	if (HorizontalSpeed > 20.0f)
+	{
+		return EDragonAnimState::Walk;
+	}
+	return EDragonAnimState::Idle;
 }
 
 void ADragonCharacter::ApplyTrapSlow(float Factor, float Seconds)
@@ -156,6 +192,13 @@ void ADragonCharacter::BeginPlay()
 				Sub->AddMappingContext(MappingContext, 0);
 			}
 		}
+	}
+	// [2026-10-28 T-043] Surface a missing flight clip once here;
+	// Tick's per-frame fallback to bind pose must stay silent.
+	if (FlyAnim == nullptr)
+	{
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("SK_Dragon_v4_FlyAnim not found; flight will use bind pose"));
 	}
 	UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon pawn spawned at %s"), *GetActorLocation().ToString());
 }
@@ -393,22 +436,61 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 			UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon trap slow expired; speeds restored"));
 		}
 	}
-	// [2026-10-28 T-032] Walk cycle follows actual movement: play the
-	// single-node anim while the pawn has ground/flight speed, stop
-	// it (back to the standing bind pose) when it doesn't. Transition
-	// -only calls so PlayAnimation never restarts every frame.
-	if (WalkAnim != nullptr)
+	// [2026-10-28 T-043] State-driven single-node playback (replaces
+	// the T-032 walk-only bool, which played the walk cycle in
+	// mid-air): SelectAnimState picks Idle/Walk/Fly/Glide from flight
+	// and speed facts; Play/Stop fire on state change only so
+	// PlayAnimation never restarts every frame. Fly plays FlyAnim at
+	// 1.6 while diving else 1.0; Glide reuses FlyAnim at 0.25 so the
+	// held wings read as a glide. A null clip for the desired state
+	// falls back to Stop() (bind pose).
+	if (USkeletalMeshComponent* Mesh = GetMesh())
 	{
-		const bool bMoving = GetVelocity().Size2D() > 20.0f;
-		if (bMoving && !bPlayingWalk)
+		const FVector AnimVelocity = GetCharacterMovement()->Velocity;
+		const EDragonAnimState DesiredState =
+			SelectAnimState(IsFlying(), bDiving, AnimVelocity.Size2D(), AnimVelocity.Z);
+		if (DesiredState != CurrentAnimState)
 		{
-			GetMesh()->PlayAnimation(WalkAnim, true);
-			bPlayingWalk = true;
-		}
-		else if (!bMoving && bPlayingWalk)
-		{
-			GetMesh()->Stop();
-			bPlayingWalk = false;
+			CurrentAnimState = DesiredState;
+			switch (DesiredState)
+			{
+			case EDragonAnimState::Idle:
+				Mesh->Stop();
+				break;
+			case EDragonAnimState::Walk:
+				if (WalkAnim != nullptr)
+				{
+					Mesh->PlayAnimation(WalkAnim, true);
+					Mesh->SetPlayRate(1.0f);
+				}
+				else
+				{
+					Mesh->Stop();
+				}
+				break;
+			case EDragonAnimState::Fly:
+				if (FlyAnim != nullptr)
+				{
+					Mesh->PlayAnimation(FlyAnim, true);
+					Mesh->SetPlayRate(bDiving ? 1.6f : 1.0f);
+				}
+				else
+				{
+					Mesh->Stop();
+				}
+				break;
+			case EDragonAnimState::Glide:
+				if (FlyAnim != nullptr)
+				{
+					Mesh->PlayAnimation(FlyAnim, true);
+					Mesh->SetPlayRate(0.25f);
+				}
+				else
+				{
+					Mesh->Stop();
+				}
+				break;
+			}
 		}
 	}
 	// [2026-10-28 T-011] Snapshot vertical velocity before any flight work

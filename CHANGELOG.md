@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-10-28 — T-043 — The dragon now flaps: a new flight animation plays while flying (faster in a dive, slow and held in a glide) instead of the ground walk cycle in mid-air
+
 2026-10-28 — T-014 — Thieves are in the lair: a burglar, a dwarf trapper, and an adventurer sneak to treasure, grab it, and run for the exit — catch the dwarf's traps and your wings slow to half speed until they wear off
 
 2026-10-28 — T-041 — Honesty/dead-code cleanup from the sweep: removed the invisible placeholder body and other dead code, and corrected comments that described the game as it no longer is (no user-visible change)
