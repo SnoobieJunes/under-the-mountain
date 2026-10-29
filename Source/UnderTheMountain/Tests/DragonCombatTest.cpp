@@ -21,7 +21,7 @@ namespace
 {
 // [2026-10-28 T-015] An exit far from every scenario position so a
 // Fleeing/Scared brain never accidentally "arrives" mid-scenario.
-const FVector ExitLocation(-9000.0f, 0.0f, 0.0f);
+const FVector CombatExitLocation(-9000.0f, 0.0f, 0.0f);
 
 // [2026-10-28 T-015] Configs are built in code (NewObject + fields),
 // burglar-shaped like ThiefBrainTest's MakeConfig(1, true, false):
@@ -38,11 +38,11 @@ UThiefDataAsset* MakeBurglarConfig()
 	return Config;
 }
 
-UThiefBrain* MakeBrain(UThiefDataAsset* Config, UTreasureRegistry* Registry, const TCHAR* Name)
+UThiefBrain* MakeCombatBrain(UThiefDataAsset* Config, UTreasureRegistry* Registry, const TCHAR* Name)
 {
 	UThiefBrain* Brain = NewObject<UThiefBrain>();
 	Brain->Init(Config, Registry, FName(Name));
-	Brain->SetExitLocation(ExitLocation);
+	Brain->SetExitLocation(CombatExitLocation);
 	return Brain;
 }
 
@@ -66,7 +66,7 @@ UTreasureRegistry* MakeSingleTreasureRegistry(const FVector& Location)
 // is richest, standing exactly on it: one tick to arrive (Sneak->Grab)
 // and one tick of the config's grab time (Grab->next state) — the
 // proven ThiefBrainTest pattern.
-void GrabBestTreasure(UThiefBrain* Brain, const FVector& TreasureLocation)
+void GrabBestTreasureForCombat(UThiefBrain* Brain, const FVector& TreasureLocation)
 {
 	Brain->Tick(0.1f, TreasureLocation);
 	Brain->Tick(1.5f, TreasureLocation);
@@ -116,8 +116,8 @@ bool FDragonCombatFireTest::RunTest(const FString& Parameters)
 	// --- Held breath kills: 18 DPS for 1.2 s (21.6) against 20 HP,
 	// costing 5 stamina/s (6 over the tick: 50 -> ~44). ---
 	UTreasureRegistry* Registry = MakeSingleTreasureRegistry(FVector(500.0f, 0.0f, 0.0f));
-	UThiefBrain* Burglar = MakeBrain(MakeBurglarConfig(), Registry, TEXT("FireBurglar"));
-	UThiefBrain* Behind = MakeBrain(MakeBurglarConfig(), Registry, TEXT("BehindBurglar"));
+	UThiefBrain* Burglar = MakeCombatBrain(MakeBurglarConfig(), Registry, TEXT("FireBurglar"));
+	UThiefBrain* Behind = MakeCombatBrain(MakeBurglarConfig(), Registry, TEXT("BehindBurglar"));
 	TestEqual(TEXT("burglar starts at config HP"), Burglar->HP(), 20.0f);
 
 	UDragonStatsComponent* Stats = NewObject<UDragonStatsComponent>();
@@ -191,10 +191,10 @@ bool FDragonCombatRoarEatTest::RunTest(const FString& Parameters)
 
 	// The near brain grabs first, so it takes the richest piece (the
 	// crown, at its own location); the far brain then takes the goblet.
-	UThiefBrain* NearBrain = MakeBrain(MakeBurglarConfig(), Registry, TEXT("NearBurglar"));
-	UThiefBrain* FarBrain = MakeBrain(MakeBurglarConfig(), Registry, TEXT("FarBurglar"));
-	GrabBestTreasure(NearBrain, NearLocation);
-	GrabBestTreasure(FarBrain, FarLocation);
+	UThiefBrain* NearBrain = MakeCombatBrain(MakeBurglarConfig(), Registry, TEXT("NearBurglar"));
+	UThiefBrain* FarBrain = MakeCombatBrain(MakeBurglarConfig(), Registry, TEXT("FarBurglar"));
+	GrabBestTreasureForCombat(NearBrain, NearLocation);
+	GrabBestTreasureForCombat(FarBrain, FarLocation);
 	TestEqual(TEXT("near burglar carries one before the roar"), NearBrain->CarriedItems().Num(),
 			  1);
 	TestEqual(TEXT("far burglar carries one before the roar"), FarBrain->CarriedItems().Num(), 1);
@@ -227,7 +227,7 @@ bool FDragonCombatRoarEatTest::RunTest(const FString& Parameters)
 	{
 		UTreasureRegistry* MealRegistry =
 			MakeSingleTreasureRegistry(FVector(100.0f, 0.0f, 0.0f));
-		UThiefBrain* DeadBrain = MakeBrain(MakeBurglarConfig(), MealRegistry, TEXT("MealThief"));
+		UThiefBrain* DeadBrain = MakeCombatBrain(MakeBurglarConfig(), MealRegistry, TEXT("MealThief"));
 		TestTrue(TEXT("lethal damage kills the meal thief"),
 				 DeadBrain->ApplyDamage(999.0f, FVector(100.0f, 0.0f, 0.0f)));
 		TestTrue(TEXT("meal thief is dead"), DeadBrain->State() == EThiefState::Dead);

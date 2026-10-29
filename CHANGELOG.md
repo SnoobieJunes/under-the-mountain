@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-10-28 — T-045 — Fixed the wall of "duplicate PrimaryAssetID" plugin warnings on editor launch (asset-manager scan was registering every file in the project) (no user-visible change)
+
 2026-10-28 — T-015 — Combat is in: hold LMB to breathe fire (it drains stamina and melts thieves), R to roar loot out of a thief's hands, E next to a corpse or goat to eat and get your stamina back
 
 2026-10-28 — T-017 — You can fly out of the mountain: the peak shaft opens onto a plateau, terraces drop to a valley village with goats wandering the pasture — all one map, no loading, ~62 fps over the village
