@@ -24,6 +24,13 @@ THIEVES = [
     ("DA_Thief_DwarfParty", "Dwarf Carrier", 45, 180, 380, 2.5, 3, False, True, (0.9, 0.9, 0.9)),
     ("DA_Thief_Adventurer", "Adventurer", 80, 260, 480, 1.0, 2, True, False, (1.0, 1.0, 1.05)),
 ]
+# [2026-10-28 T-044] Owner's Meshy models (docs/THIEF-ASSETS.md):
+# one skeletal mesh + walk/run clips per type.
+VISUALS = {
+    "DA_Thief_Burglar": "burglar",
+    "DA_Thief_DwarfParty": "dwarf_carrier",
+    "DA_Thief_Adventurer": "adventurer",
+}
 for name, display, hp, sneak, flee, grab, cap, drops, traps, scale in THIEVES:
     path = DIR + "/" + name
     # [2026-10-28 T-014 resume] Update in place when the asset
@@ -46,6 +53,11 @@ for name, display, hp, sneak, flee, grab, cap, drops, traps, scale in THIEVES:
     da.set_editor_property("drops_all_loot_on_roar", drops)
     da.set_editor_property("can_place_traps", traps)
     da.set_editor_property("body_scale", unreal.Vector(*scale))
+    slug = VISUALS[name]
+    mesh_dir = "/Game/Meshy/Thieves/"
+    da.set_editor_property("mesh_asset", require(eal.load_asset(mesh_dir + slug + "_rigged"), "load mesh %s" % slug))
+    da.set_editor_property("walk_anim", require(eal.load_asset(mesh_dir + slug + "_walking_Anim"), "load walk anim %s" % slug))
+    da.set_editor_property("run_anim", require(eal.load_asset(mesh_dir + slug + "_running_Anim"), "load run anim %s" % slug))
     require(eal.save_asset(path), "save thief asset %s" % path)
     print("THIEF_ASSET", path, display)
 

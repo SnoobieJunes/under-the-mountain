@@ -3,6 +3,9 @@
 // only. The brain picks destinations; this actor feeds
 // AddMovementInput toward them and keeps the movement component's
 // speed in step with the brain's state.
+// [2026-10-28 T-044] BeginPlay also puts the type's Meshy mesh on the
+// inherited skeletal-mesh component (greybox sphere as fallback) and
+// Tick drives its walk/run single-node anims from brain state + speed.
 
 #include "Thief/ThiefCharacter.h"
 
@@ -12,9 +15,11 @@
 #include "Treasure/TreasureSubsystem.h"
 #include "UnderTheMountain.h"
 
+#include "Animation/AnimSequence.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -22,10 +27,11 @@ AThiefCharacter::AThiefCharacter()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
-	// [2026-10-28 T-014] Placeholder body: skeletal mesh hidden in
-	// favour of an engine sphere, mirroring ADragonCharacter's greybox
-	// approach. Visual only (NoCollision) — the inherited capsule
-	// keeps its default character collision for movement.
+	// [2026-10-28 T-044] Skeletal mesh starts hidden and the engine
+	// sphere is the constructed body; BeginPlay swaps which one is
+	// visible once ThiefData says whether this type has a Meshy mesh.
+	// Both are visual only (NoCollision on the sphere) — the inherited
+	// capsule keeps its default character collision for movement.
 	GetMesh()->SetVisibility(false);
 
 	Body = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Body"));
@@ -80,9 +86,42 @@ void AThiefCharacter::BeginPlay()
 	Brain->Init(ThiefData.Get(), Registry, FName(GetName()));
 	Brain->SetExitLocation(ExitLocation);
 
+	// [2026-10-28 T-044] Visible body: the type's Meshy mesh replaces
+	// the greybox sphere as what the player sees. GetMesh() keeps
+	// ACharacter's default attachment to the capsule; only its
+	// relative location is set, to (0,0,-90), so the feet sit near
+	// the capsule floor (capsule is r42/hh96, floor at pawn z -96).
+	// Per-type height differences (dwarf ~125cm, burglar ~165cm,
+	// adventurer ~180cm) ride on this one offset because the Meshy
+	// origins are at the feet, so no per-type z is needed. BodyScale
+	// moves to the mesh with it (the dwarf's data already carries
+	// 0.9); the sphere keeps its component and is only hidden.
+	if (ThiefData != nullptr && ThiefData->MeshAsset != nullptr)
+	{
+		GetMesh()->SetSkeletalMeshAsset(ThiefData->MeshAsset.Get());
+		GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+		GetMesh()->SetVisibility(true);
+		GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, -90.0f));
+		GetMesh()->SetRelativeScale3D(ThiefData->BodyScale);
+		Body->SetVisibility(false);
+	}
+	else
+	{
+		// [2026-10-28 T-044] Fallback, the pre-T-044 behaviour: the
+		// sphere stays visible and BodyScale still applies to it. One
+		// warning names the missing asset; a null ThiefData already
+		// warned above, so this one is only for data without a mesh.
+		if (ThiefData != nullptr)
+		{
+			Body->SetRelativeScale3D(ThiefData->BodyScale);
+			UE_LOG(LogUnderTheMountain, Warning,
+				   TEXT("Thief %s: no mesh asset on ThiefData — keeping greybox sphere"),
+				   *GetName());
+		}
+	}
+
 	if (ThiefData != nullptr)
 	{
-		Body->SetRelativeScale3D(ThiefData->BodyScale);
 		GetCharacterMovement()->MaxWalkSpeed = ThiefData->SneakSpeed;
 	}
 	UE_LOG(LogUnderTheMountain, Log, TEXT("Thief %s spawned at %s, exit %s"), *GetName(),
@@ -158,6 +197,44 @@ void AThiefCharacter::Tick(float DeltaSeconds)
 		const bool bRunning =
 			Brain->State() == EThiefState::Flee || Brain->State() == EThiefState::Scared;
 		GetCharacterMovement()->MaxWalkSpeed = bRunning ? ThiefData->FleeSpeed : ThiefData->SneakSpeed;
+	}
+
+	// [2026-10-28 T-044] Single-node locomotion follows brain state +
+	// actual speed: still (2D speed <= 20 cm/s, e.g. mid-Grab) holds
+	// bind pose via Stop(), Flee/Scared run, everything else walks.
+	// PlayAnimation/Stop fire only on a change (LastPlayedAnim +
+	// bAnimPlaying latch the current choice) so a looping clip is
+	// never restarted every tick. Null anims skip silently to bind
+	// pose — the anims are data and may be unset for a type. The
+	// Meshy clips live on their own Skeleton assets, so playback
+	// depends on skeleton compatibility being set on the assets; if
+	// the engine rejects an anim the mesh simply holds bind pose,
+	// and the latch still records the attempt so Tick does not retry
+	// (and re-log) it every frame.
+	if (ThiefData != nullptr && ThiefData->MeshAsset != nullptr)
+	{
+		UAnimSequence* DesiredAnim = nullptr;
+		if (GetVelocity().Size2D() > 20.0f)
+		{
+			const bool bRunningAnim =
+				Brain->State() == EThiefState::Flee || Brain->State() == EThiefState::Scared;
+			DesiredAnim = bRunningAnim ? ThiefData->RunAnim.Get() : ThiefData->WalkAnim.Get();
+		}
+		if (DesiredAnim == nullptr)
+		{
+			if (bAnimPlaying)
+			{
+				GetMesh()->Stop();
+				bAnimPlaying = false;
+				LastPlayedAnim = nullptr;
+			}
+		}
+		else if (DesiredAnim != LastPlayedAnim || !bAnimPlaying)
+		{
+			GetMesh()->PlayAnimation(DesiredAnim, true);
+			LastPlayedAnim = DesiredAnim;
+			bAnimPlaying = true;
+		}
 	}
 
 	// [2026-10-28 T-014] Ground-plane steering with chamber waypoints:

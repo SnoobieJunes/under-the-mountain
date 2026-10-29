@@ -1,11 +1,14 @@
 // Copyright Under the Mountain contributors.
-// Purpose: the in-world thief — a greybox ACharacter whose UThiefBrain
+// Purpose: the in-world thief — an ACharacter whose UThiefBrain
 // decides where to go (treasure, then exit) while this actor only
-// walks, mirrors the brain's speeds, and forwards roar/damage events.
-// Created 2026-10-28 (T-014).
+// walks, mirrors the brain's speeds, forwards roar/damage events, and
+// shows the per-type body. [2026-10-28 T-044] The visible body is the
+// Meshy skeletal mesh from ThiefData when one is assigned, with the
+// T-014 greybox sphere kept hidden as the no-mesh fallback. Created
+// 2026-10-28 (T-014).
 // Invariants: all steal/flee decisions live in UThiefBrain; this actor
-// never reads the treasure registry directly, and the placeholder body
-// is visual-only so capsule collision stays the single movement truth.
+// never reads the treasure registry directly, and both bodies are
+// visual-only so capsule collision stays the single movement truth.
 
 #pragma once
 
@@ -13,6 +16,7 @@
 #include "GameFramework/Character.h"
 #include "ThiefCharacter.generated.h"
 
+class UAnimSequence;
 class UStaticMeshComponent;
 class UThiefBrain;
 class UThiefDataAsset;
@@ -40,8 +44,11 @@ class UNDERTHEMOUNTAIN_API AThiefCharacter : public ACharacter
 	UPROPERTY(VisibleAnywhere, Category = "Thief")
 	TObjectPtr<UThiefBrain> Brain;
 
-	// [2026-10-28 T-014] Greybox body (engine sphere) until real thief
-	// meshes exist; scaled from ThiefData.BodyScale at BeginPlay.
+	// [2026-10-28 T-044] Greybox body (engine sphere), now the fallback
+	// shown only when ThiefData has no MeshAsset; BeginPlay hides it in
+	// favour of the skeletal mesh. Kept as a component (never removed)
+	// so a type whose mesh is not assigned yet still reads in-world.
+	// Scaled from ThiefData.BodyScale at BeginPlay when it is shown.
 	UPROPERTY(VisibleAnywhere, Category = "Thief")
 	TObjectPtr<UStaticMeshComponent> Body;
 
@@ -79,6 +86,18 @@ class UNDERTHEMOUNTAIN_API AThiefCharacter : public ACharacter
 	// until the chamber changes, so passing the centre cannot
 	// flip the target back (the pre-fix oscillation).
 	bool bHeadingToNextCenter = false;
+
+	// [2026-10-28 T-044] Last single-node anim handed to PlayAnimation,
+	// so Tick only (re)starts playback on a walk/run/still change and
+	// never restarts the same clip every tick. A raw pointer is safe
+	// here: the anim is owned by ThiefData, which this actor holds via
+	// its UPROPERTY for its whole lifetime. Null means bind pose.
+	UAnimSequence* LastPlayedAnim = nullptr;
+
+	// [2026-10-28 T-044] True while LastPlayedAnim is meant to be
+	// playing; pairs with it so the still case calls Stop() once on
+	// the transition into stillness, not every tick.
+	bool bAnimPlaying = false;
 
 	// [2026-10-28 T-014] Trap-placement cadence accumulator: Tick
 	// adds DeltaSeconds each frame and attempts a placement every

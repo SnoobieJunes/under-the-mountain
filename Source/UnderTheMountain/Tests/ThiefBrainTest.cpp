@@ -5,7 +5,10 @@
 // because the brain is pure logic by design.
 
 #include "Misc/AutomationTest.h"
+#include "Animation/AnimSequence.h"
+#include "Animation/Skeleton.h"
 #include "Dragon/DragonCharacter.h"
+#include "Engine/SkeletalMesh.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Thief/ThiefBrain.h"
 #include "Thief/ThiefDataAsset.h"
@@ -298,6 +301,114 @@ bool FThiefTrapSlowTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("trap slow expires on its countdown"), Dragon->IsTrapSlowed());
 	TestEqual(TEXT("walk speed restored exactly"), Move->MaxWalkSpeed, WalkBefore);
 	TestEqual(TEXT("fly speed restored exactly"), Move->MaxFlySpeed, FlyBefore);
+	return true;
+}
+
+// [2026-10-28 T-044] The authored-visuals contract: every thief type's
+// data asset (assigned by Scripts/create_thieves.py) carries its Meshy
+// mesh and both locomotion clips, and each clip's skeleton is
+// compatible with the mesh's skeleton. The clips are bound to their
+// own <slug>_walking/_running Skeleton assets rather than the mesh's
+// <slug>_rigged_Skeleton, so compatibility — not identity — is what
+// lets AThiefCharacter play them; a null field or an unbridged
+// skeleton must fail here instead of silently holding bind pose in
+// game. UE 5.8's USkeleton exposes that as GetCompatibleSkeletons()
+// (plus the editor-only IsCompatibleForEditor), so both are consulted.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FThiefMeshAssetsTest, "UnderTheMountain.Thief.MeshAssets",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FThiefMeshAssetsTest::RunTest(const FString& Parameters)
+{
+	auto SkeletonsCompatible = [](const USkeleton* MeshSkeleton, const USkeleton* AnimSkeleton)
+	{
+		if (MeshSkeleton == AnimSkeleton)
+		{
+			return true;
+		}
+		for (const TSoftObjectPtr<USkeleton>& Entry : MeshSkeleton->GetCompatibleSkeletons())
+		{
+			if (Entry.Get() == AnimSkeleton ||
+				Entry.ToSoftObjectPath() == FSoftObjectPath(AnimSkeleton))
+			{
+				return true;
+			}
+		}
+		for (const TSoftObjectPtr<USkeleton>& Entry : AnimSkeleton->GetCompatibleSkeletons())
+		{
+			if (Entry.Get() == MeshSkeleton ||
+				Entry.ToSoftObjectPath() == FSoftObjectPath(MeshSkeleton))
+			{
+				return true;
+			}
+		}
+#if WITH_EDITORONLY_DATA
+		return MeshSkeleton->IsCompatibleForEditor(AnimSkeleton) ||
+			   AnimSkeleton->IsCompatibleForEditor(MeshSkeleton);
+#else
+		return false;
+#endif
+	};
+
+	struct FThiefTypeCase
+	{
+		const TCHAR* Name;
+		const TCHAR* Path;
+	};
+	const FThiefTypeCase Cases[] = {
+		{TEXT("burglar"), TEXT("/Game/Gameplay/Thieves/DA_Thief_Burglar.DA_Thief_Burglar")},
+		{TEXT("adventurer"),
+		 TEXT("/Game/Gameplay/Thieves/DA_Thief_Adventurer.DA_Thief_Adventurer")},
+		{TEXT("dwarf party"),
+		 TEXT("/Game/Gameplay/Thieves/DA_Thief_DwarfParty.DA_Thief_DwarfParty")},
+	};
+
+	for (const FThiefTypeCase& Case : Cases)
+	{
+		UThiefDataAsset* Data = LoadObject<UThiefDataAsset>(nullptr, Case.Path);
+		TestNotNull(FString::Printf(TEXT("%s data asset loads"), Case.Name), Data);
+		if (Data == nullptr)
+		{
+			continue;
+		}
+
+		TestNotNull(FString::Printf(TEXT("%s has a mesh asset"), Case.Name), Data->MeshAsset.Get());
+		TestNotNull(FString::Printf(TEXT("%s has a walk anim"), Case.Name), Data->WalkAnim.Get());
+		TestNotNull(FString::Printf(TEXT("%s has a run anim"), Case.Name), Data->RunAnim.Get());
+		if (Data->MeshAsset == nullptr)
+		{
+			continue;
+		}
+
+		const USkeleton* MeshSkeleton = Data->MeshAsset->GetSkeleton();
+		TestNotNull(FString::Printf(TEXT("%s mesh has a skeleton"), Case.Name), MeshSkeleton);
+		if (MeshSkeleton == nullptr)
+		{
+			continue;
+		}
+
+		const UAnimSequence* Anims[] = {Data->WalkAnim.Get(), Data->RunAnim.Get()};
+		const TCHAR* AnimNames[] = {TEXT("walk"), TEXT("run")};
+		for (int32 Index = 0; Index < UE_ARRAY_COUNT(Anims); ++Index)
+		{
+			const UAnimSequence* Anim = Anims[Index];
+			if (Anim == nullptr)
+			{
+				continue;
+			}
+			const USkeleton* AnimSkeleton = Anim->GetSkeleton();
+			TestNotNull(FString::Printf(TEXT("%s %s anim has a skeleton"), Case.Name,
+										AnimNames[Index]),
+						AnimSkeleton);
+			if (AnimSkeleton == nullptr)
+			{
+				continue;
+			}
+			TestTrue(FString::Printf(TEXT("%s %s anim skeleton is compatible with its mesh"),
+									 Case.Name, AnimNames[Index]),
+					 SkeletonsCompatible(MeshSkeleton, AnimSkeleton));
+		}
+	}
+
 	return true;
 }
 

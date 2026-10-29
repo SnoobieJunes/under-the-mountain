@@ -15,6 +15,9 @@
 #include "Engine/DataAsset.h"
 #include "ThiefDataAsset.generated.h"
 
+class UAnimSequence;
+class USkeletalMesh;
+
 // [2026-10-28 T-014] UPrimaryDataAsset (not plain UDataAsset) so thief
 // definitions are addressable by the Asset Manager under the "Thief"
 // primary asset type, mirroring UTreasureDataAsset's seam.
@@ -78,11 +81,31 @@ class UNDERTHEMOUNTAIN_API UThiefDataAsset : public UPrimaryDataAsset
 	UPROPERTY(EditAnywhere, Category = "Thief", meta = (ClampMin = "0"))
 	float TrapSlowSeconds = 4.0f;
 
-	// [2026-10-28 T-014] Placeholder visual scale applied to the
-	// character's greybox body so a squat dwarf reads differently from
-	// a tall adventurer before real meshes exist.
+	// [2026-10-28 T-044] Visual scale: applied to the skeletal mesh
+	// when MeshAsset is set (below), else to the greybox Body sphere
+	// as it was under T-014, so a squat dwarf (0.9 in its data) reads
+	// differently from a tall adventurer either way.
 	UPROPERTY(EditAnywhere, Category = "Thief")
 	FVector BodyScale = FVector(1.0f, 1.0f, 1.0f);
+
+	// [2026-10-28 T-044] Visuals are data per type so burglar/
+	// adventurer/dwarf stay one class: the Meshy skeletal mesh this
+	// type shows (Content/Meshy/Thieves/<slug>_rigged), assigned by
+	// Scripts/create_thieves.py. Null keeps the greybox sphere.
+	UPROPERTY(EditAnywhere, Category = "Thief|Visuals")
+	TObjectPtr<USkeletalMesh> MeshAsset;
+
+	// [2026-10-28 T-044] Looping single-node locomotion for MeshAsset:
+	// WalkAnim at sneak/grab pace, RunAnim while fleeing or scared.
+	// The Meshy walk/run sequences are bound to their own Skeleton
+	// assets, so playback relies on UE skeleton compatibility with
+	// the mesh's skeleton; either may stay null for a type, in which
+	// case that pace holds bind pose.
+	UPROPERTY(EditAnywhere, Category = "Thief|Visuals")
+	TObjectPtr<UAnimSequence> WalkAnim;
+
+	UPROPERTY(EditAnywhere, Category = "Thief|Visuals")
+	TObjectPtr<UAnimSequence> RunAnim;
 
 	// [2026-10-28 T-014] Primary asset id under the shared "Thief"
 	// type, keyed by asset name so the Asset Manager can enumerate
