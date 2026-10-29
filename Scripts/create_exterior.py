@@ -2,8 +2,9 @@
 # the peak shaft (top at z=5200 in create_lair.py) opens onto a rock
 # plateau, terraced slopes drop east to a valley floor, and a greybox
 # village + goat pasture sit ~190m east — one map, no load screen.
-# Meshy world meshes (docs/WORLD-ASSETS.md, approval-gated) replace
-# these primitives later; layout positions are the contract.
+# [2026-10-28 T-046] Village/rocks/pines are the owner's Meshy world
+# meshes, placed at the T-017 layout positions and scaled per asset
+# from their ~1m normalized imports. Terraces/plateau stay rock boxes.
 import unreal
 
 MAP_PATH = "/Game/Maps/Lair/Lair"
@@ -61,30 +62,47 @@ for i, (cx, top_z) in enumerate(((HOARD_X + 9000, 3900), (HOARD_X + 15000, 2600)
     box("Exterior_Terrace%d" % (i + 1), CUBE, (cx, 0, top_z - 150), (10000, 16000, 300), M_ROCK)
 # Valley floor: village + pasture ground (top at z=0).
 box("Exterior_Valley", CUBE, (HOARD_X + 26000, 0, -150), (36000, 42000, 300), M_ROCK)
-# Vista rocks + dead pines on the terraces (flight landmarks).
-for i, (x, y, z) in enumerate(((28000, -3500, 4000), (31000, 4200, 2700), (34500, -5200, 1400), (25500, 6000, 5100))):
-    box("Exterior_Rock%d" % i, SPHERE, (x, y, z), (900, 700, 1100), M_ROCK, yaw=i * 40)
-    box("Exterior_Pine%d" % i, CONE, (x + 900, y + 700, z + 250), (260, 260, 900), M_WOOD)
+# Vista rocks + pines on the terraces (flight landmarks) — real
+# Meshy meshes since T-046, scaled from their ~1m normalized import.
+def place_mesh(label, asset_name, x, y, ground_z, target_h, yaw=0.0):
+    # unreal.load_asset, not eal.load_asset: the latter returns None
+    # for these dashed Meshy names despite listing them (proven).
+    mesh = require(unreal.load_asset("/Game/Meshy/World/" + asset_name), "load %s" % asset_name)
+    bounds = mesh.get_bounds()
+    height = max(1.0, 2.0 * bounds.box_extent.z)
+    scale = target_h / height
+    a = require(eas.spawn_actor_from_class(unreal.StaticMeshActor, unreal.Vector(x, y, ground_z + target_h / 2.0)), "spawn %s" % label)
+    a.set_actor_label(label)
+    a.static_mesh_component.set_static_mesh(mesh)
+    a.set_actor_scale3d(unreal.Vector(scale, scale, scale))
+    if yaw:
+        a.set_actor_rotation(unreal.Rotator(0.0, yaw, 0.0), False)
+    return a
 
-# --- greybox village at x=38000 on the valley floor ---
+
+ROCKS = ("nat-rock-a", "nat-rock-b", "nat-rock-c", "nat-rock-a")
+for i, (x, y, z) in enumerate(((28000, -3500, 4000), (31000, 4200, 2700), (34500, -5200, 1400), (25500, 6000, 5100))):
+    place_mesh("Exterior_Rock%d" % i, ROCKS[i], x, y, z - 400, 1100, yaw=i * 40)
+    place_mesh("Exterior_Pine%d" % i, "nat-pine", x + 900, y + 700, z - 150, 800)
+
+# --- village at x=38000 on the valley floor: real Meshy meshes at
+# the greybox layout positions (T-046), heights in cm ---
 VX = HOARD_X + 19000
 
-
-def house(label, x, y, yaw, w=900, d=700, h=450):
-    box(label + "_Walls", CUBE, (x, y, h / 2), (w, d, h), M_WOOD, yaw=yaw)
-    box(label + "_Roof", CUBE, (x, y, h + 110), (w * 1.05, d * 0.62, 300), M_ROCK, yaw=yaw, pitch=0)
-    box(label + "_RoofPeak", CUBE, (x, y, h + 200), (w * 1.05, 90, 90), M_WOOD, yaw=yaw)
-
-
-house("Exterior_HouseA", VX - 1200, -900, 15)
-house("Exterior_HouseB", VX + 400, -1400, -10)
-house("Exterior_HouseC", VX + 1500, -500, 30, w=1100, d=800, h=520)
-house("Exterior_HouseD", VX - 600, 1100, 45)
-house("Exterior_HouseE", VX + 1100, 1300, -25)
-house("Exterior_Inn", VX - 200, 0, 0, w=1600, d=1000, h=650)
-box("Exterior_Tower", CUBE, (VX + 2100, 400, 550), (500, 500, 1100), M_ROCK)
-box("Exterior_TowerTop", CONE, (VX + 2100, 400, 1350), (620, 620, 520), M_WOOD)
-box("Exterior_Well", CUBE, (VX + 100, -300, 60), (220, 220, 120), M_ROCK)
+place_mesh("Exterior_HouseA", "vil-house-a", VX - 1200, -900, 0, 620, yaw=15)
+place_mesh("Exterior_HouseB", "vil-house-b", VX + 400, -1400, 0, 620, yaw=-10)
+place_mesh("Exterior_HouseC", "vil-house-c", VX + 1500, -500, 0, 780, yaw=30)
+place_mesh("Exterior_HouseD", "vil-house-a", VX - 600, 1100, 0, 560, yaw=45)
+place_mesh("Exterior_HouseE", "vil-house-b", VX + 1100, 1300, 0, 680, yaw=-25)
+place_mesh("Exterior_Inn", "vil-inn", VX - 200, 0, 0, 850, yaw=0)
+place_mesh("Exterior_Tower", "cas-tower", VX + 2100, 400, 0, 1150)
+place_mesh("Exterior_Well", "vil-well", VX + 100, -300, 0, 170)
+place_mesh("Exterior_Stall", "vil-market-stall", VX + 700, -200, 0, 320, yaw=20)
+place_mesh("Exterior_Cart", "vil-cart", VX - 900, 300, 0, 200, yaw=70)
+place_mesh("Exterior_Crates", "des-crates-intact", VX + 850, 650, 0, 130)
+place_mesh("Exterior_Barrels", "des-barrels-intact", VX + 1000, 780, 0, 130)
+place_mesh("Exterior_FenceA", "vil-fences", VX - 1800, 1800, 0, 160, yaw=90)
+place_mesh("Exterior_FenceB", "vil-fences", VX - 1800, -200, 0, 160, yaw=90)
 
 # --- goats in the pasture west of the village ---
 goat_cls = require(unreal.load_class(None, "/Script/UnderTheMountain.GoatActor"), "load GoatActor class")
