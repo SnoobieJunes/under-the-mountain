@@ -730,6 +730,12 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 			SelectAnimState(IsFlying(), bDiving, AnimVelocity.Size2D(), AnimVelocity.Z);
 		if (DesiredState != CurrentAnimState)
 		{
+			// [2026-10-28 T-047] Log transitions: the wing-animation
+			// failure report had no runtime evidence either way, and
+			// this one line per change is what proves the state
+			// machine fires in a live session.
+			UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon anim state -> %d (flying=%d diving=%d)"),
+				   static_cast<int32>(DesiredState), IsFlying() ? 1 : 0, bDiving ? 1 : 0);
 			CurrentAnimState = DesiredState;
 			switch (DesiredState)
 			{

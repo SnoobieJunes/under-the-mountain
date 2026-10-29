@@ -7,6 +7,8 @@
 
 2026-10-28 — T-046 — The village is real now: all 28 Meshy world models imported in one automated pass (no import dialogs) and the houses, inn, tower, rocks, and pines stand where the greybox village was
 
+2026-10-28 — T-047 — Wing-animation diagnosis: anim state changes are now logged in the Output Log so a live flight proves which state the wings are in; if your wings still look frozen, restart the editor first — an editor left open across code builds flies the old pawn (no user-visible change)
+
 2026-10-28 — T-015 — Combat is in: hold LMB to breathe fire (it drains stamina and melts thieves), R to roar loot out of a thief's hands, E next to a corpse or goat to eat and get your stamina back
 
 2026-10-28 — T-017 — You can fly out of the mountain: the peak shaft opens onto a plateau, terraces drop to a valley village with goats wandering the pasture — all one map, no loading, ~62 fps over the village
