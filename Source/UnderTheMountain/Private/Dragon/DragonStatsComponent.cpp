@@ -55,6 +55,16 @@ void UDragonStatsComponent::ApplyHPDamage(float Damage)
 	HP = FMath::Clamp(HP - FMath::Max(0.0f, Damage), 0.0f, MaxHP);
 }
 
+void UDragonStatsComponent::RestoreHP(float Amount)
+{
+	// [2026-10-28 T-015] Max() clamps a negative "heal" away — healing
+	// must never become a second damage verb with a sign flip — and
+	// the outer Clamp keeps the header invariant ([0, MaxHP]) for an
+	// over-generous food value exactly as ApplyHPDamage does for
+	// lethal overkill.
+	HP = FMath::Clamp(HP + FMath::Max(0.0f, Amount), 0.0f, MaxHP);
+}
+
 void UDragonStatsComponent::DrainHPForExhaustion(float DeltaSeconds)
 {
 	// [2026-10-28 T-011] GAMEPLAY.md section 2: at 0 stamina, continuing a

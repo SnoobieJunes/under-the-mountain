@@ -1,0 +1,386 @@
+// Copyright Under the Mountain contributors.
+// [2026-10-28 T-015] UDragonCombatComponent implementation: fire cone
+// DPS, roar gating, and the eat channel. All world knowledge (which
+// brains exist, where they stand, what time it is) arrives as call
+// arguments from the pawn, and all resource math leaves through
+// UDragonStatsComponent — this file owns only combat rules.
+
+#include "Dragon/DragonCombatComponent.h"
+#include "UnderTheMountain.h"
+
+#include "Dragon/DragonStatsComponent.h"
+#include "Livestock/GoatActor.h"
+#include "Thief/ThiefBrain.h"
+
+UDragonCombatComponent::UDragonCombatComponent()
+{
+	// [2026-10-28 T-015] Ticking stays OFF, mirroring
+	// UDragonStatsComponent: the pawn knows when combat verbs tick
+	// (input held, channel running) and a component guessing at that
+	// state was rejected. The pawn calls TickFire/TickEat instead.
+	PrimaryComponentTick.bCanEverTick = false;
+}
+
+bool UDragonCombatComponent::IsInFireCone(const FVector& Origin, const FVector& Forward,
+										  const FVector& Target, float Range, float HalfAngleDeg)
+{
+	const FVector Offset = Target - Origin;
+	const float Distance = Offset.Size();
+
+	// [2026-10-28 T-015] Range first: a target beyond the breath is
+	// outside at any angle, and range-checking before normalising
+	// also rejects a degenerate negative Range outright.
+	if (Distance > Range)
+	{
+		return false;
+	}
+
+	// [2026-10-28 T-015] A zero-length offset has no angle to test
+	// and counts as inside by contract: whatever stands exactly at
+	// the breath's origin is in the breath.
+	if (Distance <= KINDA_SMALL_NUMBER)
+	{
+		return true;
+	}
+
+	// [2026-10-28 T-015] A near-zero Forward aims nowhere; with a
+	// real offset to judge, no aim means no hit (rather than
+	// normalising noise into a random direction).
+	const FVector ForwardNormal = Forward.GetSafeNormal();
+	if (ForwardNormal.IsNearlyZero())
+	{
+		return false;
+	}
+
+	// [2026-10-28 T-015] The dot is clamped into Acos's domain
+	// because two normalised vectors can dot to 1.0000001 in float.
+	// The final comparison carries a hair of tolerance so a target
+	// mathematically ON the cone edge counts as inside (the header
+	// contract) instead of flickering on Acos rounding.
+	const float CosAngle =
+		FMath::Clamp(FVector::DotProduct(ForwardNormal, Offset / Distance), -1.0f, 1.0f);
+	const float AngleDeg = FMath::RadiansToDegrees(FMath::Acos(CosAngle));
+	return AngleDeg <= HalfAngleDeg + 0.001f;
+}
+
+bool UDragonCombatComponent::TryStartFire(UDragonStatsComponent* Stats)
+{
+	// [2026-10-28 T-015] Both refusals log at Warning: "fire did
+	// nothing" must always have a named reason in the log, whether
+	// that is a wiring bug (null Stats) or honest exhaustion.
+	if (Stats == nullptr)
+	{
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("DragonCombat TryStartFire refused: stats component is null"));
+		return false;
+	}
+	if (Stats->Stamina < FireMinStamina)
+	{
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("DragonCombat TryStartFire refused: stamina %.1f below the %.1f needed to "
+					"start fire"),
+			   Stats->Stamina, FireMinStamina);
+		return false;
+	}
+
+	bFiring = true;
+	return true;
+}
+
+void UDragonCombatComponent::StopFire()
+{
+	bFiring = false;
+}
+
+bool UDragonCombatComponent::IsFiring() const
+{
+	return bFiring;
+}
+
+int32 UDragonCombatComponent::TickFire(float Dt, UDragonStatsComponent* Stats,
+									   const FVector& Origin, const FVector& Forward,
+									   const TArray<UThiefBrain*>& Brains,
+									   const TArray<FVector>& BrainLocations)
+{
+	if (!bFiring)
+	{
+		return 0;
+	}
+
+	// [2026-10-28 T-015] No stats, no breath: draining is the price
+	// of fire, so a null Stats mid-breath stops the breath loudly
+	// instead of letting it burn for free.
+	if (Stats == nullptr)
+	{
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("DragonCombat TickFire: stats component is null - fire stopped"));
+		bFiring = false;
+		return 0;
+	}
+
+	// [2026-10-28 T-015] Negative time is clamped to a no-op frame,
+	// never a stamina refund or negative damage.
+	const float EffectiveDt = FMath::Max(0.0f, Dt);
+	if (EffectiveDt <= 0.0f)
+	{
+		return 0;
+	}
+
+	// [2026-10-28 T-015] DrainForFlight's explicit-rate overload is
+	// UDragonStatsComponent's generic per-second stamina drain (the
+	// pawn already passes it glide/hover rates of its own choosing),
+	// so fire reuses it deliberately rather than growing a second
+	// drain verb for one caller. The drain runs BEFORE damage so
+	// the tick that empties the pool has paid for its damage; the
+	// empty-pool stop below then applies from the next tick.
+	Stats->DrainForFlight(EffectiveDt, FireCostPerSecond);
+
+	// [2026-10-28 T-015] Parallel arrays are the pawn's contract;
+	// if they ever disagree, say so and work the shared prefix
+	// rather than reading past the shorter array or failing mute.
+	const int32 Count = FMath::Min(Brains.Num(), BrainLocations.Num());
+	if (Brains.Num() != BrainLocations.Num())
+	{
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("DragonCombat TickFire: %d brains but %d locations - checking only the "
+					"first %d"),
+			   Brains.Num(), BrainLocations.Num(), Count);
+	}
+
+	int32 NumDamaged = 0;
+	for (int32 Index = 0; Index < Count; ++Index)
+	{
+		UThiefBrain* Brain = Brains[Index];
+		// [2026-10-28 T-015] Null holes and corpses are skipped:
+		// burning a body costs the dragon nothing extra here, but
+		// counting it as "damaged" would lie to the pawn and to
+		// tests about what the breath accomplished.
+		if (Brain == nullptr || Brain->State() == EThiefState::Dead)
+		{
+			continue;
+		}
+		if (!IsInFireCone(Origin, Forward, BrainLocations[Index], FireRange, FireConeHalfAngleDeg))
+		{
+			continue;
+		}
+		// [2026-10-28 T-015] The brain owns the consequences (loot
+		// drops, death); combat only deals DPS scaled by Dt and
+		// counts the brains it actually burned this tick.
+		Brain->ApplyDamage(FireDps * EffectiveDt, BrainLocations[Index]);
+		++NumDamaged;
+	}
+
+	// [2026-10-28 T-015] An emptied pool ends the breath. Checking
+	// after the damage loop is what makes the final tick's damage
+	// real (see the drain comment above); TryStartFire's minimum
+	// then keeps the next press from sputtering.
+	if (Stats->Stamina <= 0.0f)
+	{
+		bFiring = false;
+	}
+
+	return NumDamaged;
+}
+
+bool UDragonCombatComponent::TryRoar(float CurrentTimeSeconds, UDragonStatsComponent* Stats,
+									 const FVector& Origin, const TArray<UThiefBrain*>& Brains,
+									 const TArray<FVector>& BrainLocations)
+{
+	// [2026-10-28 T-015] Every block path below logs its reason at
+	// Warning and leaves both stamina and LastRoarTime untouched:
+	// a roar that never happened must cost nothing and cool down
+	// nothing.
+	if (Stats == nullptr)
+	{
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("DragonCombat TryRoar refused: stats component is null"));
+		return false;
+	}
+
+	// [2026-10-28 T-015] Cooldown is checked BEFORE the stamina
+	// cost so mashing roar during the 6 s window is free to fail.
+	const float SinceLastRoar = CurrentTimeSeconds - LastRoarTime;
+	if (SinceLastRoar < RoarCooldownSeconds)
+	{
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("DragonCombat TryRoar blocked: %.1fs of roar cooldown remain"),
+			   RoarCooldownSeconds - SinceLastRoar);
+		return false;
+	}
+
+	if (!Stats->TryConsumeStamina(RoarCost))
+	{
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("DragonCombat TryRoar blocked: stamina %.1f below the %.1f roar cost"),
+			   Stats->Stamina, RoarCost);
+		return false;
+	}
+
+	// [2026-10-28 T-015] Point of no return: the roar happened, so
+	// the cooldown runs from this instant even if no thief heard it.
+	LastRoarTime = CurrentTimeSeconds;
+
+	// [2026-10-28 T-015] Same parallel-array contract as TickFire:
+	// warn on disagreement, work the shared prefix.
+	const int32 Count = FMath::Min(Brains.Num(), BrainLocations.Num());
+	if (Brains.Num() != BrainLocations.Num())
+	{
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("DragonCombat TryRoar: %d brains but %d locations - roaring at only the "
+					"first %d"),
+			   Brains.Num(), BrainLocations.Num(), Count);
+	}
+
+	int32 NumScared = 0;
+	for (int32 Index = 0; Index < Count; ++Index)
+	{
+		UThiefBrain* Brain = Brains[Index];
+		// [2026-10-28 T-015] Corpses are skipped here (the brain
+		// would ignore the roar anyway) so NumScared counts only
+		// thieves the roar actually frightened.
+		if (Brain == nullptr || Brain->State() == EThiefState::Dead)
+		{
+			continue;
+		}
+		// [2026-10-28 T-015] 3D distance (header contract): height
+		// above a thief genuinely puts the dragon farther from
+		// their ears than the ground distance suggests.
+		if (FVector::Dist(Origin, BrainLocations[Index]) > RoarRadius)
+		{
+			continue;
+		}
+		// [2026-10-28 T-015] OnRoar takes the THIEF's location:
+		// dropped loot lands where the thief stands, never at the
+		// dragon.
+		Brain->OnRoar(BrainLocations[Index]);
+		++NumScared;
+	}
+
+	UE_LOG(LogUnderTheMountain, Log, TEXT("DragonCombat roar scared %d within %.0fcm"), NumScared,
+		   RoarRadius);
+	return true;
+}
+
+bool UDragonCombatComponent::StartEatThief(UThiefBrain* Brain)
+{
+	// [2026-10-28 T-015] Refusals are named, per the component's
+	// never-silent rule: a null brain is a wiring bug, a living one
+	// is the pawn offering a meal that is still using its legs.
+	if (Brain == nullptr)
+	{
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("DragonCombat StartEatThief refused: brain is null"));
+		return false;
+	}
+	if (Brain->State() != EThiefState::Dead)
+	{
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("DragonCombat StartEatThief refused: thief is not dead"));
+		return false;
+	}
+
+	// [2026-10-28 T-015] One-meal invariant: the new meal replaces
+	// whatever was pending, and the channel restarts from full.
+	PendingThief = Brain;
+	PendingGoat = nullptr;
+	EatTimeRemaining = EatChannelSeconds;
+	return true;
+}
+
+bool UDragonCombatComponent::StartEatGoat(AGoatActor* Goat)
+{
+	if (Goat == nullptr)
+	{
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("DragonCombat StartEatGoat refused: goat is null"));
+		return false;
+	}
+	if (Goat->IsEaten())
+	{
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("DragonCombat StartEatGoat refused: goat was already eaten"));
+		return false;
+	}
+
+	// [2026-10-28 T-015] One-meal invariant, same as StartEatThief.
+	PendingGoat = Goat;
+	PendingThief = nullptr;
+	EatTimeRemaining = EatChannelSeconds;
+	return true;
+}
+
+EEatResult UDragonCombatComponent::TickEat(float Dt, UDragonStatsComponent* Stats)
+{
+	if (PendingThief == nullptr && PendingGoat == nullptr)
+	{
+		return EEatResult::None;
+	}
+
+	// [2026-10-28 T-015] A null Stats freezes (not cancels, not
+	// completes) the channel: food applied to nothing would eat
+	// the meal for no benefit, and a wiring hiccup should not
+	// confiscate lunch outright either.
+	if (Stats == nullptr)
+	{
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("DragonCombat TickEat: stats component is null - channel held"));
+		return EEatResult::InProgress;
+	}
+
+	EatTimeRemaining -= FMath::Max(0.0f, Dt);
+	if (EatTimeRemaining > 0.0f)
+	{
+		return EEatResult::InProgress;
+	}
+	EatTimeRemaining = 0.0f;
+
+	// [2026-10-28 T-015] The pending pointer is cleared BEFORE the
+	// food is applied in both branches, so completion is a one-way
+	// door: no later TickEat (or confused double-call) can apply
+	// the same meal twice.
+	if (PendingThief != nullptr)
+	{
+		PendingThief = nullptr;
+		Stats->ApplyStaminaDelta(ThiefFoodStamina);
+		Stats->RestoreHP(ThiefFoodHP);
+		// [2026-10-28 T-015] Nothing marks the brain consumed (by
+		// design — see EEatResult): AteThief IS the mark, and the
+		// pawn hides the corpse actor when it sees it.
+		UE_LOG(LogUnderTheMountain, Log,
+			   TEXT("DragonCombat ate thief corpse: +%.0f stamina, +%.0f HP"), ThiefFoodStamina,
+			   ThiefFoodHP);
+		return EEatResult::AteThief;
+	}
+
+	// [2026-10-28 T-015] Only the goat can be pending here (the
+	// one-meal invariant plus the entry check), but the pointer is
+	// still re-read and null-checked rather than trusted blindly.
+	AGoatActor* Goat = PendingGoat.Get();
+	PendingGoat = nullptr;
+	if (Goat == nullptr)
+	{
+		return EEatResult::None;
+	}
+
+	// [2026-10-28 T-015] The goat's own food values, read before
+	// Consume() so the log line reports what was actually fed.
+	const float GainedStamina = Goat->FoodStamina;
+	const float GainedHP = Goat->FoodHP;
+	Stats->ApplyStaminaDelta(GainedStamina);
+	Stats->RestoreHP(GainedHP);
+	Goat->Consume();
+	UE_LOG(LogUnderTheMountain, Log, TEXT("DragonCombat ate goat: +%.0f stamina, +%.0f HP"),
+		   GainedStamina, GainedHP);
+	return EEatResult::AteGoat;
+}
+
+void UDragonCombatComponent::CancelEat()
+{
+	// [2026-10-28 T-015] The damage-interrupt hook: abandoning the
+	// channel applies no food and leaves the meal itself untouched
+	// (a dead thief stays dead, a goat stays uneaten) so the dragon
+	// can come back to it after the fight.
+	PendingThief = nullptr;
+	PendingGoat = nullptr;
+	EatTimeRemaining = 0.0f;
+}

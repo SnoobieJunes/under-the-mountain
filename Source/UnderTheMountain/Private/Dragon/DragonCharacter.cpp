@@ -9,8 +9,12 @@
 
 #include "Dragon/DragonCharacter.h"
 #include "Dragon/DragonAppearanceComponent.h"
+#include "Dragon/DragonCombatComponent.h"
 #include "Dragon/DragonStatsComponent.h"
+#include "Livestock/GoatActor.h"
 #include "Scent/ScentComponent.h"
+#include "Thief/ThiefBrain.h"
+#include "Thief/ThiefCharacter.h"
 #include "UI/DragonTintWidget.h"
 #include "UnderTheMountain.h"
 
@@ -26,12 +30,19 @@
 #include "InputModifiers.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "Kismet/GameplayStatics.h"
+#include "Materials/MaterialInterface.h"
 
 ADragonCharacter::ADragonCharacter()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
 	Stats = CreateDefaultSubobject<UDragonStatsComponent>(TEXT("Stats"));
+	// [2026-10-28 T-015] Combat verbs live on their own component; it
+	// needs no BeginPlay (no world/time reads — the pawn injects both).
+	Combat = CreateDefaultSubobject<UDragonCombatComponent>(TEXT("Combat"));
 	Scent = CreateDefaultSubobject<UScentComponent>(TEXT("Scent"));
 	Appearance = CreateDefaultSubobject<UDragonAppearanceComponent>(TEXT("Appearance"));
 
@@ -42,6 +53,38 @@ ADragonCharacter::ADragonCharacter()
 
 	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
 	Camera->SetupAttachment(CameraBoom);
+
+	// [2026-10-28 T-015] Fire-breath volume, display only. Attached to
+	// the capsule (not the skeletal mesh) so capsule forward — the
+	// pawn's +X — is the cone's forward and the mesh's T-032 yaw/scale
+	// can never skew it. Orientation choice: the engine cone's axis is
+	// its local Z, so pitch +90 (FRotator(90,0,0)) lays that axis onto
+	// pawn +X with the cone opening away from the dragon and the narrow
+	// end back at the nose; centred 700cm ahead at scale (14,8,8) the
+	// 100cm engine cone spans roughly Combat's FireRange 1400 with a
+	// girth near its 30-degree half-angle. NoCollision: damage is the
+	// component's IsInFireCone math, never physics overlap.
+	FireCone = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("FireCone"));
+	FireCone->SetupAttachment(GetCapsuleComponent());
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> ConeMesh(TEXT("/Engine/BasicShapes/Cone.Cone"));
+	if (ConeMesh.Succeeded())
+	{
+		FireCone->SetStaticMesh(ConeMesh.Object);
+	}
+	FireCone->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	FireCone->SetRelativeLocation(FVector(700.0f, 0.0f, 30.0f));
+	FireCone->SetRelativeRotation(FRotator(90.0f, 0.0f, 0.0f));
+	FireCone->SetRelativeScale3D(FVector(14.0f, 8.0f, 8.0f));
+	// [2026-10-28 T-015] M_FireBreath is authored by a separate script;
+	// when it is absent the cone keeps the engine default material —
+	// still a visible shape, never an invisible breath.
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> FireMaterial(
+		TEXT("/Game/Dragon/M_FireBreath.M_FireBreath"));
+	if (FireMaterial.Succeeded())
+	{
+		FireCone->SetMaterial(0, FireMaterial.Object);
+	}
+	FireCone->SetVisibility(false);
 
 	// [2026-10-28 T-032] The real dragon: SK_Dragon_v4 (T-029 rig/walk)
 	// replaces the greybox ball as the visible body. Probed bounds are
@@ -157,9 +200,12 @@ bool ADragonCharacter::HasInputActions() const
 	// [2026-10-28 T-033] Non-null check for the full code-created
 	// input set; EnsureInputActions must have run (it does, at the
 	// top of SetupPlayerInputComponent and BeginPlay).
+	// [2026-10-28 T-015] Fire/Roar/Eat join the contract: Ensure must
+	// not report ready while a combat action is still null.
 	return MoveAction != nullptr && LookAction != nullptr && FlapAction != nullptr &&
 		   ToggleFlightAction != nullptr && DiveAction != nullptr && TrueSightAction != nullptr &&
-		   TintAction != nullptr && MappingContext != nullptr;
+		   TintAction != nullptr && FireAction != nullptr && RoarAction != nullptr &&
+		   EatAction != nullptr && MappingContext != nullptr;
 }
 
 void ADragonCharacter::EnsureInputActions()
@@ -218,6 +264,11 @@ void ADragonCharacter::BuildInputActions()
 	DiveAction = MakeAction(TEXT("IA_Dive"), EInputActionValueType::Boolean);
 	TrueSightAction = MakeAction(TEXT("IA_TrueSight"), EInputActionValueType::Boolean);
 	TintAction = MakeAction(TEXT("IA_TintPicker"), EInputActionValueType::Boolean);
+	// [2026-10-28 T-015] Combat verbs: Boolean like Flap — Fire reads
+	// the held value, Roar/Eat act on the press edge.
+	FireAction = MakeAction(TEXT("IA_Fire"), EInputActionValueType::Boolean);
+	RoarAction = MakeAction(TEXT("IA_Roar"), EInputActionValueType::Boolean);
+	EatAction = MakeAction(TEXT("IA_Eat"), EInputActionValueType::Boolean);
 
 	MappingContext = NewObject<UInputMappingContext>(this, TEXT("IMC_Dragon"));
 	auto Map = [this](UInputAction* Action, FKey Key)
@@ -243,6 +294,10 @@ void ADragonCharacter::BuildInputActions()
 	Map(DiveAction, EKeys::LeftShift);
 	Map(TrueSightAction, EKeys::T);
 	Map(TintAction, EKeys::C);
+	// [2026-10-28 T-015] Combat keys: LMB hold = fire, R = roar, E = eat.
+	Map(FireAction, EKeys::LeftMouseButton);
+	Map(RoarAction, EKeys::R);
+	Map(EatAction, EKeys::E);
 	// Gamepad: left stick move, right stick look, bottom face flap,
 	// top face toggle flight, right trigger dive.
 	Map(MoveAction, EKeys::Gamepad_Left2D);
@@ -252,6 +307,11 @@ void ADragonCharacter::BuildInputActions()
 	Map(DiveAction, EKeys::Gamepad_RightTrigger);
 	Map(TrueSightAction, EKeys::Gamepad_FaceButton_Left);
 	Map(TintAction, EKeys::Gamepad_FaceButton_Right);
+	// [2026-10-28 T-015] Combat pad: left trigger hold = fire (right
+	// trigger is dive), left shoulder = roar, right shoulder = eat.
+	Map(FireAction, EKeys::Gamepad_LeftTrigger);
+	Map(RoarAction, EKeys::Gamepad_LeftShoulder);
+	Map(EatAction, EKeys::Gamepad_RightShoulder);
 }
 
 void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -302,6 +362,23 @@ void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	if (TintAction != nullptr)
 	{
 		EIC->BindAction(TintAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleToggleTintPicker);
+	}
+	// [2026-10-28 T-015] Fire mirrors Dive's binding shape: Triggered
+	// while held, Completed/Canceled on release so the breath can
+	// never latch on after button-up (T-030).
+	if (FireAction != nullptr)
+	{
+		EIC->BindAction(FireAction, ETriggerEvent::Triggered, this, &ADragonCharacter::HandleFire);
+		EIC->BindAction(FireAction, ETriggerEvent::Completed, this, &ADragonCharacter::HandleFireEnd);
+		EIC->BindAction(FireAction, ETriggerEvent::Canceled, this, &ADragonCharacter::HandleFireEnd);
+	}
+	if (RoarAction != nullptr)
+	{
+		EIC->BindAction(RoarAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleRoar);
+	}
+	if (EatAction != nullptr)
+	{
+		EIC->BindAction(EatAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleEat);
 	}
 }
 
@@ -365,6 +442,159 @@ void ADragonCharacter::HandleTrueSight()
 	const bool bActive = Scent->ToggleTrueSight();
 	UE_LOG(LogUnderTheMountain, Log, TEXT("True-sight toggled: %s"),
 		   bActive ? TEXT("ACTIVE (scent dimmed, treasure markers on)") : TEXT("off"));
+}
+
+void ADragonCharacter::GatherCombatTargets(TArray<UThiefBrain*>& OutBrains, TArray<FVector>& OutLocations)
+{
+	// [2026-10-28 T-015] Parallel arrays for the combat seam: brains[i]
+	// stands at locations[i]. A thief whose brain does not exist yet
+	// (spawned, BeginPlay pending) is skipped, not dereferenced.
+	OutBrains.Reset();
+	OutLocations.Reset();
+	if (GetWorld() == nullptr)
+	{
+		return;
+	}
+	TArray<AActor*> Actors;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), AThiefCharacter::StaticClass(), Actors);
+	for (AActor* Actor : Actors)
+	{
+		AThiefCharacter* Thief = Cast<AThiefCharacter>(Actor);
+		if (Thief == nullptr)
+		{
+			continue;
+		}
+		UThiefBrain* Brain = Thief->GetBrain();
+		if (Brain == nullptr)
+		{
+			continue;
+		}
+		OutBrains.Add(Brain);
+		OutLocations.Add(Thief->GetActorLocation());
+	}
+}
+
+void ADragonCharacter::HandleFire(const FInputActionValue& Value)
+{
+	// [2026-10-28 T-015] Latch only — Tick owns starting/ticking the
+	// breath so stamina gating and target gathering happen once.
+	bWantsFire = Value.Get<bool>();
+}
+
+void ADragonCharacter::HandleFireEnd()
+{
+	// [2026-10-28 T-015] Release path (Completed/Canceled): clear the
+	// latch and stop the breath now, not next tick.
+	bWantsFire = false;
+	if (Combat != nullptr)
+	{
+		Combat->StopFire();
+	}
+}
+
+void ADragonCharacter::HandleRoar()
+{
+	// [2026-10-28 T-015] The pawn supplies world facts (time, origin,
+	// targets); TryRoar owns cost/cooldown and logs any refusal.
+	if (Combat == nullptr)
+	{
+		UE_LOG(LogUnderTheMountain, Warning, TEXT("Roar ignored: no combat component"));
+		return;
+	}
+	TArray<UThiefBrain*> Brains;
+	TArray<FVector> Locations;
+	GatherCombatTargets(Brains, Locations);
+	const float Now = GetWorld() != nullptr ? GetWorld()->GetTimeSeconds() : 0.0f;
+	const bool bRoared = Combat->TryRoar(Now, Stats, GetActorLocation(), Brains, Locations);
+	UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon roar: %s (%d thieves in world)"),
+		   bRoared ? TEXT("roared") : TEXT("blocked — see combat warning above"), Brains.Num());
+}
+
+void ADragonCharacter::HandleEat()
+{
+	// [2026-10-28 T-015] The pawn picks the meal (it owns positions):
+	// the single nearest eatable within Combat->EatRange — a dead
+	// thief's corpse or an uneaten goat, whichever is closer. The
+	// component then owns the channel and the food values.
+	if (Combat == nullptr || GetWorld() == nullptr)
+	{
+		UE_LOG(LogUnderTheMountain, Warning, TEXT("Eat ignored: no combat component or world"));
+		return;
+	}
+	const FVector Origin = GetActorLocation();
+	const float RangeSq = Combat->EatRange * Combat->EatRange;
+	float BestDistSq = RangeSq;
+	UThiefBrain* BestBrain = nullptr;
+	AActor* BestThiefActor = nullptr;
+	AGoatActor* BestGoat = nullptr;
+
+	TArray<AActor*> ThiefActors;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), AThiefCharacter::StaticClass(), ThiefActors);
+	for (AActor* Actor : ThiefActors)
+	{
+		AThiefCharacter* Thief = Cast<AThiefCharacter>(Actor);
+		if (Thief == nullptr)
+		{
+			continue;
+		}
+		UThiefBrain* Brain = Thief->GetBrain();
+		if (Brain == nullptr || Brain->State() != EThiefState::Dead)
+		{
+			continue;
+		}
+		const float DistSq = FVector::DistSquared(Origin, Thief->GetActorLocation());
+		if (DistSq <= BestDistSq)
+		{
+			BestDistSq = DistSq;
+			BestBrain = Brain;
+			BestThiefActor = Thief;
+			BestGoat = nullptr;
+		}
+	}
+	TArray<AActor*> GoatActors;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), AGoatActor::StaticClass(), GoatActors);
+	for (AActor* Actor : GoatActors)
+	{
+		AGoatActor* Goat = Cast<AGoatActor>(Actor);
+		if (Goat == nullptr || Goat->IsEaten())
+		{
+			continue;
+		}
+		const float DistSq = FVector::DistSquared(Origin, Goat->GetActorLocation());
+		if (DistSq <= BestDistSq)
+		{
+			BestDistSq = DistSq;
+			BestBrain = nullptr;
+			BestThiefActor = nullptr;
+			BestGoat = Goat;
+		}
+	}
+
+	bool bStarted = false;
+	if (BestBrain != nullptr)
+	{
+		bStarted = Combat->StartEatThief(BestBrain);
+		if (bStarted)
+		{
+			// [2026-10-28 T-015] Remember the corpse: UThiefBrain has
+			// no "consumed" flag, so Tick hides this actor on AteThief.
+			PendingEatActor = BestThiefActor;
+		}
+	}
+	else if (BestGoat != nullptr)
+	{
+		bStarted = Combat->StartEatGoat(BestGoat);
+	}
+	if (bStarted)
+	{
+		UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon eating..."));
+	}
+	else
+	{
+		// [2026-10-28 T-015] Surfaced, never silent: a failed Eat press
+		// always says why the dragon went hungry.
+		UE_LOG(LogUnderTheMountain, Log, TEXT("Eat: nothing edible in reach"));
+	}
 }
 
 void ADragonCharacter::HandleToggleTintPicker()
@@ -434,6 +664,55 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 			Move->MaxWalkSpeed = UnslowedWalkSpeed;
 			Move->MaxFlySpeed = UnslowedFlySpeed;
 			UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon trap slow expired; speeds restored"));
+		}
+	}
+	// [2026-10-28 T-015] Combat, before flight work: the component never
+	// ticks itself, so the pawn drives fire + eat here. Targets are
+	// gathered only while fire is wanted (TickEat needs none), so an
+	// idle dragon pays no actor scan. Fire origin sits at the nose
+	// (150cm ahead, 60cm up); aim follows the control rotation, with
+	// actor forward as the no-controller fallback.
+	if (Combat != nullptr)
+	{
+		TArray<UThiefBrain*> CombatBrains;
+		TArray<FVector> CombatLocations;
+		if (bWantsFire)
+		{
+			GatherCombatTargets(CombatBrains, CombatLocations);
+			if (!Combat->IsFiring())
+			{
+				Combat->TryStartFire(Stats);
+			}
+		}
+		if (Combat->IsFiring())
+		{
+			const FVector FireOrigin =
+				GetActorLocation() + GetActorForwardVector() * 150.0f + FVector(0.0f, 0.0f, 60.0f);
+			const FVector FireForward =
+				Controller != nullptr ? GetControlRotation().Vector() : GetActorForwardVector();
+			Combat->TickFire(DeltaSeconds, Stats, FireOrigin, FireForward, CombatBrains, CombatLocations);
+		}
+		if (FireCone != nullptr)
+		{
+			FireCone->SetVisibility(Combat->IsFiring());
+		}
+		// [2026-10-28 T-015] The component exposes no IsEating(): TickEat
+		// is called every tick and its result is the state (None = no
+		// meal). AteThief is the corpse-consumed signal — hide the
+		// remembered actor here; AteGoat needs nothing (Consume hid it).
+		const EEatResult EatResult = Combat->TickEat(DeltaSeconds, Stats);
+		if (EatResult == EEatResult::AteThief)
+		{
+			if (PendingEatActor != nullptr)
+			{
+				PendingEatActor->SetActorHiddenInGame(true);
+				PendingEatActor = nullptr;
+			}
+			UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon ate a thief corpse"));
+		}
+		else if (EatResult == EEatResult::AteGoat)
+		{
+			UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon ate a goat"));
 		}
 	}
 	// [2026-10-28 T-043] State-driven single-node playback (replaces

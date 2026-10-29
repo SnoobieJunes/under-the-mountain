@@ -112,10 +112,18 @@ class UNDERTHEMOUNTAIN_API UDragonStatsComponent : public UActorComponent
 	bool CanFlap() const;
 
 	// [2026-10-28 T-011] HP math, same owner-free contract as stamina:
-	// negative damage is ignored (healing is a separate, later verb) and
-	// the result is always clamped to [0, MaxHP].
+	// negative damage is ignored (healing is a separate verb, RestoreHP
+	// below) and the result is always clamped to [0, MaxHP].
 	void ApplyHPDamage(float Damage);
 	void DrainHPForExhaustion(float DeltaSeconds);
+
+	// [2026-10-28 T-015] The heal verb: adds Amount to HP, clamped to
+	// [0, MaxHP]; a negative Amount is ignored so no caller can deal
+	// damage through the heal path (ApplyHPDamage owns damage,
+	// symmetrically). Food is the only heal in M1 (docs/GAMEPLAY.md
+	// section 2: HP comes back by eating), so the eat channel in
+	// UDragonCombatComponent is its only production caller.
+	void RestoreHP(float Amount);
 
 	// [2026-10-28 T-011] Pure: maps an impact speed (cm/s, unsigned — the
 	// caller passes abs of vertical velocity) to landing HP damage. Zero

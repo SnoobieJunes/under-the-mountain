@@ -8,13 +8,17 @@
 // the captured location IS the authored home) unless SetHomeLocation
 // overrode it first; the actor never leaves WanderRadius of home and
 // never leaves home's Z plane; Body and Head are NoCollision — the
-// dragon capsule and world geometry own collision, and goats are
-// purely visual actors until the eat verb lands in T-015.
+// dragon capsule and world geometry own collision, and the pawn
+// finds goats by range, not by touching them.
+// [2026-10-28 T-015] HP is clamped at 0 from below by
+// ApplyGoatDamage; once dead the goat never wanders again, and once
+// eaten it is hidden, collision-free, and stays eaten — neither
+// transition reverses.
 // [2026-10-28 T-017] Honest scope: the sphere/cube body below is a
 // greybox stand-in until the Meshy goat (docs/WORLD-ASSETS.md LIV-01,
-// approval-gated) replaces it, and the goat is not edible yet — the
-// eat verb is T-015. Wander uses no navmesh: the pasture is open and
-// flat, so steering straight at a random in-radius target is enough.
+// approval-gated) replaces it. Wander uses no navmesh: the pasture
+// is open and flat, so steering straight at a random in-radius
+// target is enough.
 
 #pragma once
 
@@ -61,6 +65,52 @@ class UNDERTHEMOUNTAIN_API AGoatActor : public AActor
 	// invariants for how it is established).
 	FVector GetHomeLocation() const;
 
+	// [2026-10-28 T-015] Hit points; the authored default IS the full
+	// pool (a goat has no separate MaxHP — nothing heals a goat).
+	// 30 is under two seconds of held fire breath (18 DPS in
+	// docs/GAMEPLAY.md section 2), so killing lunch costs a moment,
+	// not a fight. Public EditAnywhere like the dragon's pools: the
+	// editor and tests may set it, production writes go through
+	// ApplyGoatDamage.
+	UPROPERTY(EditAnywhere, Category = "Livestock|Food")
+	float HP = 30.0f;
+
+	// [2026-10-28 T-015] What the dragon gains for eating this goat
+	// (docs/GAMEPLAY.md section 2: livestock +50 stamina/+10 HP).
+	// The values live on the goat, not on the combat component, so a
+	// future fat sheep is a data edit per placement; the eat channel
+	// reads them at completion and applies them through
+	// UDragonStatsComponent's verbs.
+	UPROPERTY(EditAnywhere, Category = "Livestock|Food")
+	float FoodStamina = 50.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Livestock|Food")
+	float FoodHP = 10.0f;
+
+	// [2026-10-28 T-015] Subtracts Damage from HP (negative damage is
+	// ignored; nothing heals a goat), clamped at 0. The hit that
+	// reaches 0 marks the goat dead — wander stops from the next
+	// Tick — logs "Goat down", and returns true; every other hit
+	// (including any against a corpse) returns false, mirroring
+	// UThiefBrain::ApplyDamage's death-report contract.
+	bool ApplyGoatDamage(float Damage);
+
+	// [2026-10-28 T-015] True once HP reached 0 (or the goat was
+	// eaten, which implies dead). A dead goat stays visible where it
+	// fell until the dragon eats the body.
+	bool IsDead() const;
+
+	// [2026-10-28 T-015] True once Consume() ran: the body is gone
+	// and the goat can never be eaten (or wander) again.
+	bool IsEaten() const;
+
+	// [2026-10-28 T-015] Removes the goat from the world politely:
+	// eaten (and therefore dead), hidden in game, actor collision
+	// off, one "Goat eaten" log line. Idempotent — a second call is
+	// a no-op — so the eat channel cannot double-count a meal by
+	// completing twice.
+	void Consume();
+
   protected:
 	// [2026-10-28 T-017] Captures HomeLocation from the placed actor
 	// location (unless SetHomeLocation already pinned it), picks the
@@ -72,6 +122,8 @@ class UNDERTHEMOUNTAIN_API AGoatActor : public AActor
 	// WanderSpeed on home's Z plane, yawing the actor onto the flat
 	// movement direction. Repicks the target on arrival (within 50cm)
 	// or when RepickTimer exceeds 6s, whichever comes first.
+	// [2026-10-28 T-015] Early-outs before any steering once the goat
+	// is dead or eaten: a corpse holds still for the eat channel.
 	virtual void Tick(float DeltaSeconds) override;
 
   private:
@@ -105,4 +157,10 @@ class UNDERTHEMOUNTAIN_API AGoatActor : public AActor
 	// [2026-10-28 T-017] Seconds since CurrentTarget was picked; the
 	// 6s cap in Tick bounds how long a goat walks one heading.
 	float RepickTimer = 0.0f;
+
+	// [2026-10-28 T-015] One-way state flags behind IsDead/IsEaten:
+	// set only by ApplyGoatDamage (lethal) and Consume, never
+	// cleared — there is no resurrection verb for livestock.
+	bool bDead = false;
+	bool bEaten = false;
 };

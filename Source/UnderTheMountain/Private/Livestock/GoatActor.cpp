@@ -2,8 +2,10 @@
 // [2026-10-28 T-017] AGoatActor implementation: greybox construction
 // plus the flat-pasture wander. Everything visual here (engine sphere
 // body, cube head) is a stand-in for the approval-gated Meshy goat in
-// docs/WORLD-ASSETS.md (LIV-01); everything behavioural is wander
-// only — being eaten arrives with the eat verb in T-015.
+// docs/WORLD-ASSETS.md (LIV-01).
+// [2026-10-28 T-015] HP/death/eaten added below the wander accessors:
+// damage can stop the wander for good, and the dragon's eat channel
+// finishes the goat off via Consume().
 
 #include "Livestock/GoatActor.h"
 #include "UnderTheMountain.h"
@@ -50,9 +52,11 @@ AGoatActor::AGoatActor()
 	}
 
 	// [2026-10-28 T-017] NoCollision on both meshes: the dragon capsule
-	// and world geometry own collision. Goats are visual actors until
-	// the eat verb (T-015) needs to detect them, and a collidable
-	// greybox would only snag flight in the meantime.
+	// and world geometry own collision, and a collidable greybox
+	// would only snag flight. [2026-10-28 T-015] The eat verb finds
+	// goats by range from the pawn (UDragonCombatComponent::EatRange),
+	// never by touching them, so NoCollision stays correct now that
+	// goats are edible.
 	Body->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Head->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }
@@ -72,6 +76,66 @@ void AGoatActor::SetHomeLocation(const FVector& NewHomeLocation)
 FVector AGoatActor::GetHomeLocation() const
 {
 	return HomeLocation;
+}
+
+bool AGoatActor::ApplyGoatDamage(float Damage)
+{
+	// [2026-10-28 T-015] A corpse (or an eaten goat) takes no more
+	// damage and reports no new death: the true return is reserved
+	// for the single killing blow, mirroring UThiefBrain.
+	if (bDead || bEaten)
+	{
+		return false;
+	}
+
+	// [2026-10-28 T-015] Negative damage is not healing (nothing
+	// heals a goat) and HP never goes below 0, so callers can pass
+	// any DPS-scaled value without pre-clamping.
+	HP = FMath::Max(0.0f, HP - FMath::Max(0.0f, Damage));
+	if (HP > 0.0f)
+	{
+		return false;
+	}
+
+	// [2026-10-28 T-015] Death is a flag, not a teardown: Tick's
+	// early-out stops the wander from the next frame, and the body
+	// stays visible where it fell so the dragon can eat it. The log
+	// line is the in-world proof a kill happened where expected.
+	bDead = true;
+	UE_LOG(LogUnderTheMountain, Log, TEXT("Goat down at %s"), *GetActorLocation().ToString());
+	return true;
+}
+
+bool AGoatActor::IsDead() const
+{
+	return bDead;
+}
+
+bool AGoatActor::IsEaten() const
+{
+	return bEaten;
+}
+
+void AGoatActor::Consume()
+{
+	// [2026-10-28 T-015] Idempotent on purpose: the eat channel
+	// clears its own pending pointer at completion, but a defensive
+	// second call must not re-log or re-hide an already-gone goat.
+	if (bEaten)
+	{
+		return;
+	}
+
+	// [2026-10-28 T-015] Eaten implies dead (the eat channel accepts
+	// a live goat, so Consume cannot assume the killing blow landed
+	// first). The actor is hidden rather than destroyed: ownership
+	// and lifespan stay with whoever placed/spawned it, and the eat
+	// channel holds no opinion about actor teardown.
+	bEaten = true;
+	bDead = true;
+	SetActorHiddenInGame(true);
+	SetActorEnableCollision(false);
+	UE_LOG(LogUnderTheMountain, Log, TEXT("Goat eaten at %s"), *GetActorLocation().ToString());
 }
 
 void AGoatActor::BeginPlay()
@@ -97,6 +161,17 @@ void AGoatActor::BeginPlay()
 void AGoatActor::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+
+	// [2026-10-28 T-015] Dead goats do not wander, and eaten goats
+	// do not exist as far as the pasture is concerned (Consume also
+	// sets bDead, so either flag alone would do; both are checked so
+	// the intent survives if that pairing ever changes). Returning
+	// before the steering math keeps a corpse exactly where it fell
+	// for the dragon's eat channel.
+	if (bDead || bEaten)
+	{
+		return;
+	}
 
 	RepickTimer += DeltaSeconds;
 

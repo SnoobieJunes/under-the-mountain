@@ -19,12 +19,15 @@
 #include "DragonCharacter.generated.h"
 
 class UDragonStatsComponent;
+class UDragonCombatComponent;
+class UThiefBrain;
 class UScentComponent;
 class UDragonAppearanceComponent;
 class UDragonTintWidget;
 class UInputAction;
 class UInputMappingContext;
 class USpringArmComponent;
+class UStaticMeshComponent;
 class UCameraComponent;
 class UAnimSequence;
 
@@ -61,6 +64,19 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// choice to the mesh material and persists it across sessions.
 	UPROPERTY(VisibleAnywhere, Category = "Dragon")
 	TObjectPtr<UDragonAppearanceComponent> Appearance;
+
+	// [2026-10-28 T-015] Combat verbs (fire breath, roar, eat channel).
+	// The component owns every combat rule and never ticks itself; this
+	// pawn gathers targets in-world and calls its TickFire/TickEat.
+	UPROPERTY(VisibleAnywhere, Category = "Dragon")
+	TObjectPtr<UDragonCombatComponent> Combat;
+
+	// [2026-10-28 T-015] Visible fire-breath volume: engine cone on the
+	// capsule (capsule forward is pawn forward), shown exactly while
+	// Combat->IsFiring(). Display only — the cone test that damages
+	// thieves is UDragonCombatComponent::IsInFireCone math.
+	UPROPERTY(VisibleAnywhere, Category = "Dragon")
+	TObjectPtr<UStaticMeshComponent> FireCone;
 
 	UPROPERTY(VisibleAnywhere, Category = "Dragon")
 	TObjectPtr<USpringArmComponent> CameraBoom;
@@ -155,6 +171,14 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	TObjectPtr<UInputAction> TrueSightAction;
 	UPROPERTY()
 	TObjectPtr<UInputAction> TintAction;
+	// [2026-10-28 T-015] Combat actions, code-created like the rest:
+	// Fire is held (Triggered/Completed), Roar and Eat are presses.
+	UPROPERTY()
+	TObjectPtr<UInputAction> FireAction;
+	UPROPERTY()
+	TObjectPtr<UInputAction> RoarAction;
+	UPROPERTY()
+	TObjectPtr<UInputAction> EatAction;
 	UPROPERTY()
 	TObjectPtr<UDragonTintWidget> TintWidget;
 	bool bTintPickerOpen = false;
@@ -174,7 +198,34 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	void HandleTrueSight();
 	// [2026-10-28 T-027] Scale-colour picker toggle (key C / gamepad right face).
 	void HandleToggleTintPicker();
+	// [2026-10-28 T-015] Fire breath hold (LMB / gamepad left trigger):
+	// Triggered latches bWantsFire from the value; Completed/Canceled
+	// clear it and stop the breath (Triggered alone never fires on
+	// release — the T-030 dive lesson).
+	void HandleFire(const struct FInputActionValue& Value);
+	void HandleFireEnd();
+	// [2026-10-28 T-015] Roar press (R / gamepad left shoulder).
+	void HandleRoar();
+	// [2026-10-28 T-015] Eat press (E / gamepad right shoulder): picks
+	// the nearest eatable in Combat->EatRange and starts the channel.
+	void HandleEat();
+	// [2026-10-28 T-015] The in-world half of the combat seam: every
+	// thief actor's brain + location as the parallel arrays
+	// UDragonCombatComponent consumes. Gathered only when a verb
+	// needs targets, never as idle per-frame bookkeeping.
+	void GatherCombatTargets(TArray<UThiefBrain*>& OutBrains, TArray<FVector>& OutLocations);
 	bool bDiving = false;
+
+	// [2026-10-28 T-015] True while the fire input is held; Tick turns
+	// it into TryStartFire + TickFire so input stays a latch, not logic.
+	bool bWantsFire = false;
+
+	// [2026-10-28 T-015] Corpse actor being eaten (thief meals only —
+	// a goat hides itself in Consume). UPROPERTY TObjectPtr so the GC
+	// keeps it reachable across the channel (the T-035 lesson); Tick
+	// hides and clears it when TickEat reports AteThief.
+	UPROPERTY()
+	TObjectPtr<AActor> PendingEatActor = nullptr;
 
 	// [2026-10-28 T-043] Last state Tick applied to the single-node
 	// mesh, so Tick only calls Play/Stop on SelectAnimState
