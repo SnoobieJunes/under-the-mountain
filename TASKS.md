@@ -3,6 +3,42 @@
      acceptance criteria are not pickable — sharpen them first. -->
 
 ## Now
+- [ ] T-048 — MCP listener reliability: diagnose why unreal-mcp dies, make it boring
+      Why: owner-reported repeatedly: the MCP listener is often dead when needed (only the first editor instance binds :8000; long-lived/stale instances keep a dead listener; several capture sessions this week failed on exactly this).
+      Accept: Root cause(s) written down with evidence (log lines); a fresh Scripts/run-editor.sh launch reaches a state where `hermes mcp test unreal-mcp` connects and list_toolsets returns within 2 minutes, three launches in a row; the one-instance rule (or its fix) is documented in README and, if it is a code/config change, shipped in this task.
+      Touches: Config/, Scripts/run-editor.sh, README.md   Depends: none   Gated: none
+- [ ] T-049 — Huge world: sprawling terrain you can fly for minutes (mountains, fields, valleys)
+      Why: owner feedback 2026-10-28: the map feels tiny — fly out of the lair and you are done. It must feel like the concept art (docs/concepts/): sprawling mountain ranges, fields, and terrain in every direction, minutes of flight before any edge.
+      Accept: A Landscape-based exterior (heightmap terrain, several km across — state the exact extents in the task evidence) rings the lair mountain: ridges/peaks, valleys, fields; the peak exit connects naturally to it; dragon flight from the peak takes minutes at full speed to reach the world edge; no visible void/edge from cruising altitude; ≥60 fps measured over the terrain on this Mac (CSV capture in evidence); lair interior unchanged.
+      Touches: Content/Maps/Lair/ (or a new World map if streaming is chosen — decide and record), Scripts/create_world_terrain.py, Source/ (streaming/level glue if any)   Depends: T-017   Gated: none
+- [ ] T-050 — Settlements everywhere: multiple castles, villages, and farms, all different
+      Why: owner feedback: one greybox-turned-Meshy village is not a world. The map needs several distinct settlements — castles (cas-* assets), at least 3 villages reusing different house mixes, and scattered farms — so flight always has somewhere to go.
+      Accept: At least 2 castle sites (keep/tower/wall/gate assets), 3 villages, and 4+ farmsteads placed on the T-049 terrain at flight-visible distances apart, each with a different layout/mix (no copy-paste rows); placed via the exterior/world builder script (deterministic, re-runnable); PIE or capture evidence per settlement; gate passes.
+      Touches: Scripts/create_exterior.py (or world builder successor), Content/Maps/   Depends: T-049   Gated: none
+- [ ] T-051 — Fire breath that reads as fire (Niagara stream, light, ignition glow)
+      Why: owner feedback: fire is currently an orange cone mesh. It needs to look like a dragon breathing fire — particle stream, flicker light on the world, heat shimmer at minimum viable scope.
+      Accept: Holding fire in PIE shows a Niagara particle fire stream from the dragon's mouth (authored NS_FireBreath, pooled, no per-frame spawns), a dynamic point light that lights terrain/thieves while firing, and the cone mesh is gone or reduced to an invisible collision-only role; damage behaviour unchanged (Dragon.CombatFire still passes); fps cost measured in the village scene.
+      Touches: Source/UnderTheMountain/Dragon/, Content/Dragon/, Scripts/create_combat_assets.py   Depends: T-015   Gated: none
+- [ ] T-052 — Sky and weather: sun, skyline, clouds, rain
+      Why: owner feedback: there is no skyline — the exterior needs a sun, cloud layer, and weather so flight reads against a living sky.
+      Accept: Exterior has a SkyAtmosphere + directional sun with shadows, volumetric/2D cloud layer visible from cruising altitude, and a weather system with at least clear and rain states (rain particles + wet-look light change at minimum) switchable in PIE (console key or auto cycle), with a documented perf cost at village scale; lair interior unaffected.
+      Touches: Content/Maps/, Source/ (weather state glue if any), Config/   Depends: T-049   Gated: none
+- [ ] T-053 — Populate the world: human NPCs and more life in the towns
+      Why: owner feedback: townsides are empty. Villagers, more goats, and ambient life make settlements feel inhabited when the dragon arrives (and gives T-016 its witnesses).
+      Accept: Villager NPC actors (Meshy human models — generate via the meshy pipeline or reuse a rigged humanoid; decision recorded in the task) wander/idle in at least 2 settlements and scatter/flee when the dragon lands or roars nearby; goat count increased with pasture herds at farms; NPC count and fps cost recorded; behaviour driven by the same data/brain pattern as thieves where sensible.
+      Touches: Source/UnderTheMountain/NPC/, Content/Gameplay/NPC/, Content/Meshy/NPC/, Scripts/   Depends: T-050   Gated: none
+- [ ] T-054 — Enemy/unit animation sets: fall down, hit reactions, goat motion
+      Why: owner feedback: enemies and units are missing most animations — thieves slide in T-pose bind/rig poses outside walk/run, nothing falls down when killed, goats are statues that wander.
+      Accept: Thieves play a death/fall animation (or ragdoll-fall) when killed and a visible hit/scare reaction; goat actors use the liv-goat skeletal mesh with walk/run clips while wandering and a death fall when killed; thief walk/run already shipped (T-044) keeps working; each proven by an automation test or PIE capture naming the clip/state.
+      Touches: Source/UnderTheMountain/Thief/, Source/UnderTheMountain/Livestock/, Content/Meshy/Thieves/, Content/Meshy/World/   Depends: T-044   Gated: none
+- [ ] T-055 — The earth catches fire: ground scorch and burnt props
+      Why: owner feedback: dragon fire should set the world on fire — ground scorches and flammable props burn and stay burnt.
+      Accept: Sustained fire on grass/ground leaves a persistent scorch decal/mark; wooden props (crates/barrels/fences/cart — the des-* intact assets) ignite after a fire threshold, burn with a fire effect for a few seconds, and swap to their burnt/rubble counterparts (des-* rubble assets) permanently for the session; thieves/goats in a burning area take the existing fire DoT; proven in PIE with before/after captures.
+      Touches: Source/UnderTheMountain/Dragon/ (combat), Source/UnderTheMountain/World/ (burnable props), Content/Maps/   Depends: T-051   Gated: none
+- [ ] T-056 — A better way to test: one-command standalone playtest (no stale editor)
+      Why: owner feedback: launching the editor to test means fighting stale builds and MCP state. Testing current code should be one command that always runs the latest build.
+      Accept: Scripts/play.sh builds the game target and launches a standalone -game window on the Lair map with the dragon ready to fly (no editor, no MCP needed); README documents it as the quick-test path and when to use the editor instead; verified from a cold shell: command -> playable window on current code.
+      Touches: Scripts/play.sh, README.md   Depends: none   Gated: none
 - [ ] T-016 — Notoriety + waves + win/lose
       Why: design pillar 2; turns verbs into a game with stakes.
       Accept: Public kill raises stars in HUD, lair kill does not; stars scale wave size/gear; hoard below threshold loses, surviving final wave wins; state machine covered by automation tests.
