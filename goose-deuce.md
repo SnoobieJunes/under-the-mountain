@@ -123,6 +123,14 @@ tag, choose the owing one.
 <!-- Real entries accumulate below, NEWEST AT THE TOP. The top entries are
      session-start required reading (count: AGENTS.md → Session ritual). -->
 
+## 2026-10-28 — T-017 resequenced ahead of combat/notoriety; eat deferred  [decision]
+- Task: T-017 (docs/PLAN.md M1/M2 phasing)
+- What: The exterior flight zone shipped before T-015 (combat) and T-016 (notoriety), at the owner's explicit direction ("i want to fly around"). It is greybox (plateau/terraces/valley/village primitives + goat actors) in the same Lair map. Goats are present and wandering but NOT edible, and no Notoriety cost exists yet.
+- Why: Owner decision 2026-10-28, mid-session. The flight zone is the owner's current priority; the Meshy world meshes are separately gated on the WORLD-ASSETS approval, which has not been given, so greybox carries the layout.
+- Where: Content/Maps/Lair/Lair.umap, Source/UnderTheMountain/Livestock/, Scripts/create_exterior.py, TASKS.md (T-017 accept rewritten).
+- Plan: PLAN.md phasing put combat/notoriety (M1) before the exterior (M2) → order swapped by owner instruction; the edible-goat + Notoriety-cost parts of the original T-017 accept now ride on T-015/T-016 respectively. docs/PLAN.md unaffected (phases are delivery order, and this entry records the swap).
+- Commit(s): this commit
+
 ## 2026-10-28 — Sweep #1 (T-004): range repo start (T-000) through T-033  [process]
 - Task: T-004 (AGENTS.md → Deviations cadence; NEW-PROJECT-GUIDE step 5)
 - What: First sweep. Docs amended (PLAN architecture names, README status/coverage/controls); adversarial review + stranger test run by independent sub-agents; findings filed as T-035–T-042; successor sweep T-034 filed. This entry is the starting marker for sweep #2's range.
