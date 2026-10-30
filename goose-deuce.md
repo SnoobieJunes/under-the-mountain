@@ -123,6 +123,14 @@ tag, choose the owing one.
 <!-- Real entries accumulate below, NEWEST AT THE TOP. The top entries are
      session-start required reading (count: AGENTS.md → Session ritual). -->
 
+## 2026-10-29 — Owner playtest reopens flight/lair scope; four unplanned demo gaps approved  [decision]
+- Task: T-057–T-074 (docs/PLAN.md M1; owner Path A playtest 2026-10-29)
+- What: The owner's first hands-on playtest produced 11 findings, filed (not started) as T-057–T-070: the standalone binary launch crashes (SIGSEGV, descriptor, ICU — T-057), the shipped flight animation does not read as flight (wings never extend, legs never tuck — T-058, reopening T-043/T-047's "proven" claim at the feel level), flight controls/cameras/dive are reopened (T-062–T-065, incl. RMB free-look + double-click steer, clarified by the owner the same day), the lair's spatial design is replaced (chamber chain → mountain with side caves and an open crown — T-066), plus tint picker (T-060), scent hotkey (T-061), two report-only animation spikes (T-059, T-067 → T-068), and lock-on + treasure pickup (T-069, T-070). Separately, an agent repo review proposed and the owner approved four additions the plan never named: audio (T-071), game-flow shell (T-072), onboarding/help (T-073), enemies that can damage the dragon (T-074).
+- Why: Owner direction, 2026-10-29, twice in one session (11 items, then approval of the 4 + F6 clarification). Evidence: the crash log pasted into T-057; repo review found zero audio assets/components, zero game-flow code, no in-game control teaching (F7 is the proof), and no enemy→dragon damage path (only landings/exhaustion cost HP).
+- Where: TASKS.md (T-057–T-074, T-063 clarification, T-068 cross-ref), docs/PLAN.md (addendum), CHANGELOG.md (two filed lines), this entry. No product code.
+- Plan: PLAN.md M1 presumed flight feel, the lair layout, and HP pressure were on track and said nothing about audio, shell, or onboarding → now amended by the 2026-10-29 addendum in this commit: flight feel and lair layout are reopened (T-012/T-043 stand as shipped-but-superseded designs; their closes stay as written — supersession lives in T-058/T-062–T-066), and audio/shell/onboarding/enemy-damage are M1 scope. M1's exit gate is unchanged. Deep dive one at a time, owner-gated, per the owner's instruction.
+- Commit(s): this commit
+
 ## 2026-10-28 — T-017 resequenced ahead of combat/notoriety; eat deferred  [decision]
 - Task: T-017 (docs/PLAN.md M1/M2 phasing)
 - What: The exterior flight zone shipped before T-015 (combat) and T-016 (notoriety), at the owner's explicit direction ("i want to fly around"). It is greybox (plateau/terraces/valley/village primitives + goat actors) in the same Lair map. Goats are present and wandering but NOT edible, and no Notoriety cost exists yet.

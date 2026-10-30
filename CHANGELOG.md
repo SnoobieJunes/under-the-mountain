@@ -3,6 +3,10 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-10-29 — T-071–T-074 filed — Owner approved four demo-gap additions from repo review: an audio pass (the game is silent), a game-flow shell (title/pause/restart/quit), onboarding prompts + help overlay, and enemies that can hurt the dragon; F6 mouse-steered flight clarified on T-063 (RMB free look, double-click move/steer by best UX, movement keys cancel) (no user-visible change)
+
+2026-10-29 — T-057–T-070 filed — Owner Path A playtest feedback filed as 14 tasks: standalone-launch crash (SIGSEGV/descriptor/ICU), flight anim + controls + cameras rework, mountain-shaped lair overhaul, animation spikes, lock-on targeting + treasure pickup, one-picker tint, scent hotkey; docs/PLAN.md addendum records the scope changes, no work started (no user-visible change)
+
 2026-10-28 — T-045 — Fixed the wall of "duplicate PrimaryAssetID" plugin warnings on editor launch (asset-manager scan was registering every file in the project) (no user-visible change)
 
 2026-10-28 — T-046 — The village is real now: all 28 Meshy world models imported in one automated pass (no import dialogs) and the houses, inn, tower, rocks, and pines stand where the greybox village was

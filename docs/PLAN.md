@@ -87,6 +87,49 @@ Content: `Content/Maps/` (lair, world), `Content/Meshy/` (imports),
 Hackathon submission = M1 complete + as much of M2 as lands without breaking
 the M1 exit gate. The submission never ships a red gate.
 
+## Addendum 2026-10-29 — owner playtest feedback (Path A session)
+
+Filed as T-057–T-070, plus T-071–T-074 (agent-proposed demo gaps,
+owner-approved the same day); no work started. Owner direction: most
+items get a one-at-a-time deep dive before implementation. These amend
+M1's content, not its exit gate — the gate above stands unchanged.
+
+- **Standalone launch is broken** (T-057): the built binary segfaults /
+  cannot resolve the project descriptor / asserts on missing ICU data.
+  Until fixed, the editor is the only play path; this is also T-020 risk
+  arriving early. See T-056 (play.sh).
+- **Flight feel is reopened** (T-058, T-062–T-065): the shipped flap reads
+  as a perched dragon (wings never extend, legs never tuck), controls are
+  stiff without true 3-axis movement or a hover-hold, the chimney cannot
+  be climbed with them, dive's intent is unclear to the player, and the
+  single camera pivots at the capsule instead of the head. Pillar 3 is
+  not yet met in feel, whatever the tests say.
+- **The lair's spatial design changes** (T-066): from the T-012 linear
+  chamber chain + shaft to a mountain — one great open chamber, side
+  caves (some dragon-passable, some thief-only), and a large central
+  fly-in/out crown. Thief-only caves are a design gain: entrances the
+  dragon cannot camp.
+- **Dragon verbs grow** (T-067 spike → T-068, T-069, T-070): roar /
+  wing-flap (blind/daze/knockback) / tail-slam animations, land/hover/hit
+  coverage, smart lock-on targeting across treasure/NPCs/animals/
+  artifacts, and picking up treasure — pillar 4 made literal; the
+  registry's carried state gains the dragon as a carrier.
+- **Small, spec-clear fixes** (T-060, T-061): one draggable colour picker
+  replacing the 3 tint sliders; a scent show/hide hotkey distinct from
+  true-sight.
+- **Sourcing spikes are report-only** (T-059, T-067): free/open-source
+  animation candidates may be surveyed with licences and retarget costs;
+  nothing is adopted without owner approval.
+- **Mouse-steered flight specified** (T-063, owner 2026-10-29): RMB-hold
+  is free look; double-click moves/steers the dragon by that view, exact
+  mechanics by best UX at prototype; any movement key cancels it.
+- **Demo gaps the plan never named, now M1 scope by owner approval**
+  (2026-10-29): audio (T-071 — the game is currently silent), a
+  game-flow shell of title/pause/win-lose/restart/quit (T-072),
+  onboarding prompts + help overlay (T-073, after controls settle), and
+  enemies that can damage the dragon with a defined defeat (T-074 —
+  today only landings and exhaustion cost HP).
+
 ## Explicit non-goals (hackathon build)
 
 Windows/Linux builds; multiplayer (M5); rival-dragon AI (M3); "train AI using
