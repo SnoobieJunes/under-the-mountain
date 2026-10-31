@@ -130,6 +130,30 @@ M1's content, not its exit gate — the gate above stands unchanged.
   enemies that can damage the dragon with a defined defeat (T-074 —
   today only landings and exhaustion cost HP).
 
+## Addendum 2026-10-31 — full-scope audit gaps filed (no cuts)
+
+A repo-wide audit (2026-10-31) verified what is actually built against
+this plan and docs/GAMEPLAY.md. The owner rejected reducing scope for
+the alpha: the full scoped game stands, open world included. Items the
+audit proved are neither built nor previously tasked are now filed as
+T-075–T-092, and delivery order among them is set by their `Depends:`
+fields, not by cutting:
+
+- **Two spikes before their overhauls:** flight controls (T-075,
+  prototypes → owner pick → T-062) joining the animation spike (T-067).
+- **Specced-but-untasked systems:** claw + crush verbs (T-076, T-077),
+  magic pool (T-080), the full §6 artifact set + wearables (T-081),
+  bulk treasure to the §8 hoard total (T-082), XP (T-083), hoard mound
+  scaling (T-086), sleep (T-084) and tribute (T-085) — these carry the
+  phase tags docs/GAMEPLAY.md gave them; the tags are delivery order.
+- **Proven code holes:** fire cannot damage goats (T-078), high-speed
+  flight impacts are free (T-079), thief steering is hard-coded to the
+  T-012 map (real navigation: T-089).
+- **Never designed, now owned:** save system beyond tint (T-087),
+  settings (T-088), wildlife below livestock on the food ladder
+  (T-090), water and dragon-in-water behaviour (T-091), and a
+  day/night world clock that sleep and cadence can read (T-092).
+
 ## Explicit non-goals (hackathon build)
 
 Windows/Linux builds; multiplayer (M5); rival-dragon AI (M3); "train AI using

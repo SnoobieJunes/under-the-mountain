@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-10-31 — T-075–T-092 filed — Full-scope audit gaps filed at owner direction (no scope cut): a flight-controls spike ahead of T-062, claw/crush verbs, fire-damages-goats fix, flight collision damage, magic pool, the full artifact set + wearables, bulk treasure to spec, XP, sleep, tribute, hoard mound scaling, save system, settings, real navigation (kills the hard-coded chamber steering), wildlife, water, and a day/night clock; ground-idle gap folded into the T-067 animation spike (no user-visible change)
+
 2026-10-29 — T-071–T-074 filed — Owner approved four demo-gap additions from repo review: an audio pass (the game is silent), a game-flow shell (title/pause/restart/quit), onboarding prompts + help overlay, and enemies that can hurt the dragon; F6 mouse-steered flight clarified on T-063 (RMB free look, double-click move/steer by best UX, movement keys cancel) (no user-visible change)
 
 2026-10-29 — T-057–T-070 filed — Owner Path A playtest feedback filed as 14 tasks: standalone-launch crash (SIGSEGV/descriptor/ICU), flight anim + controls + cameras rework, mountain-shaped lair overhaul, animation spikes, lock-on targeting + treasure pickup, one-picker tint, scent hotkey; docs/PLAN.md addendum records the scope changes, no work started (no user-visible change)
