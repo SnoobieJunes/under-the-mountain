@@ -19,6 +19,18 @@
 #include "UnderTheMountain.h"
 
 #include "Camera/CameraComponent.h"
+#include "Components/DirectionalLightComponent.h"
+#include "Components/ExponentialHeightFogComponent.h"
+#include "Components/PointLightComponent.h"
+#include "Components/SkyLightComponent.h"
+#include "Engine/DirectionalLight.h"
+#include "Engine/ExponentialHeightFog.h"
+#include "Engine/SkyLight.h"
+#include "EngineUtils.h"
+#include "HAL/IConsoleManager.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
+
 #include "Animation/AnimSequence.h"
 #include "Engine/Engine.h"
 #include "EnhancedInputComponent.h"
@@ -34,6 +46,29 @@
 #include "Engine/StaticMesh.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInterface.h"
+
+namespace
+{
+// [2026-11-01 T-051] Dev/measurement switch: hold the breath
+// visuals (Niagara + light) on without firing, for captures and
+// fps measurement. Damage is never routed through this - it only
+// feeds the presentation branch in Tick.
+TAutoConsoleVariable<int32> CVarForceFireVisuals(
+	TEXT("utm.fire.forcevisuals"), 0,
+	TEXT("1 = hold fire-breath visuals on (Niagara stream + light) without firing. Dev/capture use only."));
+bool ForceFireVisuals()
+{
+	return CVarForceFireVisuals.GetValueOnGameThread() != 0;
+}
+
+// [2026-11-01 T-052] Weather state (0 Clear, 1 Rain). Read by the
+// pawn every Tick and applied on change, which makes the PIE
+// console (`utm.weather.state 1`), the pawn's Exec commands, and
+// headless -ExecCmds captures all drive the same state.
+TAutoConsoleVariable<int32> CVarWeatherState(
+	TEXT("utm.weather.state"), 0,
+	TEXT("Weather state: 0 = Clear, 1 = Rain. Applied by the dragon pawn on change."));
+} // namespace
 
 ADragonCharacter::ADragonCharacter()
 {
@@ -54,37 +89,46 @@ ADragonCharacter::ADragonCharacter()
 	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
 	Camera->SetupAttachment(CameraBoom);
 
-	// [2026-10-28 T-015] Fire-breath volume, display only. Attached to
-	// the capsule (not the skeletal mesh) so capsule forward — the
-	// pawn's +X — is the cone's forward and the mesh's T-032 yaw/scale
-	// can never skew it. Orientation choice: the engine cone's axis is
-	// its local Z, so pitch +90 (FRotator(90,0,0)) lays that axis onto
-	// pawn +X with the cone opening away from the dragon and the narrow
-	// end back at the nose; centred 700cm ahead at scale (14,8,8) the
-	// 100cm engine cone spans roughly Combat's FireRange 1400 with a
-	// girth near its 30-degree half-angle. NoCollision: damage is the
-	// component's IsInFireCone math, never physics overlap.
-	FireCone = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("FireCone"));
-	FireCone->SetupAttachment(GetCapsuleComponent());
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> ConeMesh(TEXT("/Engine/BasicShapes/Cone.Cone"));
-	if (ConeMesh.Succeeded())
+	// [2026-11-01 T-051] Fire-breath presentation (replaces the T-015
+	// cone mesh): a pooled Niagara stream at the nose plus a point
+	// light, both attached to the capsule so capsule forward — the
+	// pawn's +X — is the breath direction and the mesh's yaw/scale
+	// can never skew it. The Niagara asset is authored outside code
+	// (NS_FireBreath; see create_combat_assets.py); when it is absent
+	// the pawn still breathes (damage is combat math, never the FX),
+	// it just breathes invisibly - logged once below, not per tick.
+	FireBreathFX = CreateDefaultSubobject<UNiagaraComponent>(TEXT("FireBreathFX"));
+	FireBreathFX->SetupAttachment(GetCapsuleComponent());
+	FireBreathFX->SetRelativeLocation(FVector(150.0f, 0.0f, 60.0f));
+	FireBreathFX->SetAutoActivate(false);
+	static ConstructorHelpers::FObjectFinder<UNiagaraSystem> FireSystem(
+		TEXT("/Game/Dragon/NS_FireBreath.NS_FireBreath"));
+	if (FireSystem.Succeeded())
 	{
-		FireCone->SetStaticMesh(ConeMesh.Object);
+		FireBreathFX->SetAsset(FireSystem.Object);
 	}
-	FireCone->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	FireCone->SetRelativeLocation(FVector(700.0f, 0.0f, 30.0f));
-	FireCone->SetRelativeRotation(FRotator(90.0f, 0.0f, 0.0f));
-	FireCone->SetRelativeScale3D(FVector(14.0f, 8.0f, 8.0f));
-	// [2026-10-28 T-015] M_FireBreath is authored by a separate script;
-	// when it is absent the cone keeps the engine default material —
-	// still a visible shape, never an invisible breath.
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> FireMaterial(
-		TEXT("/Game/Dragon/M_FireBreath.M_FireBreath"));
-	if (FireMaterial.Succeeded())
+	FireLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("FireLight"));
+	FireLight->SetupAttachment(GetCapsuleComponent());
+	FireLight->SetRelativeLocation(FVector(400.0f, 0.0f, 60.0f));
+	FireLight->SetLightColor(FLinearColor(1.0f, 0.45f, 0.1f));
+	FireLight->SetAttenuationRadius(1800.0f);
+	FireLight->SetIntensity(0.0f);
+	FireLight->SetVisibility(false);
+
+	// [2026-11-01 T-052] Rain shower carried 9 m above the pawn
+	// (NS_Rain authored like NS_FireBreath - recipe in
+	// create_combat_assets.py's successor notes in create_sky.py's
+	// header lineage; the pawn only activates it in Rain state).
+	RainFX = CreateDefaultSubobject<UNiagaraComponent>(TEXT("RainFX"));
+	RainFX->SetupAttachment(GetCapsuleComponent());
+	RainFX->SetRelativeLocation(FVector(0.0f, 0.0f, 900.0f));
+	RainFX->SetAutoActivate(false);
+	static ConstructorHelpers::FObjectFinder<UNiagaraSystem> RainSystem(
+		TEXT("/Game/Dragon/NS_Rain.NS_Rain"));
+	if (RainSystem.Succeeded())
 	{
-		FireCone->SetMaterial(0, FireMaterial.Object);
+		RainFX->SetAsset(RainSystem.Object);
 	}
-	FireCone->SetVisibility(false);
 
 	// [2026-10-28 T-032] The real dragon: SK_Dragon_v4 (T-029 rig/walk)
 	// replaces the greybox ball as the visible body. Probed bounds are
@@ -247,6 +291,75 @@ void ADragonCharacter::BeginPlay()
 			   TEXT("SK_Dragon_v4_FlyAnim not found; flight will use bind pose"));
 	}
 	UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon pawn spawned at %s"), *GetActorLocation().ToString());
+	// [2026-11-01 T-052] Initial weather from the cvar (0 Clear
+	// unless a capture/console asked for Rain before spawn).
+	ApplyWeather(FMath::Clamp(CVarWeatherState.GetValueOnGameThread(), 0, 1));
+}
+
+void ADragonCharacter::Weather()
+{
+	SetWeather(CurrentWeatherState == 1 ? 0 : 1);
+}
+
+void ADragonCharacter::SetWeather(int32 State)
+{
+	ApplyWeather(FMath::Clamp(State, 0, 1));
+	// Keep the cvar in step so Tick's change-detection does not
+	// immediately re-apply the console's older value.
+	CVarWeatherState->Set(CurrentWeatherState, ECVF_SetByConsole);
+}
+
+void ADragonCharacter::ApplyWeather(int32 NewState)
+{
+	CurrentWeatherState = NewState;
+	const bool bRain = (NewState == 1);
+	UWorld* World = GetWorld();
+	if (World == nullptr)
+	{
+		return;
+	}
+	// [2026-11-01 T-052] Sky actors are found by class each apply
+	// (weather switches are rare; a cached pointer would go stale
+	// across level loads). Only the exterior sun/sky/fog are
+	// touched - interior point lights are a different class and
+	// the lair's boxes shadow the sun, so the interior is
+	// unaffected. Rain: dim blue-grey sun, dimmer sky light,
+	// ~4.7x fog density (the wet, closed-in look), rain FX on.
+	for (TActorIterator<ADirectionalLight> It(World); It; ++It)
+	{
+		if (UDirectionalLightComponent* Sun = Cast<UDirectionalLightComponent>(It->GetLightComponent()))
+		{
+			Sun->SetIntensity(bRain ? 0.7f : 3.0f);
+			Sun->SetLightColor(bRain ? FLinearColor(0.62f, 0.7f, 0.85f)
+									 : FLinearColor(1.0f, 0.95f, 0.88f));
+		}
+	}
+	for (TActorIterator<ASkyLight> It(World); It; ++It)
+	{
+		if (USkyLightComponent* Sky = Cast<USkyLightComponent>(It->GetLightComponent()))
+		{
+			Sky->SetIntensity(bRain ? 0.4f : 1.0f);
+		}
+	}
+	for (TActorIterator<AExponentialHeightFog> It(World); It; ++It)
+	{
+		if (UExponentialHeightFogComponent* Fog = It->GetComponent())
+		{
+			Fog->SetFogDensity(bRain ? 0.0028f : 0.0006f);
+		}
+	}
+	if (RainFX != nullptr)
+	{
+		if (bRain && !RainFX->IsActive())
+		{
+			RainFX->Activate(true);
+		}
+		else if (!bRain && RainFX->IsActive())
+		{
+			RainFX->Deactivate();
+		}
+	}
+	UE_LOG(LogUnderTheMountain, Log, TEXT("Weather: %s"), bRain ? TEXT("Rain") : TEXT("Clear"));
 }
 
 void ADragonCharacter::BuildInputActions()
@@ -784,6 +897,14 @@ void ADragonCharacter::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other,
 void ADragonCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	// [2026-11-01 T-052] Weather follows the cvar: a console or
+	// -ExecCmds change lands here within a frame and applies once
+	// (ApplyWeather only runs on an actual change).
+	const int32 DesiredWeather = FMath::Clamp(CVarWeatherState.GetValueOnGameThread(), 0, 1);
+	if (DesiredWeather != CurrentWeatherState)
+	{
+		ApplyWeather(DesiredWeather);
+	}
 	// [2026-10-28 T-014] Trap-slow expiry: restore the captured speeds
 	// in the same tick the clock runs out.
 	if (TrapSlowTimeRemaining > 0.0f)
@@ -827,9 +948,34 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 			Combat->TickFire(DeltaSeconds, Stats, FireOrigin, FireForward, CombatBrains,
 							 CombatLocations, CombatGoats, CombatGoatLocations);
 		}
-		if (FireCone != nullptr)
+		// [2026-11-01 T-051] Breath presentation follows IsFiring
+		// exactly: the pooled Niagara activates once per breath (no
+		// per-frame spawns) and the point light flickers around a
+		// base intensity while lit, so terrain and thieves in the
+		// cone catch firelight. utm.fire.forcevisuals (below) can
+		// hold the visuals on for captures/measurements without
+		// touching damage, which stays Combat's math alone.
+		const bool bBreathVisible = Combat->IsFiring() || ForceFireVisuals();
+		if (FireBreathFX != nullptr)
 		{
-			FireCone->SetVisibility(Combat->IsFiring());
+			if (bBreathVisible && !FireBreathFX->IsActive())
+			{
+				FireBreathFX->Activate(true);
+			}
+			else if (!bBreathVisible && FireBreathFX->IsActive())
+			{
+				FireBreathFX->Deactivate();
+			}
+		}
+		if (FireLight != nullptr)
+		{
+			FireLight->SetVisibility(bBreathVisible);
+			if (bBreathVisible)
+			{
+				const float Flicker =
+					0.85f + 0.3f * FMath::Sin(GetWorld() ? GetWorld()->GetTimeSeconds() * 37.0f : 0.0f);
+				FireLight->SetIntensity(9000.0f * Flicker);
+			}
 		}
 		// [2026-10-28 T-015] The component exposes no IsEating(): TickEat
 		// is called every tick and its result is the state (None = no
