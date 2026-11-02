@@ -101,7 +101,10 @@ def wing_pose(arm, flap_deg, unfold_scale=1.0, lag_flap=None):
                 raise RuntimeError(f"required bone not found: {base}.{side}")
             bone.rotation_mode = "QUATERNION"
             flap = lag_flap[base] if lag_flap else flap_deg
-            phi = math.radians(flap)
+            # [2026-11-02 T-068] Gull slope (owner Image #2): the straight
+            # [2026-11-02 T-068] wing line sits 15 deg below horizontal at
+            # [2026-11-02 T-068] flap=0 — shoulder apex, tips out and down.
+            phi = math.radians(flap - 15.0 * unfold_scale)
             straight = Vector((out * math.cos(phi), 0.0, math.sin(phi)))
             rest = REST_DIRS[f"{base}.{side}"]
             target = rest.slerp(straight, unfold_scale) if unfold_scale < 1.0 else straight
@@ -207,7 +210,7 @@ def clip_fly():
     # [2026-11-02 T-068] Bird flap: a single angle for the whole straight
     # [2026-11-02 T-068] wing (+-40 deg). Per-joint swings/lags were the fold.
     for frame in (1, 7, 13, 19, 24):
-        lag_flap = {b: 40.0 * sine(frame, span) for b in WING_BASES}
+        lag_flap = {b: 32.0 * sine(frame, span) for b in WING_BASES}
         keyed = wing_pose(arm, 0, 1.0, lag_flap) + leg_pose(arm, 1.0) + tail_wave(arm, frame, span, 4.0)
         bob = -0.03 * sine(frame, span)
         pelvis.location = (pbind[0], pbind[1], pbind[2] + bob)
@@ -237,8 +240,8 @@ def clip_hover():
     pelvis, chest, neck, head = pb(arm, "pelvis"), pb(arm, "chest"), pb(arm, "neck"), pb(arm, "head")
     half = {"upper": 20.0, "lower": -25.0, "foot": 10.0}  # legs ready, half-deployed
     for frame in (1, 7, 13, 19, 24):
-        # [2026-11-02 T-068] Hover beats deeper (+-50) but stays straight.
-        lag_flap = {b: 50.0 * sine(frame, span) for b in WING_BASES}
+        # [2026-11-02 T-068] Hover beats deeper (+-42) but stays straight.
+        lag_flap = {b: 42.0 * sine(frame, span) for b in WING_BASES}
         keyed = wing_pose(arm, 0, 1.0, lag_flap)
         keyed += leg_pose(arm, 1.0, front=half, hind=half)
         keyed += tail_wave(arm, frame, span, 3.0, base_deg=10.0)  # tail drooped as counterweight

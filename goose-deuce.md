@@ -123,6 +123,14 @@ tag, choose the owing one.
 <!-- Real entries accumulate below, NEWEST AT THE TOP. The top entries are
      session-start required reading (count: AGENTS.md → Session ritual). -->
 
+## 2026-11-02 — Membrane detached: bird wing arm on the gull line  [decision]
+- Task: T-058 follow-up (owner screenshots + armature-diagram reference, 2026-11-02)
+- What: Straight bones were not enough: the visible membrane still sailed to the hips because its verts carry pelvis/hindleg/tail weights. Owner decisions (structured input): detach fully, Image #2 gull slope, merge into branch 22 only after owner OK. lengthen_wings.py now moves pelvis/hindleg/tail/spine weight to the dominant wing bone for wing-dominant verts only (19,189 verts; thigh verts keep their leg weights — a first threshold-only attempt hung the thighs and was caught in renders), asserted at export. Solver line gained the -15 deg gull dihedral; flap tuned to +-32 around it. Mesh + clips re-imported; critic rounds 01-04 vs the owner screenshot, CRITIC LOOP OK.
+- Why: The owner's mechanism (armature diagram) is an independent wing arm; a bat sail anchored at the hips can never read as that arm no matter how straight the bones are. I kept proving skeleton metrics while the defect lived in skinning — recorded here so the next asset measures the surface, not just bones.
+- Where: Scripts/lengthen_wings.py (detach + asserts), Scripts/create_dragon_anims.py (gull line), Content/Meshy/Dragon/ (v5 blend/FBX, SK_Dragon_v4 + Skeleton + Walk + 8 clips, t068_v6_*.png renders), critic/round_04.md.
+- Plan: docs/ANIMATION-SPIKE.md assumed the shipped bat membrane -> silhouette contract changed by owner decision; spike folds at sweep. Merge to branch 22 is gated on owner approval of a worktree capture (this commit does not merge).
+- Commit(s): this commit
+
 ## 2026-11-02 — Straight-wing solver replaces Euler-guess flap; v5 lengthening rebuilt  [decision]
 - Task: T-058 follow-up (owner playtest screenshot 2026-11-02, critic/observations.md)
 - What: Two stacked defects, both measured: (1) the per-joint Euler wing poser produced evaluated bends of 30-57/100-113/115-125 deg (elbow/wrist/finger) — a zigzag fold at every flap phase, in Blender and identically in UE (43.7/109.2 deg) — while span tests passed it; (2) lengthen_wings.py measured connected edit-bones after moving their parents, shipping elbow 0.148 instead of 0.288 so v5 verts and bones disagreed. Fixes: wing posing is now a direction solver (each segment rotated onto one straight lateral line tilted by a single flap angle; bends 0.0 deg, level reach 0.85/0.85), lengthening precomputes joints and asserts lengths, mesh+clips re-imported, FlyAnimPose gains a bend assertion (<25 deg; red at 43.7/109.2 on the old clips, green after). Critic loop: 3 rounds vs the owner screenshot as failure reference, CRITIC LOOP OK; blind graders read the fixed wings as "stretched horizontally" / "drooping symmetrically".

@@ -69,6 +69,51 @@ def main():
             moved += 1
     print(f"VERTS_MOVED {moved}")
 
+    # [2026-11-02 T-068] Detach the membrane from the hips (owner contract:
+    # [2026-11-02 T-068] bird-like independent wing arm). The bat-style sail
+    # [2026-11-02 T-068] existed because membrane verts carry pelvis/hindleg/
+    # [2026-11-02 T-068] tail/spine weights, anchoring the trailing edge at
+    # [2026-11-02 T-068] the hips in every pose. For every vert that is
+    # [2026-11-02 T-068] meaningfully wing-driven (>=0.35 same-side wing
+    # [2026-11-02 T-068] weight), move all pelvis/hindleg/tail/spine weight to
+    # [2026-11-02 T-068] its dominant wing bone. Chest weight is kept (root
+    # [2026-11-02 T-068] blend at the shoulder). Asserted below so a regression
+    # [2026-11-02 T-068] fails the export instead of shipping silently.
+    hip_groups = {"pelvis", "spine", "spine2"} | {
+        f"{k}.{s}" for k in ("hindleg_upper", "hindleg_lower", "hindleg_foot") for s in ("L", "R")
+    } | {f"tail.0{i}" for i in range(1, 7)}
+    group_index = {g.name: g.index for g in mesh.vertex_groups}
+    detached = 0
+    for vert in mesh.data.vertices:
+        weights = {group_names[g.group]: g.weight for g in vert.groups}
+        hip_total_all = sum(w for n, w in weights.items() if n in hip_groups)
+        for side in ("L", "R"):
+            wing = {f"{b}.{side}": weights.get(f"{b}.{side}", 0.0) for b in CHAIN}
+            # [2026-11-02 T-068] Wing-DOMINANT verts only: hind-thigh surface
+            # [2026-11-02 T-068] verts carry minor wing weight from heat
+            # [2026-11-02 T-068] transfer; stripping their hindleg weights made
+            # [2026-11-02 T-068] thighs follow the wing and hang untucked.
+            if sum(wing.values()) < 0.35 or sum(wing.values()) <= hip_total_all:
+                continue
+            dominant = max(wing, key=wing.get)
+            moved_w = 0.0
+            for name in hip_groups:
+                if name in weights and weights[name] > 0.0:
+                    moved_w += weights[name]
+                    mesh.vertex_groups[group_index[name]].remove([vert.index])
+            if moved_w > 0.0:
+                mesh.vertex_groups[group_index[dominant]].add(
+                    [vert.index], weights[dominant] + moved_w, "REPLACE")
+                detached += 1
+            break
+    print(f"VERTS_DETACHED {detached}")
+    for vert in mesh.data.vertices:
+        weights = {group_names[g.group]: g.weight for g in vert.groups}
+        wing_total = sum(w for n, w in weights.items() if n.startswith("wing_"))
+        hip_total = sum(w for n, w in weights.items() if n in hip_groups)
+        if wing_total >= 0.35 and wing_total > hip_total and hip_total > 0.01:
+            raise RuntimeError(f"membrane vert {vert.index} still hip-anchored ({hip_total:.3f})")
+
     # --- apply new edit-bone positions ---
     bpy.context.view_layer.objects.active = arm
     arm.select_set(True)
