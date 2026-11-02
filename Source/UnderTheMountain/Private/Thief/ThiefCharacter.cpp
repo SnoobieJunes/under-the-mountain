@@ -59,6 +59,18 @@ void AThiefCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// [2026-11-01 T-018] Runtime-spawned thieves (intro gnome,
+	// wave spawns) arrived with no controller, and CMC does not
+	// simulate movement for a controller-less pawn - they stood
+	// frozen at spawn while editor-placed thieves walked (proven
+	// by the T-018/T-016 in-game logs: runtime spawns never left
+	// their spawn point). Spawn the default AI controller when
+	// missing; placed thieves already have one and skip this.
+	if (Controller == nullptr)
+	{
+		SpawnDefaultController();
+	}
+
 	if (ThiefData == nullptr)
 	{
 		// [2026-10-28 T-014] Surfaced, not swallowed: without data the

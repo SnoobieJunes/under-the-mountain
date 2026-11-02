@@ -114,6 +114,12 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	UFUNCTION(Exec)
 	void BurnTest();
 
+	// [2026-11-01 T-018] Intro choice entry from the choice
+	// widget: 0 = Let go, 1 = Chase. Forwards to the intro
+	// subsystem; the widget is dismissed by the FreePlay
+	// transition in Tick.
+	void HandleIntroChoice(int32 BranchIndex);
+
 	// [2026-11-01 T-052] Apply a weather state (0 Clear, 1 Rain) to
 	// the world's sky actors (sun, sky light, fog - found by class
 	// in the current world) and this pawn's rain FX, and log it.
@@ -237,6 +243,11 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	UPROPERTY()
 	TObjectPtr<UDragonTintWidget> TintWidget;
 	bool bTintPickerOpen = false;
+
+	// [2026-11-01 T-018] The intro choice widget, created when the
+	// gnome steals and dismissed at FreePlay.
+	UPROPERTY()
+	TObjectPtr<class UIntroChoiceWidget> IntroWidget;
 	UPROPERTY()
 	TObjectPtr<UInputMappingContext> MappingContext;
 
@@ -290,10 +301,22 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// Notoriety + Hoard, wave driving, and outcome classification.
 	void AuditGameLoop(float DeltaSeconds);
 
+	// [2026-11-01 T-018] Intro driver from Tick: subsystem state
+	// machine plus the world work (camera ease, gnome spawn and
+	// watch, choice widget show/dismiss).
+	void TickIntro(float DeltaSeconds);
+
 	// [2026-11-01 T-055] Scorch bookkeeping: disc locations this
 	// session (dedup radius checked against these) and the
 	// accumulator/throttle for ground hits while firing downward.
 	TArray<FVector> ScorchLocations;
+
+	// [2026-11-01 T-018] Intro glue state: the spawned gnome, and
+	// the one-shot latches for spawning it and showing/dismissing
+	// the choice widget exactly once per transition.
+	TWeakObjectPtr<class AThiefCharacter> IntroGnome;
+	bool bIntroGnomeSpawned = false;
+	bool bIntroChoiceShown = false;
 
 	// [2026-11-01 T-016] Game-loop audit bookkeeping: thieves and
 	// props already accounted for (by actor name - unique per

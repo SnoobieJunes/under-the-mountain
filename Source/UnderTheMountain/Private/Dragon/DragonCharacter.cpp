@@ -15,9 +15,12 @@
 #include "Scent/ScentComponent.h"
 #include "Thief/ThiefBrain.h"
 #include "Thief/ThiefCharacter.h"
+#include "Thief/ThiefDataAsset.h"
 #include "UI/DragonTintWidget.h"
+#include "UI/IntroChoiceWidget.h"
 #include "UnderTheMountain.h"
 #include "Hoard/HoardSubsystem.h"
+#include "Intro/IntroSubsystem.h"
 #include "Notoriety/NotorietySubsystem.h"
 #include "Treasure/TreasureSubsystem.h"
 #include "Waves/WaveSubsystem.h"
@@ -74,6 +77,12 @@ bool ForceFireVisuals()
 TAutoConsoleVariable<int32> CVarWeatherState(
 	TEXT("utm.weather.state"), 0,
 	TEXT("Weather state: 0 = Clear, 1 = Rain. Applied by the dragon pawn on change."));
+
+// [2026-11-01 T-018] Intro master switch: 0 skips the wake-up
+// sequence entirely (captures/tests that are not about the intro).
+TAutoConsoleVariable<int32> CVarIntroEnabled(
+	TEXT("utm.intro.enabled"), 1,
+	TEXT("1 = play the intro wake-up sequence on spawn; 0 = straight to free play."));
 } // namespace
 
 ADragonCharacter::ADragonCharacter()
@@ -759,6 +768,139 @@ void ADragonCharacter::MaybeSpawnGroundScorch(const FVector& Origin, const FVect
 	}
 }
 
+void ADragonCharacter::HandleIntroChoice(int32 BranchIndex)
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (UIntroSubsystem* Intro = World->GetSubsystem<UIntroSubsystem>())
+		{
+			Intro->Choose(BranchIndex == 1 ? EIntroBranch::Chase : EIntroBranch::LetGo);
+		}
+	}
+}
+
+void ADragonCharacter::TickIntro(float DeltaSeconds)
+{
+	// [2026-11-01 T-018] Intro glue: state machine in the
+	// subsystem, world work here (camera, gnome spawn/watch,
+	// widget show/dismiss). Every transition is one-shot latched
+	// so per-tick calls cannot double-spawn or double-show.
+	UWorld* World = GetWorld();
+	if (World == nullptr)
+	{
+		return;
+	}
+	UIntroSubsystem* Intro = World->GetSubsystem<UIntroSubsystem>();
+	if (Intro == nullptr)
+	{
+		return;
+	}
+	if (CVarIntroEnabled.GetValueOnGameThread() == 0)
+	{
+		if (Intro->GetState() != EIntroState::FreePlay)
+		{
+			Intro->SkipToFreePlay();
+		}
+		return;
+	}
+	Intro->TickIntro(DeltaSeconds);
+	switch (Intro->GetState())
+	{
+	case EIntroState::WakeUp:
+		// [2026-11-01 T-018] The restrained camera move: boom
+		// eases from a close 240 to the play 700 over the wake.
+		// (T-068's Sleep/Wake clips take over the body when they
+		// land; the camera move is theirs to keep.)
+		if (CameraBoom != nullptr)
+		{
+			const float P = Intro->GetWakeProgress();
+			CameraBoom->TargetArmLength = FMath::Lerp(240.0f, 700.0f, P * P * (3.0f - 2.0f * P));
+		}
+		break;
+	case EIntroState::GnomeSteals:
+		if (!bIntroGnomeSpawned)
+		{
+			bIntroGnomeSpawned = true;
+			UThiefDataAsset* BurglarData = LoadObject<UThiefDataAsset>(
+				nullptr, TEXT("/Game/Gameplay/Thieves/DA_Thief_Burglar.DA_Thief_Burglar"));
+			// [2026-11-01 T-018] Spawned beside the hoard's prize
+			// chest (18500,-500): the brain makes for the richest
+			// treasure in reach, so the steal lands in seconds,
+			// not after a cross-lair trek (first version spawned
+			// at the chamber edge and the gnome walked to C3).
+			const FVector SpawnPoint(18300.0f, -200.0f, 300.0f);
+			AThiefCharacter* Gnome = World->SpawnActorDeferred<AThiefCharacter>(
+				AThiefCharacter::StaticClass(), FTransform(FRotator::ZeroRotator, SpawnPoint));
+			if (Gnome != nullptr)
+			{
+				Gnome->ThiefData = BurglarData;
+				Gnome->ExitLocation = FVector(-1300.0f, 0.0f, 160.0f);
+				Gnome->FinishSpawning(FTransform(FRotator::ZeroRotator, SpawnPoint));
+				IntroGnome = Gnome;
+				Intro->SetGnomeName(Gnome->GetFName());
+				UE_LOG(LogUnderTheMountain, Log, TEXT("Intro: gnome spawned in the hoard"));
+			}
+		}
+		if (AThiefCharacter* Gnome = IntroGnome.Get())
+		{
+			if (UThiefBrain* Brain = Gnome->GetBrain())
+			{
+				if (Brain->CarriedItems().Num() > 0 || Brain->State() == EThiefState::Flee)
+				{
+					Intro->ReportGnomeStole();
+				}
+			}
+		}
+		break;
+	case EIntroState::Choice:
+		if (!bIntroChoiceShown)
+		{
+			bIntroChoiceShown = true;
+			// Freeze the gnome mid-getaway while the player
+			// decides (its tick, not the world's).
+			if (AThiefCharacter* Gnome = IntroGnome.Get())
+			{
+				Gnome->SetActorTickEnabled(false);
+			}
+			if (APlayerController* PC = Cast<APlayerController>(GetController()))
+			{
+				if (PC->IsLocalController())
+				{
+					IntroWidget = CreateWidget<UIntroChoiceWidget>(PC, UIntroChoiceWidget::StaticClass());
+					if (IntroWidget != nullptr)
+					{
+						IntroWidget->BindToPawn(this);
+						IntroWidget->AddToViewport(20);
+						PC->SetShowMouseCursor(true);
+					}
+				}
+			}
+		}
+		break;
+	case EIntroState::FreePlay:
+		if (bIntroChoiceShown)
+		{
+			bIntroChoiceShown = false;
+			if (AThiefCharacter* Gnome = IntroGnome.Get())
+			{
+				Gnome->SetActorTickEnabled(true);
+			}
+			if (IntroWidget != nullptr)
+			{
+				IntroWidget->RemoveFromParent();
+				IntroWidget = nullptr;
+			}
+			if (APlayerController* PC = Cast<APlayerController>(GetController()))
+			{
+				PC->SetShowMouseCursor(false);
+			}
+		}
+		break;
+	default:
+		break;
+	}
+}
+
 void ADragonCharacter::AuditGameLoop(float DeltaSeconds)
 {
 	// [2026-11-01 T-016] The pawn is the only actor guaranteed to
@@ -807,7 +949,27 @@ void ADragonCharacter::AuditGameLoop(float DeltaSeconds)
 		{
 			CountedThiefEvents.Add(Thief->GetFName());
 			const bool bWithLoot = Brain->CarriedItems().Num() > 0;
-			Notoriety->AddEscapePoints(bWithLoot);
+			// [2026-11-01 T-018] The intro gnome's escape is
+			// charged by the intro table, not the generic rates:
+			// suppressed here, replaced when the subsystem says
+			// so (failed chase +5; let-go already charged).
+			bool bSuppressed = false;
+			if (UIntroSubsystem* Intro = World->GetSubsystem<UIntroSubsystem>())
+			{
+				int32 Replacement = 0;
+				if (Intro->ShouldSuppressEscapeGain(Thief->GetFName(), Replacement))
+				{
+					bSuppressed = true;
+					if (Replacement > 0)
+					{
+						Notoriety->AddPoints(Replacement, TEXT("intro: gnome got away"));
+					}
+				}
+			}
+			if (!bSuppressed)
+			{
+				Notoriety->AddEscapePoints(bWithLoot);
+			}
 			int64 Stolen = 0;
 			for (const FName& ItemId : Brain->CarriedItems())
 			{
@@ -1171,6 +1333,8 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 	{
 		ApplyWeather(DesiredWeather);
 	}
+	// [2026-11-01 T-018] Intro sequence (camera, gnome, choice).
+	TickIntro(DeltaSeconds);
 	// [2026-11-01 T-016] Game loop: waves, notoriety/hoard
 	// accounting and outcome classification, driven from here
 	// (the pawn is the one actor that always ticks).

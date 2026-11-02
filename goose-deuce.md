@@ -123,6 +123,14 @@ tag, choose the owing one.
 <!-- Real entries accumulate below, NEWEST AT THE TOP. The top entries are
      session-start required reading (count: AGENTS.md → Session ritual). -->
 
+## 2026-11-01 — Intro wake-up ships without the T-068 Sleep/Wake clips  [decision]
+- Task: T-018 (docs/GAMEPLAY.md intro branches; T-068 animation set)
+- What: The intro sequence shipped with a restrained camera move (boom 240→700 over the wake) and no skeletal Sleep/Wake animation, because T-068 (the reusable Sleep/Wake clip set the decision names) is owner-gated and not yet done - no sleep or wake clip exists in the project. The sequence states are named and timed so T-068's clips drop into the WakeUp state without restructuring (the pawn comment at the camera ease says so).
+- Why: Blocking the whole intro (state machine, gnome, choice UI, branch accounting - all proven this session) on an owner-gated animation task would leave the first-60-seconds experience unbuilt for the sake of one clip; the decision's intent (a real hero impression, not an idle-pose cheat) is carried by the camera move until the clips land.
+- Where: Source/UnderTheMountain/Private/Dragon/DragonCharacter.cpp (TickIntro WakeUp camera ease), Source/UnderTheMountain/Public/Intro + Private/Intro, TASKS.md T-018.
+- Plan: T-018's Decision said wake-up uses T-068's set → the sequence honours the state design and defers only the clip; T-068 remains the owner-gated home for the animation, and wiring it in is a named follow-up in T-018's closing note. docs/PLAN.md is not falsified (it does not schedule the clip inside T-018); folded at the next sweep.
+- Commit(s): this commit
+
 ## 2026-11-01 — Terrain built by C++ editor commandlet, not an Unreal Python script  [decision]
 - Task: T-049 (docs/PLAN.md exterior/world scope)
 - What: The huge-world terrain generator shipped as a C++ editor commandlet (UTerrainCommandlet in the new Source/UnderTheMountainEditor editor module, driven by Scripts/create_world_terrain.py as a launcher) instead of an unreal-python script like every other content builder in Scripts/. The project also gained the UnderTheMountainEditor module that AGENTS.md's layout section already described but which did not exist.
