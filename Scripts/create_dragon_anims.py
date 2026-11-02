@@ -24,6 +24,7 @@ import math
 import os
 
 import bpy
+from mathutils import Matrix, Vector
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # [2026-11-01 T-068] v5 rig: wing bones lengthened in the armature itself
@@ -34,14 +35,6 @@ FPS = 24
 
 SIDE_SIGN = {"L": -1.0, "R": 1.0}
 WING_BASES = ("wing_shoulder", "wing_elbow", "wing_wrist", "wing_finger")
-# [2026-11-01 T-068] Full-spread unfold (deg about Z): shoulder-driven so the
-# [2026-11-01 T-068] wing reads as one straight span, not a zig-zag. T-043 used
-# [2026-11-01 T-068] 55/30/15 (cumulative 100); v2 first used 68/22/8, still
-# [2026-11-01 T-068] too tight (tips beside hips); 85/30/12 overshot into a
-# [2026-11-01 T-068] dart sweep on the top view; settled 70/24/10 (cumulative
-# [2026-11-01 T-068] 104, near-lateral). Span now comes from the v5 rig's
-# [2026-11-01 T-068] real bone lengths, not pose scale (cheat removed).
-SPREAD = {"wing_shoulder": 70.0, "wing_elbow": 24.0, "wing_wrist": 10.0, "wing_finger": 0.0}
 # [2026-11-01 T-068] Leg tuck (deg about X, + = swept backward/streamlined).
 # [2026-11-01 T-068] Front legs fold bird-style (upper back, forearm folded
 # [2026-11-01 T-068] forward under it); hind legs trail straight back.
@@ -70,22 +63,60 @@ def set_rot(bone, x=0.0, y=0.0, z=0.0):
     bone.rotation_euler = (math.radians(x), math.radians(y), math.radians(z))
 
 
-def key(bones, frame, paths=("rotation_euler",)):
+def key(bones, frame, paths=None):
+    # [2026-11-02 T-068] Wing bones are quaternion-posed by the solver below;
+    # [2026-11-02 T-068] key whichever rotation property the bone actually uses.
     for bone in bones:
-        for path in paths:
+        bone_paths = paths or (
+            ("rotation_quaternion",) if bone.rotation_mode == "QUATERNION" else ("rotation_euler",)
+        )
+        for path in bone_paths:
             bone.keyframe_insert(data_path=path, frame=frame)
 
 
+# [2026-11-02 T-068] Rest segment directions, filled by open_rig. The solver
+# [2026-11-02 T-068] interpolates rest -> straight by unfold_scale so folded
+# [2026-11-02 T-068] poses (scale 0) reproduce bind exactly.
+REST_DIRS = {}
+
+
 def wing_pose(arm, flap_deg, unfold_scale=1.0, lag_flap=None):
-    """Pose both wings: flap about X (deg per joint via lag_flap dict or scalar),
-    unfold about Z scaled from SPREAD. Returns keyed bones."""
+    """[2026-11-02 T-068] Pose both wings as ONE straight line per side.
+
+    The previous per-joint Euler guess (flap X + cumulative unfold Z) measured
+    30-57 deg at the elbow, ~100-113 at the wrist, ~115-125 at the finger on
+    the evaluated pose — a zigzag fold, however the membrane renders hid it.
+    This solver instead rotates each segment, root to tip, onto a single
+    target direction: lateral (straight out) tilted by the flap angle about
+    the body axis. Same direction every segment = collinear by construction;
+    flap is the whole straight wing sweeping like a bird's. Owner contract
+    2026-11-02: tips straight out, never touching the body, fully extended.
+    """
     bones = []
-    for side, sign in SIDE_SIGN.items():
+    for side in ("L", "R"):
+        out = 1.0 if side == "L" else -1.0  # .L tips toward +X in armature space
         for base in WING_BASES:
-            bone = pb(arm, f"{base}.{side}")
+            bone = arm.pose.bones.get(f"{base}.{side}")
+            if bone is None:
+                raise RuntimeError(f"required bone not found: {base}.{side}")
+            bone.rotation_mode = "QUATERNION"
             flap = lag_flap[base] if lag_flap else flap_deg
-            set_rot(bone, x=flap, z=sign * SPREAD[base] * unfold_scale)
+            phi = math.radians(flap)
+            straight = Vector((out * math.cos(phi), 0.0, math.sin(phi)))
+            rest = REST_DIRS[f"{base}.{side}"]
+            target = rest.slerp(straight, unfold_scale) if unfold_scale < 1.0 else straight
+            bpy.context.view_layer.update()
+            head, tail = Vector(bone.head), Vector(bone.tail)
+            current = (tail - head).normalized()
+            correction = current.rotation_difference(target.normalized())
+            bone.matrix = (
+                Matrix.Translation(head)
+                @ correction.to_matrix().to_4x4()
+                @ Matrix.Translation(-head)
+                @ bone.matrix
+            )
             bones.append(bone)
+    bpy.context.view_layer.update()
     return bones
 
 
@@ -136,6 +167,13 @@ def open_rig(action_name, frame_end):
     arm.select_set(True)
     bpy.ops.object.mode_set(mode="POSE")
     reset_pose(arm)
+    REST_DIRS.clear()
+    for side in ("L", "R"):
+        for base in WING_BASES:
+            edit = arm.data.bones[f"{base}.{side}"]
+            REST_DIRS[f"{base}.{side}"] = (
+                Vector(edit.tail_local) - Vector(edit.head_local)
+            ).normalized()
     return arm, action
 
 
@@ -166,10 +204,10 @@ def clip_fly():
     pelvis, chest = pb(arm, "pelvis"), pb(arm, "chest")
     neck = pb(arm, "neck")
     pbind = tuple(pelvis.location)
-    swings = {"wing_shoulder": 72.0, "wing_elbow": 30.0, "wing_wrist": 20.0, "wing_finger": 14.0}
-    lags = {"wing_shoulder": 0, "wing_elbow": 2, "wing_wrist": 4, "wing_finger": 6}
+    # [2026-11-02 T-068] Bird flap: a single angle for the whole straight
+    # [2026-11-02 T-068] wing (+-40 deg). Per-joint swings/lags were the fold.
     for frame in (1, 7, 13, 19, 24):
-        lag_flap = {b: (swings[b] / 2) * sine(frame, span, lags[b]) for b in WING_BASES}
+        lag_flap = {b: 40.0 * sine(frame, span) for b in WING_BASES}
         keyed = wing_pose(arm, 0, 1.0, lag_flap) + leg_pose(arm, 1.0) + tail_wave(arm, frame, span, 4.0)
         bob = -0.03 * sine(frame, span)
         pelvis.location = (pbind[0], pbind[1], pbind[2] + bob)
@@ -186,8 +224,7 @@ def clip_glide():
     chest = pb(arm, "chest")
     for frame in (1, 13, 25, 37, 48):
         # held spread with micro-corrections only — never a slow flap
-        lag_flap = {"wing_shoulder": 3.0 * sine(frame, span), "wing_elbow": 2.0 * sine(frame, span, 3),
-                    "wing_wrist": 4.0 * sine(frame, span, 6), "wing_finger": 3.0 * sine(frame, span, 9)}
+        lag_flap = {b: 2.0 * sine(frame, span) for b in WING_BASES}
         keyed = wing_pose(arm, 0, 1.0, lag_flap) + leg_pose(arm, 1.0) + tail_wave(arm, frame, span, 2.5)
         set_rot(chest, x=1.0 * sine(frame, span))
         key(keyed + [chest], frame)
@@ -198,11 +235,10 @@ def clip_hover():
     span, end = 23, 24
     arm, action = open_rig("Hover", end)
     pelvis, chest, neck, head = pb(arm, "pelvis"), pb(arm, "chest"), pb(arm, "neck"), pb(arm, "head")
-    swings = {"wing_shoulder": 95.0, "wing_elbow": 40.0, "wing_wrist": 26.0, "wing_finger": 18.0}
-    lags = {"wing_shoulder": 0, "wing_elbow": 2, "wing_wrist": 4, "wing_finger": 6}
     half = {"upper": 20.0, "lower": -25.0, "foot": 10.0}  # legs ready, half-deployed
     for frame in (1, 7, 13, 19, 24):
-        lag_flap = {b: (swings[b] / 2) * sine(frame, span, lags[b]) for b in WING_BASES}
+        # [2026-11-02 T-068] Hover beats deeper (+-50) but stays straight.
+        lag_flap = {b: 50.0 * sine(frame, span) for b in WING_BASES}
         keyed = wing_pose(arm, 0, 1.0, lag_flap)
         keyed += leg_pose(arm, 1.0, front=half, hind=half)
         keyed += tail_wave(arm, frame, span, 3.0, base_deg=10.0)  # tail drooped as counterweight

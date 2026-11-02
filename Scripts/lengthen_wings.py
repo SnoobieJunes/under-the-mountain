@@ -34,7 +34,13 @@ def main():
     mesh = next(o for o in bpy.data.objects if o.type == "MESH")
 
     # --- measure old joints (armature space == edit-bone head_local) ---
-    old_heads, new_heads, deltas = {}, {}, {}
+    # [2026-11-02 T-068] ALL new joints are precomputed here and applied from
+    # [2026-11-02 T-068] storage below. The first version measured each edit
+    # [2026-11-02 T-068] bone AFTER moving its parent: connected heads move
+    # [2026-11-02 T-068] with the parent tail, so downstream lengths were
+    # [2026-11-02 T-068] measured already-shrunk (elbow shipped 0.148, not the
+    # [2026-11-02 T-068] printed 0.288) and verts/bones disagreed in-game.
+    old_heads, new_heads, new_tails, deltas = {}, {}, {}, {}
     for side in ("L", "R"):
         prev_new_tail = None
         for base in CHAIN:
@@ -44,7 +50,7 @@ def main():
             direction = (tail - head).normalized()
             new_head = head if prev_new_tail is None else prev_new_tail
             new_tail = new_head + direction * (tail - head).length * GROW[base]
-            old_heads[name], new_heads[name] = head, new_head
+            old_heads[name], new_heads[name], new_tails[name] = head, new_head, new_tail
             deltas[name] = new_head - head
             prev_new_tail = new_tail
             print(f"WING_GROW {name} len {(tail-head).length:.3f} -> {(new_tail-new_head).length:.3f}")
@@ -67,18 +73,17 @@ def main():
     bpy.context.view_layer.objects.active = arm
     arm.select_set(True)
     bpy.ops.object.mode_set(mode="EDIT")
-    for side in ("L", "R"):
-        prev_new_tail = None
-        for base in CHAIN:
-            name = f"{base}.{side}"
-            ebone = arm.data.edit_bones[name]
-            direction = (Vector(ebone.tail) - Vector(ebone.head)).normalized()
-            length = (Vector(ebone.tail) - Vector(ebone.head)).length * GROW[base]
-            if prev_new_tail is not None:
-                ebone.head = prev_new_tail
-            ebone.tail = Vector(ebone.head) + direction * length
-            prev_new_tail = Vector(ebone.tail)
+    for name in new_heads:
+        ebone = arm.data.edit_bones[name]
+        ebone.head = new_heads[name]
+        ebone.tail = new_tails[name]
     bpy.ops.object.mode_set(mode="OBJECT")
+    for name in new_heads:
+        got = arm.data.bones[name].length
+        want = (new_tails[name] - new_heads[name]).length
+        print(f"WING_LEN_CHECK {name} got {got:.3f} want {want:.3f}")
+        if abs(got - want) > 0.005:
+            raise RuntimeError(f"wing bone length mismatch: {name} got {got} want {want}")
 
     for side in ("L", "R"):
         tip = arm.data.bones[f"wing_finger.{side}"].tail_local

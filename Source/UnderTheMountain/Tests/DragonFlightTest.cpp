@@ -276,6 +276,37 @@ bool FDragonFlyAnimPoseTest::RunTest(const FString& Parameters)
 									 Body > 0.0 ? Span / Body : 0.0),
 					 Body > 0.0 && Span / Body > 0.9);
 		}
+		// [2026-11-02 T-068] Straightness proof (owner playtest 2026-11-02: tips
+		// [2026-11-02 T-068] straight out, fully extended, bird flap). Segment
+		// [2026-11-02 T-068] directions between composed bone origins must stay
+		// [2026-11-02 T-068] near-collinear in Glide: the shipped zigzag measured
+		// [2026-11-02 T-068] 30-57 deg at the elbow in Blender's evaluated pose.
+		if (TipL != INDEX_NONE && TipR != INDEX_NONE)
+		{
+			for (const TCHAR* Side : {TEXT("L"), TEXT("R")})
+			{
+				TArray<FVector> Points;
+				for (const TCHAR* Base :
+					 {TEXT("wing_shoulder"), TEXT("wing_elbow"), TEXT("wing_wrist"), TEXT("wing_finger")})
+				{
+					const int32 Idx = RefSkeleton.FindBoneIndex(FName(FString::Printf(TEXT("%s_%s"), Base, Side)));
+					if (Idx != INDEX_NONE)
+					{
+						Points.Add(Component[Idx].GetLocation());
+					}
+				}
+				TestEqual(FString::Printf(TEXT("wing chain %s has 4 joints"), Side), Points.Num(), 4);
+				for (int32 Seg = 0; Seg + 2 < Points.Num(); ++Seg)
+				{
+					const FVector A = (Points[Seg + 1] - Points[Seg]).GetSafeNormal();
+					const FVector B = (Points[Seg + 2] - Points[Seg + 1]).GetSafeNormal();
+					const double Bend = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(
+						static_cast<double>(FVector::DotProduct(A, B)), -1.0, 1.0)));
+					TestTrue(FString::Printf(TEXT("wing %s joint %d stays straight (%.1f deg)"), Side, Seg, Bend),
+							 Bend < 25.0);
+				}
+			}
+		}
 	}
 	return true;
 }
