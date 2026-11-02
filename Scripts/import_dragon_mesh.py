@@ -74,12 +74,15 @@ mesh = require(eal.load_asset(DST + "/SK_Dragon_v4"), "load SK_Dragon_v4")
 # [2026-11-01 T-068] owns textures + the ScaleTint parameter.
 material = eal.load_asset(DST + "/M_DragonScales.M_DragonScales")
 if material is not None:
-    mats = mesh.get_editor_property("materials")
-    for slot in mats:
-        slot.set_editor_property("material_interface", material)
-    mesh.set_editor_property("materials", mats)
-    require(eal.save_asset(DST + "/SK_Dragon_v4"), "save SK_Dragon_v4 with material")
-    print("DRAGON_MATERIAL_ASSIGNED M_DragonScales slots=%d" % len(mats))
+    # [2026-11-01 T-068] Mutating fetched SkeletalMaterial structs does NOT
+    # [2026-11-01 T-068] persist (proven: slot stayed WorldGridMaterial and
+    # [2026-11-01 T-068] the dragon rendered untextured in-game). Construct a
+    # [2026-11-01 T-068] fresh slot, replace the array, save_loaded_asset.
+    slot = unreal.SkeletalMaterial()
+    slot.set_editor_property("material_interface", material)
+    mesh.set_editor_property("materials", [slot])
+    require(eal.save_loaded_asset(mesh), "save SK_Dragon_v4 with material")
+    print("DRAGON_MATERIAL_ASSIGNED M_DragonScales slots=1")
 else:
     raise RuntimeError("import_dragon_mesh failed: M_DragonScales not found - run create_dragon_material.py first")
 
