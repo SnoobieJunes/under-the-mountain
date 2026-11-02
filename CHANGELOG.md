@@ -3,6 +3,12 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-10-31 — Owner review processed — Sandbox guarantee written into PLAN/GAMEPLAY (PT-LOOP is a benchmark, never rails; unscripted "go rogue" demo capture is supported), music is friend-composed and will be ingested — never generated — under T-071, the dragon pipeline is stated everywhere as Muse multi-images → Meshy mesh/textures → Blender rig/animation → Unreal, and a Meshy credit forecast + spend guardrails now own the remaining ~450 efficient / ~625 quality-safe estimate (no user-visible change)
+
+2026-10-31 — T-075/T-067 — Flight and animation spike decisions adopted from owner annotations + delegated best-judgement calls: hybrid momentum/precision flight with dive-as-posture, Brake, Landing Assist, segmented stamina, no speed/skim stamina regen, Infinite Stamina testing setting; lean ABP_Dragon architecture, exact v1 clip set incl. reusable Sleep/Wake, CC0-only external animation, and family-specific death presentation; GAMEPLAY.md §2 target amended, no behaviour changed yet (no user-visible change)
+
+2026-10-31 — T-075/T-067 — Flight and animation spike findings published: hybrid momentum/precision flight is the recommended prototype direction, and a UDragonAnimInstance + ABP_Dragon montage/additive architecture is the recommended animation direction; no flight or animation behaviour changed, and prototype feel/owner picks remain gated in docs/FLIGHT-SPIKE.md and docs/ANIMATION-SPIKE.md (no user-visible change)
+
 2026-10-31 — T-075–T-092 filed — Full-scope audit gaps filed at owner direction (no scope cut): a flight-controls spike ahead of T-062, claw/crush verbs, fire-damages-goats fix, flight collision damage, magic pool, the full artifact set + wearables, bulk treasure to spec, XP, sleep, tribute, hoard mound scaling, save system, settings, real navigation (kills the hard-coded chamber steering), wildlife, water, and a day/night clock; ground-idle gap folded into the T-067 animation spike (no user-visible change)
 
 2026-10-29 — T-071–T-074 filed — Owner approved four demo-gap additions from repo review: an audio pass (the game is silent), a game-flow shell (title/pause/restart/quit), onboarding prompts + help overlay, and enemies that can hurt the dragon; F6 mouse-steered flight clarified on T-063 (RMB free look, double-click move/steer by best UX, movement keys cancel) (no user-visible change)

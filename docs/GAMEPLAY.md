@@ -1,6 +1,6 @@
 # GAMEPLAY.md — Under the Mountain gameplay spec
 
-**Date:** 2026-10-27 · **Task:** T-026 · **Status:** Draft for implementation
+**Date:** 2026-10-27 · **Task:** T-026 · **Status:** Draft for implementation — §2 flight model amended 2026-10-31 (T-075 prototype decisions)
 **Normative plan:** [docs/PLAN.md](PLAN.md) · **Vision:** [idea.md](../idea.md) ·
 **Art:** [docs/ART-DIRECTION.md](ART-DIRECTION.md) (Style B)
 **Scope tags:** `M1` = hackathon build, `M2` = open-world expansion,
@@ -19,7 +19,7 @@ Tuning tests named in this doc:
 
 | ID | Test | Pass / output |
 |---|---|---|
-| `PT-LOOP` | Timed PIE playtest, fresh player, full session, think-aloud off; log timestamps of first flight / first catch / first eat | Median timings replace §1 cadences |
+| `PT-LOOP` | Timed PIE playtest, fresh player, full session, think-aloud off; log timestamps of first flight / first catch / first eat. This is a **benchmark route for tuning**, never a required player path — the player may ignore it entirely (sandbox rule, §1) | Median timings replace §1 cadences |
 | `PT-STAM` | PIE stamina probe: scripted walk/flap/dive circuits + free play; log time-to-empty and deaths at zero stamina | Drain/restore values in §2 |
 | `PT-SCENT` | Scent readability probe in lair at gameplay camera distance; player ranks ribbons by value, timed | Thickness brackets in §3 (target: correct rank order without UI) |
 | `PT-WAVE` | Wave survival playtest per wave × Notoriety star; log hoard lost, dragon HP, clear time | §4 composition/gear, §8 thresholds |
@@ -34,7 +34,7 @@ subsystems in PLAN.md. No value in this doc may be hard-coded in C++.
 | Section | DataAsset(s) | Owning system (PLAN.md) |
 |---|---|---|
 | §1 Loop timings | `DA_SessionLoop`, `DT_IncursionCadence` | `UNotorietySubsystem`, wave spawner |
-| §2 Stamina/food | `DA_DragonStats`, `DT_FoodValues` | `UDragonStatsComponent`, `UDragonFlightComponent` |
+| §2 Stamina/food | `DA_DragonStats`, `DT_FoodValues` | `UDragonStatsComponent`, `UDragonMovementComponent` (T-075 target) |
 | §3 Scent | `DA_ScentConfig`, `DT_ScentBrackets` | `UScentComponent`, `UTreasureSubsystem` |
 | §4 Waves | `DT_Waves`, `DT_NotorietyGear` | `UNotorietySubsystem`, wave spawner |
 | §5 Thieves | `DA_Thief_Burglar`, `DA_Thief_DwarfParty`, `DA_Thief_Adventurer`, `DT_Counters` | `AThiefCharacter`, `UThiefBrain` |
@@ -47,7 +47,23 @@ subsystems in PLAN.md. No value in this doc may be hard-coded in C++.
 
 ## 1. Core loop timings — `DA_SessionLoop`, `DT_IncursionCadence` (`M1`)
 
-Target session: one sitting a judge can finish start-to-end
+### Sandbox guarantee (owner decision 2026-10-31)
+
+This game is a **sandbox with systemic pressure, not a scripted session**.
+The minute-by-minute table below is a benchmark cadence for tuning and demo
+pacing — it is never a rail. After the intro doorway the player may ignore
+incursions and waves, abandon the hoard, raid villages, chase wildlife, test
+the flight model, sleep, or simply fly the world. Nothing teleports the
+player back, locks a verb behind the next beat, or pauses the world until an
+objective is obeyed. The simulation keeps running and answers in kind:
+thieves keep looting an undefended hoard, public kills raise Notoriety,
+witnessed livestock kills matter, waves arrive and resolve by their caps,
+and win/lose is scored from world state rather than route compliance. Going
+rogue is a supported play style with consequences, not a failure to follow
+instructions. The hackathon video may therefore be unscripted live sandbox
+play; no demo-only scripted route may be required to make the game respond.
+
+Target benchmark session: one sitting a judge can finish start-to-end
 `[derived: PLAN.md success criterion — fresh player finishes intro, flies,
 defends/loses in one session]`. Working length `[tuning: PT-LOOP]`:
 
@@ -59,7 +75,7 @@ defends/loses in one session]`. Working length `[tuning: PT-LOOP]`:
 | Waves per session | 6 | `[tuning: PT-WAVE]` — see §4; wave 6 is the final wave (§8) |
 | Incursions between waves | 1–2 single thieves | `[tuning: PT-LOOP]` |
 
-### Minute-by-minute session loop `[tuning: PT-LOOP]` (all rows)
+### Minute-by-minute benchmark loop `[tuning: PT-LOOP]` (all rows — cadence reference, not a required route)
 
 | Clock | Beat | System state |
 |---|---|---|
@@ -102,9 +118,31 @@ the HUD and DataAsset exist from day one.
 | Pool | Max (L1) | Basis |
 |---|---|---|
 | HP | 100 | `[derived: percent-scale readability; all damage below is % of pool]` |
-| Stamina | 100 | `[derived: same percent scale as HP so drain rates read as %/s]` |
+| Stamina | 100 | `[derived: same percent scale as HP so drain rates read as %/s]` — one continuous pool, HUD-segmented into five 20-point reserves for flight impulses `[derived: T-075 decision record, docs/FLIGHT-SPIKE.md]` |
 | Magic | 100 | `[derived: same percent scale; costs in §6]` |
 | Intro "full power" preview (§7) | stats shown at max-artifact values, then reset to L1 on loss/first session end | `[derived: idea.md — start at full power as tutorial, lose down to L1]` — preview numbers are the §6 artifact sums, not a second stat block `[tuning: PT-INTRO]` |
+
+### Flight model (target model — T-075 prototype decisions, 2026-10-31)
+
+The target model is a speed-blended hybrid. At speed the dragon flies by
+momentum: nose direction is the flight path, pitching down converts altitude
+to airspeed, pitching up spends airspeed to climb, and **dive is a posture,
+not a powered button**. At low airspeed the model fades to precision thrust:
+camera-relative translation, rise/sink, strafe, and hover-hold for the lair,
+caves, landings, and eating. Brake explicitly forces the precision band.
+**Speed and ground-skimming never regenerate stamina**; ground effect only
+reduces induced drag/sink so a skilful line preserves speed and needs fewer
+paid impulses `[derived: owner feedback + food-loop preservation, docs/FLIGHT-SPIKE.md]`.
+
+| Parameter | Target starting value | Basis |
+|---|---|---|
+| Precision band | full authority ≤650 cm/s | `[tuning: PT-STAM]` |
+| Authority blend | 650–1600 cm/s continuous fade | `[tuning: PT-STAM]` `[derived: no perceptible mode switch]` |
+| Level terminal speed | 2400 cm/s | `[tuning: PT-STAM]` |
+| Surge ceiling | 3200 cm/s while Surging | `[tuning: PT-STAM]` |
+| Steep-dive terminal | 4000 cm/s starting value; test 3200/4000/4800 | `[tuning: PT-STAM]` `[derived: docs/FLIGHT-SPIKE.md turn-radius/world-crossing calculation]` |
+| Yaw-rate target | 90°/s precision fading to 55°/s at dive speed | `[tuning: PT-STAM]` |
+| Landing Assist | F / gamepad top face near ground: brake to precision, flare, cap descent/drift, settle only inside the safe speed/angle envelope; unsafe approaches brake and warn instead of landing safely by magic | `[derived: owner feedback — a close-to-ground slow/land button is required UX]` |
 
 ### Drain / regen (per second unless stated) — all `[tuning: PT-STAM]`
 
@@ -113,22 +151,25 @@ the HUD and DataAsset exist from day one.
 | Idle / standing | 0/s, regen +4/s after 3 s idle | Idle must be free `[derived: idea.md — a careful dragon survives by barely moving and eating burglars]` |
 | Walk (ground patrol) | −1.5/s | Full pool ≈ 66 s continuous patrol before food pressure `[derived from value]` |
 | Run / charge (ground) | −4/s | — |
-| Glide (wings held, descending or level) | −1/s | Cheapest flight `[derived: dive-for-speed, glide-to-travel is the flight skill loop, PLAN.md pillar 3]` |
-| Flap (per wingbeat) | −3 per beat | Burst cost, not per-second `[derived: flap = discrete input, cost must attach to the input the player feels]` |
-| Sustained climb (repeated flap, typical) | ≈ −6/s effective | Emergent from flap cadence; measured, not set directly `[tuning: PT-STAM]` |
-| Dive | 0/s drain, +speed | Dive converts altitude to speed `[derived: flight physics, idea.md]`; pull-out flap pays the cost |
-| Hover | −8/s | Most expensive `[derived: hover removes all flight skill; price it out]` |
+| Glide (unpowered, wings held) | 0/s | Free but loses altitude/speed to physics `[derived: T-075 momentum model — unpowered flight spends the energy already in altitude/airspeed, not new stamina]` |
+| Ascent (takeoff / climb impulse) | −20 per use (one HUD segment) | Discrete energy purchase `[tuning: PT-STAM]` `[derived: cost attaches to the impulse input, readable as one reserve]` |
+| Surge (forward impulse) | −20 per use (one HUD segment) | Discrete energy purchase `[tuning: PT-STAM]` |
+| Brake | 0/s to engage | Safety verb must always be available `[derived: high speed is only usable if stopping is never resource-gated]`; resulting hover then pays hover rate |
+| Precision rise / sustained precision climb | −8/s | Uses the hover rate `[derived: low-speed vertical thrust is hovering with a climb bias]` |
+| Dive (nose-down posture) | 0/s drain, +speed | Dive converts altitude to speed `[derived: flight physics, idea.md]`; pull-out is paid by the airspeed already bought with altitude |
+| Hover | −8/s | Most expensive sustained state `[derived: hover removes momentum skill; price the loiter, T-075]` |
 | Fire breath | −5/s while held, min 10 to start | `[tuning: PT-THIEF]` (counter balance §5) |
 | Roar | −10 flat, 6 s cooldown | `[tuning: PT-THIEF]` |
 | Claw / tail swipe | −4 per swing | `[tuning: PT-THIEF]` |
-| Hard landing (impact velocity above threshold) | HP −5 to −25 scaled by impact | Landing damage exists `[derived: idea.md]`; scale `[tuning: PT-STAM]`; threshold set by flight model, stored in `DA_DragonStats.LandingDamageCurve` as a curve, not constants |
+| Hard landing (impact speed **and descent angle** above envelope) | HP −5 to −25 scaled by impact severity | Landing damage exists `[derived: idea.md]`; scale `[tuning: PT-STAM]`; a fast shallow flare must not price like a vertical lawn-dart `[derived: T-075 momentum descents]`; curve stored in `DA_DragonStats.LandingDamageCurve`, not constants |
 
 ### Zero stamina
 
 | Rule | Value | Basis |
 |---|---|---|
-| At 0 stamina | HP drains −2/s while any draining action continues; movement forced to walk/glide-down | HP drain at zero `[derived: idea.md/PLAN.md]`; rate `[tuning: PT-STAM]` — 100 HP buys 50 s of warning, enough to reach food in the M1 flight zone `[derived from value + §1 flight-zone size]` |
-| Flap/fire/roar at 0 stamina | Blocked (input acknowledged with audio/visual fail state, never silent) | `[derived: AGENTS.md — errors surfaced, never swallowed]` |
+| At 0 stamina | HP drains −2/s only while a draining action continues; unpowered glide, descent, Brake, Landing Assist, and landing always remain available | HP drain at zero `[derived: idea.md/PLAN.md]`; mercy rule `[derived: owner decision 2026-10-31 — exhaustion must not remove the ability to land]`; rate `[tuning: PT-STAM]` |
+| Ascent/Surge below 20 stamina; fire/roar at 0 stamina | Blocked (input acknowledged with audio/visual fail state, never silent) | `[derived: AGENTS.md — errors surfaced, never swallowed]` |
+| Testing: Infinite Stamina (God Mode) | Settings toggle, default off: stamina costs/drains and exhaustion HP burn disabled; HP damage unchanged; HUD shows a testing badge while on | `[derived: owner request 2026-10-31 — playtest flight feel without the food loop confounding it]` |
 | Death | HP 0 → lose path §8 (slink away, not death) | `[derived: idea.md — the dragon does not die on loss]` |
 
 ### Food — `DT_FoodValues`
@@ -147,7 +188,9 @@ animation 2 s `[tuning: PT-STAM]`; interrupted by damage.
 
 Design check (must hold after tuning): one exterior livestock run
 (≈ §1 gap length) refills ≥ half a pool; pure lair-camping on burglars is
-sustainable only if catch rate is high. Verified by `PT-STAM` + automation
+sustainable only if catch rate is high; a skilful momentum/skim line costs
+materially fewer paid impulses than a climb-and-hover line on the same route,
+but stamina never increases from speed or skimming (T-075). Verified by `PT-STAM` + automation
 `AT-Stamina` (drain/regen/food math against `DA_DragonStats`, no level
 required).
 
@@ -316,9 +359,10 @@ not a scoring exploit]` `[tuning: PT-WAVE]` for the scoring moment.
 Shared StateTree (`UThiefBrain`): `Sneak → Grab → Flee`, interrupt states
 `Scared / Trapped / Dead` `[derived: PLAN.md architecture]`. Type is data,
 not subclasses. Speeds in cm/s (UE units) relative to dragon: dragon walk
-600, run 1100, glide cruise 1800 `[tuning: PT-STAM/PT-THIEF — flight model
-owns final values; thief speeds below are ratios to dragon walk so they
-survive flight retuning]`. All §5 numbers `[tuning: PT-THIEF]` unless
+600, run 1100, target flight terminals per §2 (2400 level / 3200 Surge /
+4000 steep dive) `[tuning: PT-STAM/PT-THIEF — flight model owns final values;
+thief speeds below are ratios to dragon walk so they survive flight
+retuning]`. All §5 numbers `[tuning: PT-THIEF]` unless
 tagged derived.
 
 ### 5.1 Burglar (solo, hobbit-like) — `DA_Thief_Burglar`

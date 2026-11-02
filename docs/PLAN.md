@@ -44,6 +44,14 @@ holding 60 fps in the lair + flight zone on an M1 Max.
    (Seeing Stone, hardened scales, pendant, crown, rings…) are wearable power
    the dragon can literally lose if a thief escapes with them.
 
+**Cross-cutting sandbox principle (owner decision 2026-10-31).** Waves,
+incursions, and the PT-LOOP benchmark are pressures and tuning references,
+never rails. After the intro the player may ignore the hoard, raid, roam,
+experiment, or record an unscripted demo run; the world must keep simulating
+and respond through theft, witnesses, Notoriety, food pressure, tribute, and
+win/lose state. A feature that only works when the player follows the
+benchmark route is unfinished.
+
 ## Architecture sketch (modules and seams)
 
 UE5 C++ module `UnderTheMountain`, one system per class, subsystems injected
@@ -124,7 +132,9 @@ M1's content, not its exit gate — the gate above stands unchanged.
   is free look; double-click moves/steers the dragon by that view, exact
   mechanics by best UX at prototype; any movement key cancels it.
 - **Demo gaps the plan never named, now M1 scope by owner approval**
-  (2026-10-29): audio (T-071 — the game is currently silent), a
+  (2026-10-29): audio (T-071 — the game is currently silent; **music is
+  friend-composed and arriving before the deadline, never generated**, while
+  SFX/ambience are sourced under the licence discipline), a
   game-flow shell of title/pause/win-lose/restart/quit (T-072),
   onboarding prompts + help overlay (T-073, after controls settle), and
   enemies that can damage the dragon with a defined defeat (T-074 —
@@ -154,6 +164,49 @@ fields, not by cutting:
   (T-090), water and dragon-in-water behaviour (T-091), and a
   day/night world clock that sleep and cadence can read (T-092).
 
+## Spike findings + adopted decisions 2026-10-31 — flight and animation
+
+T-075 and T-067 were pulled forward together at owner direction. Their
+research/design findings and decision records are in `docs/FLIGHT-SPIKE.md`
+and `docs/ANIMATION-SPIKE.md`. The owner annotated both documents and then
+delegated every remaining "idk" to agent best judgement; the adopted working
+decisions below are therefore prototype law unless course/render evidence
+falsifies them. No scope was cut.
+
+- **Flight:** the current yaw-plane `MOVE_Flying`, velocity-overwrite flap,
+  and camera-forward dive cannot meet pillar 3. Adopted prototype: a custom
+  movement mode blending Dragonflight-style pitch/momentum flight at speed
+  with automatic precision thrust/hover at low airspeed (Brake forces
+  precision). Dive is nose-down posture; Shift/LT is Brake; F/top-face is
+  contextual Landing Assist. Stamina stays one continuous 100 pool shown as
+  five 20-point reserves; Ascent/Surge each spend one reserve. WoW-style
+  high-speed/skim stamina regeneration is **rejected** — speed must not create
+  calories in a food-survival loop; skimming only receives physical ground
+  effect (less drag/sink). GAMEPLAY §2 now carries the target bands, starting
+  speeds (2400 cruise / 3200 Surge / 4000 dive terminal), zero-stamina mercy
+  rule, and a Settings testing toggle for Infinite Stamina. No scheme has been
+  flown yet: T-075's PIE course (chimney, slalom, village circuit, dive-to-eat,
+  cave precision, zero-stamina) still gates production adoption in T-062.
+- **Animation:** single-node, two-clip playback is the ceiling. Adopted
+  architecture is a lean `ABP_Dragon` on a C++ `UDragonAnimInstance` parent:
+  locomotion states/blends, montage slots, fold/tuck/bank/aim additive layers,
+  then selective Control Rig only where captures prove the need. The adopted
+  v1 set is ground idle, preserved Walk, Fly v2 via T-058, held Glide,
+  Hover/precision, Takeoff, Land, Roar, fire pose + aim, Hit light/heavy,
+  Defeat, and a reusable Sleep/Wake set; combat montages ship as full verbs,
+  not stubs. Loops are Blender-programmatic unless the CC0-only T-059 survey
+  finds a better locomotion retarget; hero one-shots are hand-posed behind
+  batched contact-sheet + in-engine capture gates. The proven hero pipeline
+  stands — Muse multi-images → Meshy mesh/textures → Blender rig/animation →
+  Unreal; only Meshy's biped rig/animation route is excluded for the dragon.
+  Death presentation:
+  dragon authored collapse/slink, thieves authored-fall → ragdoll settle,
+  goats authored fall.
+- **Rig:** the 33-bone rig is sufficient for the immediate spread/tuck fix.
+  Fly's legs are currently unkeyed. A bind/current/test-spread render decides
+  whether T-058 is clip-only or also needs the now-approved focused wing
+  weight correction; re-binding is the last resort, not the first move.
+
 ## Explicit non-goals (hackathon build)
 
 Windows/Linux builds; multiplayer (M5); rival-dragon AI (M3); "train AI using
@@ -182,11 +235,20 @@ this M1 Max, measured per level, dynamic resolution + Lumen software RT +
 
 ## Risks with a gate, not a hope
 
-- **Meshy dragon rig** (wings/quadruped auto-rig is unreliable): Day-1 gate
-  in M1 — Meshy dragon → remesh → rig test in UE; fail → Blender fixup path
-  (Blender MCP) with code-driven wing flap. Decided by test, not optimism.
-  Budget for Style B texture-carried realism: 3–5 dragon iterations
-  (~150–250 Meshy credits of the 1150 balance) before the grade fallback.
+- **Meshy dragon rig — decided by test (2026-10-28):** Meshy supplied the
+  hero mesh/textures; its auto-rig was a humanoid biped with no wing/tail
+  bones and was rejected. The shipped path is Blender quadruped rig/skin/
+  animation (docs/ASSET-PIPELINE.md dragon gate). Repeat that pipeline; do
+  not re-spend on Meshy dragon rig/animation unless a future verified
+  quadruped route passes a fresh gate.
+- **Meshy budget (finite owner budget):** proven spend reconciles 1150 → 500
+  credits (last proven balance 2026-10-28). Remaining forecast to finish the
+  scoped hackathon game: ~450 credits efficient, ~625 quality-safe, plus a
+  100-credit untouchable reserve — hold ~550 available for the efficient path
+  or ~725 for quality-safe (docs/ASSET-PIPELINE.md owns the line items, batch
+  rules, and upgrade guidance). Concept images stay on Muse (0 Meshy credits);
+  no generation batch starts without a balance check and an approved concept
+  sheet.
 - **Open-world performance on M1 Max:** M1 flight zone is the perf proxy;
   Nanite/Lumen settings tuned there before M2 streaming is attempted.
 - **Timeline:** 8 days to submission. M1 tasks are sized ≤1 session each on
