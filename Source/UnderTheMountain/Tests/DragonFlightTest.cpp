@@ -231,6 +231,23 @@ bool FDragonFlyAnimPoseTest::RunTest(const FString& Parameters)
 		TestTrue(FString::Printf(TEXT("%s is tucked off bind in Fly (%.3f rad)"), LegBone, Tuck),
 				 Tuck > 0.3);
 	}
+	// [2026-11-01 T-068] Span proof: the wing chain is 0.43 on a 1.9 body,
+	// [2026-11-01 T-068] so Fly stretches wing bones (pose Y scale) to put
+	// [2026-11-01 T-068] the tips out where wings belong. A scale of 1 here
+	// [2026-11-01 T-068] is the "tips attached to hips" regression.
+	{
+		const int32 ElbowIndex = RefSkeleton.FindBoneIndex(TEXT("wing_elbow_L"));
+		TestTrue(TEXT("wing_elbow_L bone exists"), ElbowIndex != INDEX_NONE);
+		if (ElbowIndex != INDEX_NONE)
+		{
+			FTransform ElbowTransform;
+			FlyAnim->GetBoneTransform(ElbowTransform, FSkeletonPoseBoneIndex(ElbowIndex),
+									  FAnimExtractContext(0.25), true);
+			TestTrue(FString::Printf(TEXT("wing elbow is stretched in Fly (scale %.3f)"),
+									 ElbowTransform.GetScale3D().Y),
+					 ElbowTransform.GetScale3D().Y > 1.1f);
+		}
+	}
 	return true;
 }
 
