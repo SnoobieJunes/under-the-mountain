@@ -69,6 +69,43 @@ def main():
             moved += 1
     print(f"VERTS_MOVED {moved}")
 
+    # [2026-11-02 T-068] Chord cut: bird wing, not bat sail. Weight detach
+    # [2026-11-02 T-068] alone left stretched triangles webbing from the wing
+    # [2026-11-02 T-068] to the hips (owner screenshot 2026-11-02: delta
+    # [2026-11-02 T-068] silhouette despite straight bones, UE sweep test
+    # [2026-11-02 T-068] green). Pull wing-dominant verts toward the nearest
+    # [2026-11-02 T-068] point on the (new) wing chain: perpendicular offset
+    # [2026-11-02 T-068] scaled to 45%, blended by wing weight so the root
+    # [2026-11-02 T-068] blend zone does not tear. The membrane becomes a
+    # [2026-11-02 T-068] surface hugging the arm; nothing spans to the hips.
+    def closest_chain_point(pos, side):
+        best, best_d = None, 1e9
+        pts = [new_heads[f"wing_shoulder.{side}"]] + [new_tails[f"{b}.{side}"] for b in CHAIN]
+        for a, b in zip(pts, pts[1:]):
+            ab = b - a
+            denom = ab.length_squared
+            s = 0.0 if denom == 0 else max(0.0, min(1.0, (pos - a).dot(ab) / denom))
+            cand = a + ab * s
+            d = (pos - cand).length
+            if d < best_d:
+                best, best_d = cand, d
+        return best
+
+    cut = 0
+    for vert in mesh.data.vertices:
+        weights = {group_names[g.group]: g.weight for g in vert.groups}
+        for side in ("L", "R"):
+            wing_w = sum(weights.get(f"{b}.{side}", 0.0) for b in CHAIN)
+            if wing_w < 0.35:
+                continue
+            blend = min(1.0, max(0.0, (wing_w - 0.35) / 0.4))
+            scale = 1.0 + (0.45 - 1.0) * blend
+            near = closest_chain_point(Vector(vert.co), side)
+            vert.co = near + (Vector(vert.co) - near) * scale
+            cut += 1
+            break
+    print(f"VERTS_CHORD_CUT {cut}")
+
     # [2026-11-02 T-068] Detach the membrane from the hips (owner contract:
     # [2026-11-02 T-068] bird-like independent wing arm). The bat-style sail
     # [2026-11-02 T-068] existed because membrane verts carry pelvis/hindleg/

@@ -123,6 +123,14 @@ tag, choose the owing one.
 <!-- Real entries accumulate below, NEWEST AT THE TOP. The top entries are
      session-start required reading (count: AGENTS.md → Session ritual). -->
 
+## 2026-11-02 — Chord cut: geometry, not just weights, frees the trailing edge  [decision]
+- Task: T-058 follow-up (owner top-down screenshot 2026-11-02, post-merge)
+- What: Detached weights still left stretched triangles webbing wing-to-hips (delta silhouette in game) while UE bone data measured straight and unswept (new sweep assertion: forward/lateral < 0.30 in Glide, green). Fix is geometric: lengthen_wings.py pulls wing-dominant verts toward the nearest wing-chain point (perpendicular offset x0.45, weight-blended; 29,326 verts) so the membrane hugs the arm, and hind-leg tuck now trails along the tail (upper 58 deg + adduction). Mesh + clips re-imported on branch 22 after the merges.
+- Why: Surface follows geometry first, weights second; measuring bones kept certifying a silhouette the mesh never had.
+- Where: Scripts/lengthen_wings.py, Scripts/create_dragon_anims.py, Source/UnderTheMountain/Tests/DragonFlightTest.cpp (sweep assertion), Content/Meshy/Dragon/ (v5 blend/FBX, SK_Dragon_v4 + clips, t068_v7_*.png).
+- Plan: no plan text falsified. Still owed: owner level-flight capture (the 2026-11-02 screenshots are dive/landing states per their readouts, where legs deploy and wings brake by design).
+- Commit(s): this commit
+
 ## 2026-11-02 — Membrane detached: bird wing arm on the gull line  [decision]
 - Task: T-058 follow-up (owner screenshots + armature-diagram reference, 2026-11-02)
 - What: Straight bones were not enough: the visible membrane still sailed to the hips because its verts carry pelvis/hindleg/tail weights. Owner decisions (structured input): detach fully, Image #2 gull slope, merge into branch 22 only after owner OK. lengthen_wings.py now moves pelvis/hindleg/tail/spine weight to the dominant wing bone for wing-dominant verts only (19,189 verts; thigh verts keep their leg weights — a first threshold-only attempt hung the thighs and was caught in renders), asserted at export. Solver line gained the -15 deg gull dihedral; flap tuned to +-32 around it. Mesh + clips re-imported; critic rounds 01-04 vs the owner screenshot, CRITIC LOOP OK.

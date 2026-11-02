@@ -39,7 +39,7 @@ WING_BASES = ("wing_shoulder", "wing_elbow", "wing_wrist", "wing_finger")
 # [2026-11-01 T-068] Front legs fold bird-style (upper back, forearm folded
 # [2026-11-01 T-068] forward under it); hind legs trail straight back.
 TUCK_FRONT = {"upper": 62.0, "lower": -95.0, "foot": 45.0}
-TUCK_HIND = {"upper": 48.0, "lower": 38.0, "foot": 18.0}
+TUCK_HIND = {"upper": 58.0, "lower": 30.0, "foot": 14.0}
 TAIL_BONES = ("tail.01", "tail.02", "tail.03", "tail.04", "tail.05", "tail.06")
 
 
@@ -131,7 +131,7 @@ def leg_pose(arm, tuck_scale=1.0, front=None, hind=None):
         for kind, pose in (("frontleg", front), ("hindleg", hind)):
             for part in ("upper", "lower", "foot"):
                 bone = pb(arm, f"{kind}_{part}.{side}")
-                adduct = 16.0 if kind == "frontleg" and part == "upper" else 0.0
+                adduct = 16.0 if part == "upper" else 0.0  # [2026-11-02 T-068] hind too: trail along tail, not splayed
                 set_rot(bone, x=pose[part] * tuck_scale, y=(-SIDE_SIGN[side]) * adduct * tuck_scale)
                 bones.append(bone)
     return bones

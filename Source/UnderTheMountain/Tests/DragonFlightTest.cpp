@@ -276,6 +276,39 @@ bool FDragonFlyAnimPoseTest::RunTest(const FString& Parameters)
 									 Body > 0.0 ? Span / Body : 0.0),
 					 Body > 0.0 && Span / Body > 0.9);
 		}
+		// [2026-11-02 T-068] Sweep proof (owner screenshot 2026-11-02: wings
+		// [2026-11-02 T-068] straight but swept back delta-style in game).
+		// [2026-11-02 T-068] Measure each fingertip in the body frame
+		// [2026-11-02 T-068] (pelvis->head = forward): straight-out means the
+		// [2026-11-02 T-068] forward offset from the shoulder is near zero
+		// [2026-11-02 T-068] next to the lateral reach. Straightness alone
+		// [2026-11-02 T-068] (below) cannot see sweep; this can.
+		if (TipL != INDEX_NONE && TipR != INDEX_NONE)
+		{
+			const int32 PelvisIndex = RefSkeleton.FindBoneIndex(TEXT("pelvis"));
+			const int32 HeadIndex = RefSkeleton.FindBoneIndex(TEXT("head"));
+			const int32 ShoulderL = RefSkeleton.FindBoneIndex(TEXT("wing_shoulder_L"));
+			const int32 ShoulderR = RefSkeleton.FindBoneIndex(TEXT("wing_shoulder_R"));
+			if (PelvisIndex != INDEX_NONE && HeadIndex != INDEX_NONE && ShoulderL != INDEX_NONE &&
+				ShoulderR != INDEX_NONE)
+			{
+				const FVector Forward =
+					(Component[HeadIndex].GetLocation() - Component[PelvisIndex].GetLocation())
+						.GetSafeNormal();
+				for (const TTuple<int32, int32, const TCHAR*> Wing :
+					 {MakeTuple(TipL, ShoulderL, TEXT("L")), MakeTuple(TipR, ShoulderR, TEXT("R"))})
+				{
+					const FVector Reach =
+						Component[Wing.Get<0>()].GetLocation() - Component[Wing.Get<1>()].GetLocation();
+					const double Fwd = FVector::DotProduct(Reach, Forward);
+					const double Lateral = (Reach - Forward * Fwd).Size();
+					TestTrue(FString::Printf(TEXT("wing %s points out not back (fwd %.1f lat %.1f ratio %.2f)"),
+											 Wing.Get<2>(), Fwd, Lateral,
+											 Lateral > 0.0 ? FMath::Abs(Fwd) / Lateral : 99.0),
+							 Lateral > 0.0 && FMath::Abs(Fwd) / Lateral < 0.30);
+				}
+			}
+		}
 		// [2026-11-02 T-068] Straightness proof (owner playtest 2026-11-02: tips
 		// [2026-11-02 T-068] straight out, fully extended, bird flap). Segment
 		// [2026-11-02 T-068] directions between composed bone origins must stay

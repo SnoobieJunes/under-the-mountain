@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-02 — T-058 — Wing membrane cut to the arm: the sail no longer webs back to the hips (chord pulled to the wing bones), and hind legs trail streamlined along the tail instead of splaying
+
 2026-11-02 — T-058 — Bird wings, not bat sails: the membrane is detached from the hips and tail so each wing is an independent arm on the armature-diagram gull line (shoulder high, straight out and down to the tips), flapping as one rigid straight wing
 
 2026-11-02 — T-058 — Wings now flap straight like a bird's: one rigid fully-extended wing per side, tips pointing straight out and never folding back to the body through the whole stroke (the previous clip measured 100+ degrees of bend at the wrist — fixed in the rig data and locked by a test)
