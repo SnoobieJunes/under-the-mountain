@@ -56,9 +56,17 @@ Notes:
 - **Restart the editor after any C++ build.** UE does not hot-swap C++; an
   editor left open across builds flies the old pawn (the cause of the
   "wings frozen in flight" report, T-047).
-- **Live-editor MCP:** `unreal-mcp` listens on `127.0.0.1:8000` — only the
-  *first* editor instance launched wins the port; later instances run with a
-  dead listener (reliability work is T-048).
+- **Live-editor MCP:** `unreal-mcp` listens on `127.0.0.1:8000/mcp` and
+  auto-starts with the editor (`bAutoStartServer` ships in
+  `Config/DefaultEditorPerProjectUserSettings.ini` — T-048; it used to
+  live only in gitignored `Saved/` state, so a fresh setup silently had
+  no listener). **One instance only:** the first editor to launch binds
+  the port and owns MCP; `Scripts/run-editor.sh` refuses to launch a
+  second editor for this project while one is running, and waits to
+  confirm the listener is up. Verify any time with
+  `hermes mcp test unreal-mcp` (expect: Connected, 3 tools). If the
+  listener is dead, you are almost certainly talking to a second or
+  stale instance — quit all project editors and relaunch once.
 
 ## What's in the game
 
@@ -76,8 +84,9 @@ Notes:
   start), roar (−10 stamina, 6 s cooldown; makes fleeing thieves drop loot),
   and eat (2 s channel; a dead thief restores +60 stamina/+15 HP, a goat
   +50/+10).
-- **Scale-colour picker** (C): three RGB sliders in a code-built widget; the
-  tint is clamped, written to the material, and persisted to a SaveGame slot.
+- **Scale-colour picker** (C): one draggable saturation/value pad plus a
+  hue strip in a code-built widget; the tint is clamped, written to the
+  material, and persisted to a SaveGame slot.
 
 ### The world (one map, no load screens)
 

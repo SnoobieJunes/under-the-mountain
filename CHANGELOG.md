@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-01 — T-048 — unreal-mcp is boring now: the editor auto-starts the MCP listener from shipped project config (it used to depend on machine-local Saved/ state), run-editor.sh refuses a second project editor and confirms the listener is up — three fresh launches verified (no user-visible change)
+
 2026-11-01 — T-082 — The lair's hoard is filled to spec: 33 treasures worth 1,800 gold of bulk treasure spread across every chamber (was 3 items / 310), so scent ribbons now vary in width room to room and wave scoring has something to measure
 
 2026-11-01 — T-078 — Fire breath now burns goats (and anything else damageable in the cone), not just thieves: held breath kills a goat in about two seconds and the body stays eatable
