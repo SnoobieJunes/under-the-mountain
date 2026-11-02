@@ -9,7 +9,7 @@
 # [2026-11-01 T-068] cycle — the two defects the owner called out in F2.
 # [2026-11-01 T-068] Run (Blender 5.2, headless, from the repo root):
 # [2026-11-01 T-068]   Blender -b --python Scripts/create_dragon_anims.py
-# [2026-11-01 T-068] Reads  Content/Meshy/Dragon/dragon_v4_rigged.blend
+# [2026-11-01 T-068] Reads  Content/Meshy/Dragon/dragon_v5_rigged.blend
 # [2026-11-01 T-068] Writes Content/Meshy/Dragon/dragon_v4_<clip>.fbx per clip.
 # [2026-11-01 T-068] Never saves the .blend, so the Walk action on disk and the
 # [2026-11-01 T-068] bind pose are untouched. Re-running is idempotent: each
@@ -26,7 +26,9 @@ import os
 import bpy
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BLEND_PATH = os.path.join(REPO_ROOT, "Content", "Meshy", "Dragon", "dragon_v4_rigged.blend")
+# [2026-11-01 T-068] v5 rig: wing bones lengthened in the armature itself
+# [2026-11-01 T-068] (Scripts/lengthen_wings.py) — no pose-scale tricks.
+BLEND_PATH = os.path.join(REPO_ROOT, "Content", "Meshy", "Dragon", "dragon_v5_rigged.blend")
 OUT_DIR = os.path.join(REPO_ROOT, "Content", "Meshy", "Dragon")
 FPS = 24
 
@@ -37,17 +39,9 @@ WING_BASES = ("wing_shoulder", "wing_elbow", "wing_wrist", "wing_finger")
 # [2026-11-01 T-068] 55/30/15 (cumulative 100); v2 first used 68/22/8, still
 # [2026-11-01 T-068] too tight (tips beside hips); 85/30/12 overshot into a
 # [2026-11-01 T-068] dart sweep on the top view; settled 70/24/10 (cumulative
-# [2026-11-01 T-068] 104, near-lateral) + STRETCH below for the span.
+# [2026-11-01 T-068] 104, near-lateral). Span now comes from the v5 rig's
+# [2026-11-01 T-068] real bone lengths, not pose scale (cheat removed).
 SPREAD = {"wing_shoulder": 70.0, "wing_elbow": 24.0, "wing_wrist": 10.0, "wing_finger": 0.0}
-# [2026-11-01 T-068] Wing stretch (pose-bone Y scale at full spread). The rig's
-# [2026-11-01 T-068] wing chain is 0.43 units on a 1.9-unit body, so rotation
-# [2026-11-01 T-068] alone puts the tips beside the hips at ~1.0 span — the
-# [2026-11-01 T-068] owner-visible "tips attached to hips" defect. Scaling each
-# [2026-11-01 T-068] segment (compounding down the chain) extends the span in
-# [2026-11-01 T-068] flight only; ground clips key no scale, so the folded
-# [2026-11-01 T-068] bind silhouette is untouched. Verified by top-view renders
-# [2026-11-01 T-068] + deformed-mesh span measurement (probe in commit notes).
-STRETCH = {"wing_shoulder": 1.25, "wing_elbow": 1.30, "wing_wrist": 1.30, "wing_finger": 1.35}
 # [2026-11-01 T-068] Leg tuck (deg about X, + = swept backward/streamlined).
 # [2026-11-01 T-068] Front legs fold bird-style (upper back, forearm folded
 # [2026-11-01 T-068] forward under it); hind legs trail straight back.
@@ -76,7 +70,7 @@ def set_rot(bone, x=0.0, y=0.0, z=0.0):
     bone.rotation_euler = (math.radians(x), math.radians(y), math.radians(z))
 
 
-def key(bones, frame, paths=("rotation_euler", "scale")):
+def key(bones, frame, paths=("rotation_euler",)):
     for bone in bones:
         for path in paths:
             bone.keyframe_insert(data_path=path, frame=frame)
@@ -91,9 +85,6 @@ def wing_pose(arm, flap_deg, unfold_scale=1.0, lag_flap=None):
             bone = pb(arm, f"{base}.{side}")
             flap = lag_flap[base] if lag_flap else flap_deg
             set_rot(bone, x=flap, z=sign * SPREAD[base] * unfold_scale)
-            # stretch grows/shrinks with the unfold so takeoff/land ease it
-            s = 1.0 + (STRETCH[base] - 1.0) * unfold_scale
-            bone.scale = (1.0, s, 1.0)
             bones.append(bone)
     return bones
 

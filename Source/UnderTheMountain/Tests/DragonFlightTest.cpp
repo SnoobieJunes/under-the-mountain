@@ -231,21 +231,50 @@ bool FDragonFlyAnimPoseTest::RunTest(const FString& Parameters)
 		TestTrue(FString::Printf(TEXT("%s is tucked off bind in Fly (%.3f rad)"), LegBone, Tuck),
 				 Tuck > 0.3);
 	}
-	// [2026-11-01 T-068] Span proof: the wing chain is 0.43 on a 1.9 body,
-	// [2026-11-01 T-068] so Fly stretches wing bones (pose Y scale) to put
-	// [2026-11-01 T-068] the tips out where wings belong. A scale of 1 here
-	// [2026-11-01 T-068] is the "tips attached to hips" regression.
+	// [2026-11-01 T-068] Real-span proof (v5 rig, Scripts/lengthen_wings.py):
+	// [2026-11-01 T-068] compose every bone's local Fly transform up the
+	// [2026-11-01 T-068] reference hierarchy and measure the distance between
+	// [2026-11-01 T-068] the two wing_finger origins in the held Glide pose
+	// [2026-11-01 T-068] (mid-flap Fly converges over the back). The v4 rig
+	// [2026-11-01 T-068] (0.43-unit chain, tips beside the hips) cannot pass
+	// [2026-11-01 T-068] the ratio below; v5 (0.85 chain) does. No pose-scale:
+	// [2026-11-01 T-068] this measures bone lengths + rotations only.
 	{
-		const int32 ElbowIndex = RefSkeleton.FindBoneIndex(TEXT("wing_elbow_L"));
-		TestTrue(TEXT("wing_elbow_L bone exists"), ElbowIndex != INDEX_NONE);
-		if (ElbowIndex != INDEX_NONE)
+		UAnimSequence* GlideAnim = LoadObject<UAnimSequence>(
+			nullptr, TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_GlideAnim.SK_Dragon_v4_GlideAnim"));
+		TestNotNull(TEXT("SK_Dragon_v4_GlideAnim loads"), GlideAnim);
+		const int32 NumBones = RefSkeleton.GetNum();
+		TArray<FTransform> Component;
+		Component.SetNum(NumBones);
+		for (int32 Index = 0; Index < NumBones && GlideAnim != nullptr; ++Index)
 		{
-			FTransform ElbowTransform;
-			FlyAnim->GetBoneTransform(ElbowTransform, FSkeletonPoseBoneIndex(ElbowIndex),
-									  FAnimExtractContext(0.25), true);
-			TestTrue(FString::Printf(TEXT("wing elbow is stretched in Fly (scale %.3f)"),
-									 ElbowTransform.GetScale3D().Y),
-					 ElbowTransform.GetScale3D().Y > 1.1f);
+			FTransform Local;
+			GlideAnim->GetBoneTransform(Local, FSkeletonPoseBoneIndex(Index), FAnimExtractContext(0.0),
+										true);
+			const int32 Parent = RefSkeleton.GetParentIndex(Index);
+			Component[Index] = Parent == INDEX_NONE ? Local : Local * Component[Parent];
+		}
+		const int32 TipL = RefSkeleton.FindBoneIndex(TEXT("wing_finger_L"));
+		const int32 TipR = RefSkeleton.FindBoneIndex(TEXT("wing_finger_R"));
+		TestTrue(TEXT("wing finger bones exist"), TipL != INDEX_NONE && TipR != INDEX_NONE);
+		if (TipL != INDEX_NONE && TipR != INDEX_NONE)
+		{
+			const double Span = FVector::Distance(Component[TipL].GetLocation(),
+												  Component[TipR].GetLocation());
+			const int32 PelvisIndex = RefSkeleton.FindBoneIndex(TEXT("pelvis"));
+			const int32 HeadIndex = RefSkeleton.FindBoneIndex(TEXT("head"));
+			const double Body = (PelvisIndex != INDEX_NONE && HeadIndex != INDEX_NONE)
+									? FVector::Distance(Component[PelvisIndex].GetLocation(),
+														Component[HeadIndex].GetLocation())
+									: 0.0;
+			// [2026-11-01 T-068] Ratio, not cm: FBX unit scale is an import
+			// [2026-11-01 T-068] detail, span-vs-body is the design contract.
+			// [2026-11-01 T-068] v4's ratio was ~0.55 (95 cm span measured on
+			// [2026-11-01 T-068] v5 here vs ~55 by chain proportion); 0.9
+			// [2026-11-01 T-068] separates the rigs with margin.
+			TestTrue(FString::Printf(TEXT("wingtip span %.1f vs body %.1f (ratio %.2f)"), Span, Body,
+									 Body > 0.0 ? Span / Body : 0.0),
+					 Body > 0.0 && Span / Body > 0.9);
 		}
 	}
 	return true;

@@ -123,6 +123,14 @@ tag, choose the owing one.
 <!-- Real entries accumulate below, NEWEST AT THE TOP. The top entries are
      session-start required reading (count: AGENTS.md → Session ritual). -->
 
+## 2026-11-01 — Wingspan fixed in the rig, not the pose (v5 skeleton)  [decision]
+- Task: T-058 follow-up (owner playtest rejected the pose-stretch pass)
+- What: The first span fix stretched wing bones via pose scale in clips. Owner rejected it on sight ("wingtips attached to hips" persisted in the base rig). Permanent fix: Scripts/lengthen_wings.py lengthens the wing edit bones (chain 0.43 -> 0.85) and displaces membrane verts by wing-weighted joint deltas, producing dragon_v5_rigged.blend + dragon_v5_mesh.fbx; SK_Dragon_v4/Skeleton/Walk were re-imported from it at the same paths (Scripts/import_dragon_mesh.py, M_DragonScales re-assigned), all clips re-authored with zero pose scale and re-imported. Measured: glide span 1.66 vs body 1.89 (Blender), folded width 0.49 = v4's, FlyAnimPose now asserts composed wingtip-span/body ratio > 0.9 (v4 ~0.55).
+- Why: A span that only exists while a clip plays is not anatomy: any future clip, physics, or editor pose would regress to the stubby rig. Owner direction 2026-11-01: heavier pass, fix once.
+- Where: Scripts/lengthen_wings.py, Scripts/import_dragon_mesh.py, Scripts/create_dragon_anims.py (v5 path, stretch removed), Content/Meshy/Dragon/ (dragon_v5_rigged.blend, dragon_v5_mesh.fbx, SK_Dragon_v4 + Skeleton + all anim uassets, t068_v5_*.png), Source/UnderTheMountain/Tests/DragonFlightTest.cpp.
+- Plan: docs/ANIMATION-SPIKE.md's rig ladder put re-skin/re-bind last and pose-within-envelope first -> this climbs the ladder only as far as bone lengthening + vert displacement with weights unchanged (no re-bind, bind fold preserved, Walk re-exported from the same file). PLAN.md unaffected; folds at sweep.
+- Commit(s): this commit
+
 ## 2026-11-01 — T-068 shipped as flight-core slice; ABP graph + hero clips deferred  [scope]
 - Task: T-068 (docs/ANIMATION-SPIKE.md v1 set; T-058 closed by the same work)
 - What: Owner picked up "T-059" for a Meshy/Blender animation test; T-059 was already closed on stretch-scope, so under owner direction the work became T-068 in an isolated worktree (muse/t068-flight-anim, stretch docs folded in). Shipped slice: UDragonAnimInstance C++ parent (all decisions as tested statics), 8 Blender-authored/imported clips (Idle, Fly v2, Glide, Hover, Takeoff, Land, Roar, HitLight), per-state pawn driver with flap curves + mesh pitch/bank + one-shot stand-in for montages, wing buffet + tail slam as full verbs. NOT shipped from T-068's Accept: the ABP_Dragon AnimBP graph itself, Hit heavy / Defeat / Sleep/Wake / fire-aim / claw / bite clips, and in-engine PIE captures (Blender contact sheets only). Zero Meshy credits spent — Meshy rig/animation remains biped-only per the spike, so Blender was both the capable and the free route.
