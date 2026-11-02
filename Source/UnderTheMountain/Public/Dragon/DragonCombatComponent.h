@@ -173,9 +173,15 @@ class UNDERTHEMOUNTAIN_API UDragonCombatComponent : public UActorComponent
 	// (that breath was already paid for); firing stops from the
 	// next tick. A null Stats logs a Warning and stops the breath:
 	// free fire is never the fallback.
+	// [2026-11-01 T-078] Goats (and any future damageable with an
+	// ApplyGoatDamage-shaped seam) burn through the same cone: the
+	// breath does not check what a target is before setting it on
+	// fire, only where it stands. Goats ride as a second pair of
+	// parallel arrays so the thief path is untouched.
 	int32 TickFire(float Dt, UDragonStatsComponent* Stats, const FVector& Origin,
 				   const FVector& Forward, const TArray<UThiefBrain*>& Brains,
-				   const TArray<FVector>& BrainLocations);
+				   const TArray<FVector>& BrainLocations, const TArray<AGoatActor*>& Goats,
+				   const TArray<FVector>& GoatLocations);
 
 	// [2026-10-28 T-015] Attempts a roar at game-time
 	// CurrentTimeSeconds (injected so tests own the clock — this

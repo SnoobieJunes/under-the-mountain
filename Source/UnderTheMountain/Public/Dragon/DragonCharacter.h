@@ -24,6 +24,7 @@ class UThiefBrain;
 class UScentComponent;
 class UDragonAppearanceComponent;
 class UDragonTintWidget;
+class AGoatActor;
 class UInputAction;
 class UInputMappingContext;
 class USpringArmComponent;
@@ -221,6 +222,11 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// UDragonCombatComponent consumes. Gathered only when a verb
 	// needs targets, never as idle per-frame bookkeeping.
 	void GatherCombatTargets(TArray<UThiefBrain*>& OutBrains, TArray<FVector>& OutLocations);
+
+	// [2026-11-01 T-078] The goat half of the fire seam: every goat
+	// actor + location as parallel arrays, gathered only while fire
+	// is wanted (TickFire burns goats through the same cone).
+	void GatherGoatTargets(TArray<AGoatActor*>& OutGoats, TArray<FVector>& OutLocations);
 
 	// [2026-11-01 T-077] Crush application, pawn side: the landing
 	// path damages every thief/goat within Combat->CrushRadius of

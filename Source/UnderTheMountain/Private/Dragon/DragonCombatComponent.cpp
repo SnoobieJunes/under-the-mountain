@@ -113,7 +113,9 @@ bool UDragonCombatComponent::IsFiring() const
 int32 UDragonCombatComponent::TickFire(float Dt, UDragonStatsComponent* Stats,
 									   const FVector& Origin, const FVector& Forward,
 									   const TArray<UThiefBrain*>& Brains,
-									   const TArray<FVector>& BrainLocations)
+									   const TArray<FVector>& BrainLocations,
+									   const TArray<AGoatActor*>& Goats,
+									   const TArray<FVector>& GoatLocations)
 {
 	if (!bFiring)
 	{
@@ -180,6 +182,33 @@ int32 UDragonCombatComponent::TickFire(float Dt, UDragonStatsComponent* Stats,
 		// drops, death); combat only deals DPS scaled by Dt and
 		// counts the brains it actually burned this tick.
 		Brain->ApplyDamage(FireDps * EffectiveDt, BrainLocations[Index]);
+		++NumDamaged;
+	}
+
+	// [2026-11-01 T-078] Goats in the same cone, same DPS: before
+	// this, fire accepted only thief brains, so a goat could be
+	// breathed on forever and only ever eaten alive. Corpses and
+	// eaten goats are skipped (ApplyGoatDamage would refuse them
+	// anyway) so the damaged count never claims a body twice.
+	const int32 GoatCount = FMath::Min(Goats.Num(), GoatLocations.Num());
+	if (Goats.Num() != GoatLocations.Num())
+	{
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("DragonCombat TickFire: %d goats but %d locations - checking only the first %d"),
+			   Goats.Num(), GoatLocations.Num(), GoatCount);
+	}
+	for (int32 Index = 0; Index < GoatCount; ++Index)
+	{
+		AGoatActor* Goat = Goats[Index];
+		if (Goat == nullptr || Goat->IsDead() || Goat->IsEaten())
+		{
+			continue;
+		}
+		if (!IsInFireCone(Origin, Forward, GoatLocations[Index], FireRange, FireConeHalfAngleDeg))
+		{
+			continue;
+		}
+		Goat->ApplyGoatDamage(FireDps * EffectiveDt);
 		++NumDamaged;
 	}
 

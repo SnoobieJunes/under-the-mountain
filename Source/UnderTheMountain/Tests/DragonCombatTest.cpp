@@ -130,7 +130,10 @@ bool FDragonCombatFireTest::RunTest(const FString& Parameters)
 	const TArray<UThiefBrain*> Brains = {Burglar, Behind};
 	const TArray<FVector> BrainLocations = {FVector(500.0f, 0.0f, 0.0f),
 											FVector(-500.0f, 0.0f, 0.0f)};
-	const int32 Damaged = Combat->TickFire(1.2f, Stats, Origin, Forward, Brains, BrainLocations);
+	const TArray<AGoatActor*> NoGoats;
+	const TArray<FVector> NoGoatLocations;
+	const int32 Damaged = Combat->TickFire(1.2f, Stats, Origin, Forward, Brains, BrainLocations,
+										   NoGoats, NoGoatLocations);
 	TestEqual(TEXT("exactly one brain was damaged by the breath"), Damaged, 1);
 	TestTrue(TEXT("1.2 s of held breath kills the burglar in the cone"),
 			 Burglar->State() == EThiefState::Dead);
@@ -152,6 +155,58 @@ bool FDragonCombatFireTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("fire refuses to start below the minimum stamina"),
 			  LowCombat->TryStartFire(LowStats));
 	TestFalse(TEXT("a refused start is not firing"), LowCombat->IsFiring());
+
+	return true;
+}
+
+// [2026-11-01 T-078] Fire vs goats: the same held breath that kills
+// thieves burns goats in the cone — 18 DPS takes a 30 HP goat down
+// across two 1 s ticks, a goat behind the dragon is untouched, and
+// a corpse is never counted (or damaged) twice. Killed goats stay
+// eatable: dead, not eaten.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDragonCombatFireGoatTest, "UnderTheMountain.Dragon.CombatFireGoat",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDragonCombatFireGoatTest::RunTest(const FString& Parameters)
+{
+	const FVector Origin = FVector::ZeroVector;
+	const FVector Forward(1.0f, 0.0f, 0.0f);
+
+	AGoatActor* InCone = NewObject<AGoatActor>();
+	AGoatActor* Behind = NewObject<AGoatActor>();
+	TestEqual(TEXT("goat starts at 30 HP"), InCone->HP, 30.0f);
+
+	UDragonStatsComponent* Stats = NewObject<UDragonStatsComponent>();
+	Stats->Stamina = 100.0f;
+	UDragonCombatComponent* Combat = NewObject<UDragonCombatComponent>();
+	TestTrue(TEXT("fire starts with enough stamina"), Combat->TryStartFire(Stats));
+
+	const TArray<UThiefBrain*> NoBrains;
+	const TArray<FVector> NoBrainLocations;
+	const TArray<AGoatActor*> Goats = {InCone, Behind};
+	const TArray<FVector> GoatLocations = {FVector(500.0f, 0.0f, 0.0f),
+										   FVector(-500.0f, 0.0f, 0.0f)};
+
+	TestEqual(TEXT("first second burns exactly the goat in the cone"),
+			  Combat->TickFire(1.0f, Stats, Origin, Forward, NoBrains, NoBrainLocations, Goats,
+							   GoatLocations),
+			  1);
+	TestEqual(TEXT("18 DPS for 1 s leaves the goat at 12 HP"), InCone->HP, 12.0f);
+	TestFalse(TEXT("goat still alive after one second"), InCone->IsDead());
+	TestEqual(TEXT("goat behind the dragon kept full HP"), Behind->HP, 30.0f);
+
+	TestEqual(TEXT("second second still burns the goat in the cone"),
+			  Combat->TickFire(1.0f, Stats, Origin, Forward, NoBrains, NoBrainLocations, Goats,
+							   GoatLocations),
+			  1);
+	TestTrue(TEXT("fire-killed goat is dead"), InCone->IsDead());
+	TestTrue(TEXT("fire-killed goat is eatable, not eaten"), !InCone->IsEaten());
+
+	TestEqual(TEXT("a third second counts no corpse twice"),
+			  Combat->TickFire(1.0f, Stats, Origin, Forward, NoBrains, NoBrainLocations, Goats,
+							   GoatLocations),
+			  0);
+	TestEqual(TEXT("corpse HP stays at zero"), InCone->HP, 0.0f);
 
 	return true;
 }

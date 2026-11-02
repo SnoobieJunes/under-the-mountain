@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-01 — T-078 — Fire breath now burns goats (and anything else damageable in the cone), not just thieves: held breath kills a goat in about two seconds and the body stays eatable
+
 2026-11-01 — T-077 — Landing on or charging into a thief or goat now crushes it (40 damage, per GAMEPLAY.md §5.4): drops and ground charges at 300 cm/s or faster kill what's under the dragon, gentle touchdowns don't
 
 2026-11-01 — T-060 — The C-key scale-colour picker is now one draggable colour pad plus a hue strip (drag to browse shades, the dragon recolours live and the choice saves as before); the three separate R/G/B sliders are gone

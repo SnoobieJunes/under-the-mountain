@@ -474,6 +474,31 @@ void ADragonCharacter::GatherCombatTargets(TArray<UThiefBrain*>& OutBrains, TArr
 	}
 }
 
+void ADragonCharacter::GatherGoatTargets(TArray<AGoatActor*>& OutGoats,
+										 TArray<FVector>& OutLocations)
+{
+	// [2026-11-01 T-078] Parallel arrays for TickFire's goat seam,
+	// mirroring GatherCombatTargets: gathered only while breathing.
+	OutGoats.Reset();
+	OutLocations.Reset();
+	if (GetWorld() == nullptr)
+	{
+		return;
+	}
+	TArray<AActor*> Actors;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), AGoatActor::StaticClass(), Actors);
+	for (AActor* Actor : Actors)
+	{
+		AGoatActor* Goat = Cast<AGoatActor>(Actor);
+		if (Goat == nullptr)
+		{
+			continue;
+		}
+		OutGoats.Add(Goat);
+		OutLocations.Add(Goat->GetActorLocation());
+	}
+}
+
 void ADragonCharacter::HandleFire(const FInputActionValue& Value)
 {
 	// [2026-10-28 T-015] Latch only — Tick owns starting/ticking the
@@ -782,9 +807,12 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 	{
 		TArray<UThiefBrain*> CombatBrains;
 		TArray<FVector> CombatLocations;
+		TArray<AGoatActor*> CombatGoats;
+		TArray<FVector> CombatGoatLocations;
 		if (bWantsFire)
 		{
 			GatherCombatTargets(CombatBrains, CombatLocations);
+			GatherGoatTargets(CombatGoats, CombatGoatLocations);
 			if (!Combat->IsFiring())
 			{
 				Combat->TryStartFire(Stats);
@@ -796,7 +824,8 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 				GetActorLocation() + GetActorForwardVector() * 150.0f + FVector(0.0f, 0.0f, 60.0f);
 			const FVector FireForward =
 				Controller != nullptr ? GetControlRotation().Vector() : GetActorForwardVector();
-			Combat->TickFire(DeltaSeconds, Stats, FireOrigin, FireForward, CombatBrains, CombatLocations);
+			Combat->TickFire(DeltaSeconds, Stats, FireOrigin, FireForward, CombatBrains,
+							 CombatLocations, CombatGoats, CombatGoatLocations);
 		}
 		if (FireCone != nullptr)
 		{
