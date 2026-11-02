@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-01 — T-057 — The standalone-launch crashes are diagnosed and the broken path is retired in the docs: the unstaged game binary cannot find its project or ICU data when launched directly (one chain: descriptor → ICU assert → segfault, crash-report proven); `Scripts/play.sh` is the supported way to run the built game until packaging (no user-visible change)
+
 2026-11-01 — T-056 — One-command playtest: `Scripts/play.sh` builds the game and opens a standalone window on the Lair running your current code — no editor, no stale builds, no MCP state to fight
 
 2026-11-01 — T-055 — The earth catches fire: hold your breath on crates, barrels, carts or fences and they ignite, burn, and stay burnt rubble with a scorch mark; burning props hurt anything standing in them, and sustained fire on the ground leaves scorch discs

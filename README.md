@@ -53,9 +53,19 @@ peak shaft, and the village are all reachable from there.
 **Quick test (no editor): `Scripts/play.sh`** — builds the game target and
 launches a standalone game window on the Lair running exactly the code you
 just built. Use this to test current code; use the editor when you need to
-inspect or change the level/assets, or drive it over MCP. A packaged `.app`
-arrives in T-020; launching `Binaries/Mac/UnderTheMountain.app` directly is
-the known-broken path owned by T-057.
+inspect or change the level/assets, or drive it over MCP.
+
+**Do not launch `Binaries/Mac/UnderTheMountain.app` (or the loose
+`Binaries/Mac/UnderTheMountain` binary) directly** — that path is retired
+until the packaged build (T-020) stages it properly. Root cause, proven
+in T-057: an unstaged Development game binary launched directly cannot
+establish its project/engine roots (the descriptor open fails inside the
+engine's file layer in every invocation form), so it finds no project,
+then no ICU data (which lives under the engine tree), asserts in
+`FICUInternationalization::Initialize`, and segfaults on the Mac error
+path; the loose binary additionally expects a staged `@rpath` dylib
+layout that only packaging creates. `Scripts/play.sh` is the supported
+way to run the built game today.
 
 Notes:
 
