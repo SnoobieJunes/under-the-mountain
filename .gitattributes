@@ -1,0 +1,9 @@
+# [2026-11-02] Git LFS for binary assets (standard Unreal practice).
+# Applies to files newly committed after this file lands; earlier history
+# is intentionally left as plain Git objects (no history rewrite).
+*.uasset filter=lfs diff=lfs merge=lfs -text
+*.umap filter=lfs diff=lfs merge=lfs -text
+*.fbx filter=lfs diff=lfs merge=lfs -text
+*.blend filter=lfs diff=lfs merge=lfs -text
+*.glb filter=lfs diff=lfs merge=lfs -text
+*.gltf filter=lfs diff=lfs merge=lfs -text

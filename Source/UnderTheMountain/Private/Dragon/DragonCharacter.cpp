@@ -1613,6 +1613,15 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 	{
 		const FVector AnimVelocity = GetCharacterMovement()->Velocity;
 		const float AnimHS = AnimVelocity.Size2D();
+		// [2026-11-02 T-058] Airborne means Flying OR Falling: exhaustion
+		// [2026-11-02 T-058] (stamina 0, Tick below) and ledge walk-offs set
+		// [2026-11-02 T-058] MOVE_Falling, and selecting ground states there
+		// [2026-11-02 T-058] played the Walk clip in mid-air — folded swept
+		// [2026-11-02 T-058] wings + stepping legs on a falling dragon (owner
+		// [2026-11-02 T-058] screenshots 2026-11-02, stamina ~5). A dragon in
+		// [2026-11-02 T-058] the air uses flight poses, full stop.
+		const bool bAirborne =
+			IsFlying() || GetCharacterMovement()->MovementMode == MOVE_Falling;
 		if (OneShotTimeRemaining > 0.0f)
 		{
 			OneShotTimeRemaining -= DeltaSeconds;
@@ -1625,7 +1634,7 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 		else
 		{
 			const EDragonAnimState DesiredState =
-				SelectAnimState(IsFlying(), bDiving, AnimHS, AnimVelocity.Z);
+				SelectAnimState(bAirborne, bDiving, AnimHS, AnimVelocity.Z);
 			if (DesiredState != CurrentAnimState)
 			{
 				UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon anim state -> %d (flying=%d diving=%d)"),
@@ -1675,9 +1684,9 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 									  : 0.0f;
 			LastActorYaw = Yaw;
 			const float TargetBank =
-				IsFlying() ? UDragonAnimInstance::ComputeBankDegrees(YawRate, AnimHS) : 0.0f;
+				bAirborne ? UDragonAnimInstance::ComputeBankDegrees(YawRate, AnimHS) : 0.0f;
 			const float TargetPitch =
-				IsFlying() ? UDragonAnimInstance::ComputeMeshPitchDegrees(AnimHS, AnimVelocity.Z) : 0.0f;
+				bAirborne ? UDragonAnimInstance::ComputeMeshPitchDegrees(AnimHS, AnimVelocity.Z) : 0.0f;
 			const float Blend = FMath::Clamp(DeltaSeconds * 5.0f, 0.0f, 1.0f);
 			MeshBankDegrees = FMath::Lerp(MeshBankDegrees, TargetBank, Blend);
 			MeshPitchDegrees = FMath::Lerp(MeshPitchDegrees, TargetPitch, Blend);

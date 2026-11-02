@@ -24,7 +24,9 @@ DST_FBX = os.path.join(REPO_ROOT, "Content", "Meshy", "Dragon", "dragon_v5_mesh.
 
 # [2026-11-01 T-068] Per-segment length multipliers: chain 0.43 -> ~0.84,
 # [2026-11-01 T-068] outer segments grow most (a wing is mostly hand/finger).
-GROW = {"wing_shoulder": 1.5, "wing_elbow": 1.9, "wing_wrist": 2.2, "wing_finger": 2.4}
+# [2026-11-02 T-058] Outer segments grow further (owner: tips far from the
+# [2026-11-02 T-058] body, perpendicular): chain 0.43 -> ~0.95, span ~2.1.
+GROW = {"wing_shoulder": 1.5, "wing_elbow": 2.1, "wing_wrist": 2.6, "wing_finger": 3.0}
 CHAIN = ("wing_shoulder", "wing_elbow", "wing_wrist", "wing_finger")
 
 
@@ -75,7 +77,7 @@ def main():
     # [2026-11-02 T-068] silhouette despite straight bones, UE sweep test
     # [2026-11-02 T-068] green). Pull wing-dominant verts toward the nearest
     # [2026-11-02 T-068] point on the (new) wing chain: perpendicular offset
-    # [2026-11-02 T-068] scaled to 45%, blended by wing weight so the root
+    # [2026-11-02 T-068] scaled to 35%, blended by wing weight so the root
     # [2026-11-02 T-068] blend zone does not tear. The membrane becomes a
     # [2026-11-02 T-068] surface hugging the arm; nothing spans to the hips.
     def closest_chain_point(pos, side):
@@ -99,7 +101,7 @@ def main():
             if wing_w < 0.35:
                 continue
             blend = min(1.0, max(0.0, (wing_w - 0.35) / 0.4))
-            scale = 1.0 + (0.45 - 1.0) * blend
+            scale = 1.0 + (0.35 - 1.0) * blend
             near = closest_chain_point(Vector(vert.co), side)
             vert.co = near + (Vector(vert.co) - near) * scale
             cut += 1

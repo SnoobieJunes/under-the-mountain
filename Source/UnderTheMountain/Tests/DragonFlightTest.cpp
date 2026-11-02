@@ -309,6 +309,44 @@ bool FDragonFlyAnimPoseTest::RunTest(const FString& Parameters)
 				}
 			}
 		}
+		// [2026-11-02 T-058] Same sweep contract on the Fly cycle (mid-stroke,
+		// [2026-11-02 T-058] t=0.5): perpendicular is a whole-cycle property,
+		// [2026-11-02 T-058] not a glide-only pose. Recompose from FlyAnim.
+		if (TipL != INDEX_NONE && TipR != INDEX_NONE)
+		{
+			TArray<FTransform> FlyPose;
+			FlyPose.SetNum(NumBones);
+			for (int32 Index = 0; Index < NumBones; ++Index)
+			{
+				FTransform Local;
+				FlyAnim->GetBoneTransform(Local, FSkeletonPoseBoneIndex(Index), FAnimExtractContext(0.5),
+										  true);
+				const int32 Parent = RefSkeleton.GetParentIndex(Index);
+				FlyPose[Index] = Parent == INDEX_NONE ? Local : Local * FlyPose[Parent];
+			}
+			const int32 PelvisIndex = RefSkeleton.FindBoneIndex(TEXT("pelvis"));
+			const int32 HeadIndex = RefSkeleton.FindBoneIndex(TEXT("head"));
+			const int32 ShoulderL = RefSkeleton.FindBoneIndex(TEXT("wing_shoulder_L"));
+			const int32 ShoulderR = RefSkeleton.FindBoneIndex(TEXT("wing_shoulder_R"));
+			if (PelvisIndex != INDEX_NONE && HeadIndex != INDEX_NONE && ShoulderL != INDEX_NONE &&
+				ShoulderR != INDEX_NONE)
+			{
+				const FVector Forward =
+					(FlyPose[HeadIndex].GetLocation() - FlyPose[PelvisIndex].GetLocation()).GetSafeNormal();
+				for (const TTuple<int32, int32, const TCHAR*> Wing :
+					 {MakeTuple(TipL, ShoulderL, TEXT("L")), MakeTuple(TipR, ShoulderR, TEXT("R"))})
+				{
+					const FVector Reach =
+						FlyPose[Wing.Get<0>()].GetLocation() - FlyPose[Wing.Get<1>()].GetLocation();
+					const double Fwd = FVector::DotProduct(Reach, Forward);
+					const double Lateral = (Reach - Forward * Fwd).Size();
+					TestTrue(FString::Printf(TEXT("fly wing %s perpendicular (fwd %.1f lat %.1f ratio %.2f)"),
+											 Wing.Get<2>(), Fwd, Lateral,
+											 Lateral > 0.0 ? FMath::Abs(Fwd) / Lateral : 99.0),
+							 Lateral > 0.0 && FMath::Abs(Fwd) / Lateral < 0.30);
+				}
+			}
+		}
 		// [2026-11-02 T-068] Straightness proof (owner playtest 2026-11-02: tips
 		// [2026-11-02 T-068] straight out, fully extended, bird flap). Segment
 		// [2026-11-02 T-068] directions between composed bone origins must stay

@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-02 — T-058 — Exhausted dragons no longer walk in mid-air: falling uses flight poses (wings out, legs tucked) instead of the ground Walk clip; wingtips extended further (span ~1.8) on the perpendicular line
+
 2026-11-02 — T-058 — Wing membrane cut to the arm: the sail no longer webs back to the hips (chord pulled to the wing bones), and hind legs trail streamlined along the tail instead of splaying
 
 2026-11-02 — T-058 — Bird wings, not bat sails: the membrane is detached from the hips and tail so each wing is an independent arm on the armature-diagram gull line (shoulder high, straight out and down to the tips), flapping as one rigid straight wing

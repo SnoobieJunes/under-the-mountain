@@ -123,6 +123,14 @@ tag, choose the owing one.
 <!-- Real entries accumulate below, NEWEST AT THE TOP. The top entries are
      session-start required reading (count: AGENTS.md → Session ritual). -->
 
+## 2026-11-02 — Falling played Walk in mid-air (the screenshot bug)  [decision]
+- Task: T-058 follow-up (owner top-down screenshot 2026-11-02 post-merge)
+- What: Root cause of the swept/dangling screenshot was runtime state, not clips: exhaustion sets MOVE_Falling (T-003/T-036), and the T-068 anim driver selected ground states unless MOVE_Flying — so every zero-stamina descent (constant in playtests: stamina 5.1 in the shot) played Walk in the air: folded swept wings, stepping legs. Driver now treats Falling as airborne for state + tilt. Also: outer wing segments lengthened again (chain 0.85 -> 0.95, span ~1.8-2.0 with membrane), chord cut deepened 0.45 -> 0.35, and FlyAnimPose now asserts perpendicularity (forward/lateral < 0.30) on Glide AND Fly mid-stroke in UE data.
+- Why: I spent three passes re-proving clip data while the driver discarded it in the exact state the owner kept capturing. State coverage (Falling) is now part of the pose contract.
+- Where: Source/UnderTheMountain/Private/Dragon/DragonCharacter.cpp (bAirborne), Scripts/lengthen_wings.py (GROW/chord), Source/UnderTheMountain/Tests/DragonFlightTest.cpp (Fly sweep), Content/Meshy/Dragon/ (v5 blend/FBX, mesh + clips, t068_v8_*.png).
+- Plan: no plan text falsified (T-003's glide-down intent now actually shows a glide pose). Owner retest on 22 is the remaining evidence.
+- Commit(s): this commit
+
 ## 2026-11-02 — Chord cut: geometry, not just weights, frees the trailing edge  [decision]
 - Task: T-058 follow-up (owner top-down screenshot 2026-11-02, post-merge)
 - What: Detached weights still left stretched triangles webbing wing-to-hips (delta silhouette in game) while UE bone data measured straight and unswept (new sweep assertion: forward/lateral < 0.30 in Glide, green). Fix is geometric: lengthen_wings.py pulls wing-dominant verts toward the nearest wing-chain point (perpendicular offset x0.45, weight-blended; 29,326 verts) so the membrane hugs the arm, and hind-leg tuck now trails along the tail (upper 58 deg + adduction). Mesh + clips re-imported on branch 22 after the merges.
