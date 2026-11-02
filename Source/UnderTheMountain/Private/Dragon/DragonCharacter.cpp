@@ -19,7 +19,14 @@
 #include "UnderTheMountain.h"
 
 #include "Camera/CameraComponent.h"
+#include "Components/DirectionalLightComponent.h"
+#include "Components/ExponentialHeightFogComponent.h"
 #include "Components/PointLightComponent.h"
+#include "Components/SkyLightComponent.h"
+#include "Engine/DirectionalLight.h"
+#include "Engine/ExponentialHeightFog.h"
+#include "Engine/SkyLight.h"
+#include "EngineUtils.h"
 #include "HAL/IConsoleManager.h"
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
@@ -53,6 +60,14 @@ bool ForceFireVisuals()
 {
 	return CVarForceFireVisuals.GetValueOnGameThread() != 0;
 }
+
+// [2026-11-01 T-052] Weather state (0 Clear, 1 Rain). Read by the
+// pawn every Tick and applied on change, which makes the PIE
+// console (`utm.weather.state 1`), the pawn's Exec commands, and
+// headless -ExecCmds captures all drive the same state.
+TAutoConsoleVariable<int32> CVarWeatherState(
+	TEXT("utm.weather.state"), 0,
+	TEXT("Weather state: 0 = Clear, 1 = Rain. Applied by the dragon pawn on change."));
 } // namespace
 
 ADragonCharacter::ADragonCharacter()
@@ -99,6 +114,21 @@ ADragonCharacter::ADragonCharacter()
 	FireLight->SetAttenuationRadius(1800.0f);
 	FireLight->SetIntensity(0.0f);
 	FireLight->SetVisibility(false);
+
+	// [2026-11-01 T-052] Rain shower carried 9 m above the pawn
+	// (NS_Rain authored like NS_FireBreath - recipe in
+	// create_combat_assets.py's successor notes in create_sky.py's
+	// header lineage; the pawn only activates it in Rain state).
+	RainFX = CreateDefaultSubobject<UNiagaraComponent>(TEXT("RainFX"));
+	RainFX->SetupAttachment(GetCapsuleComponent());
+	RainFX->SetRelativeLocation(FVector(0.0f, 0.0f, 900.0f));
+	RainFX->SetAutoActivate(false);
+	static ConstructorHelpers::FObjectFinder<UNiagaraSystem> RainSystem(
+		TEXT("/Game/Dragon/NS_Rain.NS_Rain"));
+	if (RainSystem.Succeeded())
+	{
+		RainFX->SetAsset(RainSystem.Object);
+	}
 
 	// [2026-10-28 T-032] The real dragon: SK_Dragon_v4 (T-029 rig/walk)
 	// replaces the greybox ball as the visible body. Probed bounds are
@@ -261,6 +291,75 @@ void ADragonCharacter::BeginPlay()
 			   TEXT("SK_Dragon_v4_FlyAnim not found; flight will use bind pose"));
 	}
 	UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon pawn spawned at %s"), *GetActorLocation().ToString());
+	// [2026-11-01 T-052] Initial weather from the cvar (0 Clear
+	// unless a capture/console asked for Rain before spawn).
+	ApplyWeather(FMath::Clamp(CVarWeatherState.GetValueOnGameThread(), 0, 1));
+}
+
+void ADragonCharacter::Weather()
+{
+	SetWeather(CurrentWeatherState == 1 ? 0 : 1);
+}
+
+void ADragonCharacter::SetWeather(int32 State)
+{
+	ApplyWeather(FMath::Clamp(State, 0, 1));
+	// Keep the cvar in step so Tick's change-detection does not
+	// immediately re-apply the console's older value.
+	CVarWeatherState->Set(CurrentWeatherState, ECVF_SetByConsole);
+}
+
+void ADragonCharacter::ApplyWeather(int32 NewState)
+{
+	CurrentWeatherState = NewState;
+	const bool bRain = (NewState == 1);
+	UWorld* World = GetWorld();
+	if (World == nullptr)
+	{
+		return;
+	}
+	// [2026-11-01 T-052] Sky actors are found by class each apply
+	// (weather switches are rare; a cached pointer would go stale
+	// across level loads). Only the exterior sun/sky/fog are
+	// touched - interior point lights are a different class and
+	// the lair's boxes shadow the sun, so the interior is
+	// unaffected. Rain: dim blue-grey sun, dimmer sky light,
+	// ~4.7x fog density (the wet, closed-in look), rain FX on.
+	for (TActorIterator<ADirectionalLight> It(World); It; ++It)
+	{
+		if (UDirectionalLightComponent* Sun = Cast<UDirectionalLightComponent>(It->GetLightComponent()))
+		{
+			Sun->SetIntensity(bRain ? 0.7f : 3.0f);
+			Sun->SetLightColor(bRain ? FLinearColor(0.62f, 0.7f, 0.85f)
+									 : FLinearColor(1.0f, 0.95f, 0.88f));
+		}
+	}
+	for (TActorIterator<ASkyLight> It(World); It; ++It)
+	{
+		if (USkyLightComponent* Sky = Cast<USkyLightComponent>(It->GetLightComponent()))
+		{
+			Sky->SetIntensity(bRain ? 0.4f : 1.0f);
+		}
+	}
+	for (TActorIterator<AExponentialHeightFog> It(World); It; ++It)
+	{
+		if (UExponentialHeightFogComponent* Fog = It->GetComponent())
+		{
+			Fog->SetFogDensity(bRain ? 0.0028f : 0.0006f);
+		}
+	}
+	if (RainFX != nullptr)
+	{
+		if (bRain && !RainFX->IsActive())
+		{
+			RainFX->Activate(true);
+		}
+		else if (!bRain && RainFX->IsActive())
+		{
+			RainFX->Deactivate();
+		}
+	}
+	UE_LOG(LogUnderTheMountain, Log, TEXT("Weather: %s"), bRain ? TEXT("Rain") : TEXT("Clear"));
 }
 
 void ADragonCharacter::BuildInputActions()
@@ -798,6 +897,14 @@ void ADragonCharacter::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other,
 void ADragonCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	// [2026-11-01 T-052] Weather follows the cvar: a console or
+	// -ExecCmds change lands here within a frame and applies once
+	// (ApplyWeather only runs on an actual change).
+	const int32 DesiredWeather = FMath::Clamp(CVarWeatherState.GetValueOnGameThread(), 0, 1);
+	if (DesiredWeather != CurrentWeatherState)
+	{
+		ApplyWeather(DesiredWeather);
+	}
 	// [2026-10-28 T-014] Trap-slow expiry: restore the captured speeds
 	// in the same tick the clock runs out.
 	if (TrapSlowTimeRemaining > 0.0f)

@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-01 — T-052 — The exterior has a sky: sun with shadows, atmosphere, a fly-through cloud deck and height fog — plus weather: type `Weather` in the console (or set utm.weather.state) to trade clear skies for dim blue rain at about 1 ms of frame cost
+
 2026-11-01 — T-051 — Fire breath reads as fire now: a real Niagara particle stream and a flickering orange light replace the orange cone mesh (same damage underneath; about 73 fps measured in the village with the breath lit)
 
 2026-11-01 — T-050 — Settlements across the world: two castles (a north-west courtyard fort and a south-east ridge fort), two new villages (a northern house ring, an eastern inn-led road bend) and four farmsteads now dot the terrain kilometres apart — and the original village's houses stand upright for the first time (a rotation bug had them pitched since they were placed)

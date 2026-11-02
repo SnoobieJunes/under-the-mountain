@@ -88,6 +88,36 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	UPROPERTY(VisibleAnywhere, Category = "Dragon")
 	TObjectPtr<class UPointLightComponent> FireLight;
 
+	// [2026-11-01 T-052] Rain presentation for the weather system:
+	// a pooled Niagara shower (NS_Rain) carried above the pawn so
+	// rain follows the dragon instead of needing a world-sized
+	// emitter. Activated only in the Rain weather state.
+	UPROPERTY(VisibleAnywhere, Category = "Dragon")
+	TObjectPtr<class UNiagaraComponent> RainFX;
+
+	// [2026-11-01 T-052] Weather switching from the PIE console:
+	// `Weather` cycles Clear -> Rain, `SetWeather 0|1` jumps.
+	// Both land in ApplyWeather; the utm.weather.state cvar is the
+	// same state read by Tick (that is how -ExecCmds and headless
+	// captures drive it).
+	UFUNCTION(Exec)
+	void Weather();
+
+	UFUNCTION(Exec)
+	void SetWeather(int32 State);
+
+	// [2026-11-01 T-052] Apply a weather state (0 Clear, 1 Rain) to
+	// the world's sky actors (sun, sky light, fog - found by class
+	// in the current world) and this pawn's rain FX, and log it.
+	// Interior point lights are never touched; the lair's boxes
+	// shadow the sun, so the interior reads unchanged.
+	void ApplyWeather(int32 NewState);
+
+	// [2026-11-01 T-052] Current weather state (0 Clear, 1 Rain);
+	// -1 until the first ApplyWeather (BeginPlay) so the first Tick
+	// always applies the cvar's initial value exactly once.
+	int32 CurrentWeatherState = -1;
+
 	UPROPERTY(VisibleAnywhere, Category = "Dragon")
 	TObjectPtr<USpringArmComponent> CameraBoom;
 
