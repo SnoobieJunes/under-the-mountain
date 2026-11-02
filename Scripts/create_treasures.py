@@ -10,6 +10,15 @@ eal = unreal.EditorAssetLibrary
 asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
 mel = unreal.MaterialEditingLibrary
 
+# [2026-11-01 T-082] In a -run=pythonscript commandlet the Asset
+# Registry has not scanned yet when this script starts, so
+# does_asset_exist/load_asset lie (False/None) about assets plainly
+# on disk - the original script only ever ran inside a live editor,
+# where the registry was warm. Scan the two trees this script
+# touches, synchronously, before trusting either call.
+unreal.AssetRegistryHelpers.get_asset_registry().scan_paths_synchronous(
+    ["/Game/Gameplay", "/Game/Maps"], True, True)
+
 
 def require(value, action):
     # [2026-10-28 T-037] Convert Unreal's False/None helper failures
@@ -21,8 +30,12 @@ def require(value, action):
 
 def make_material(name, color, emissive_scale, disable_depth=False, translucent=False):
     path = DIR + "/" + name
+    # [2026-11-01 T-082] Same re-run trap as the DataAssets below:
+    # an existing material is returned as-is (its expressions were
+    # built by the first run to this same spec) instead of dying on
+    # delete-then-create inside a commandlet.
     if eal.does_asset_exist(path):
-        require(eal.delete_asset(path), "delete existing material %s" % path)
+        return require(eal.load_asset(path), "load existing material %s" % path)
     mat = require(
         asset_tools.create_asset(name, DIR, unreal.Material, unreal.MaterialFactoryNew()),
         "create material %s" % path,
@@ -49,18 +62,26 @@ make_material("M_TrueSight", (0.46, 0.68, 0.64), True, disable_depth=True)
 
 TREASURES = [
     ("DA_Treasure_Goblet", "Gold Goblet", 10, False),
+    ("DA_Treasure_Coins", "Coin Pile", 15, False),
     ("DA_Treasure_JewelledCup", "Jewelled Cup", 50, False),
+    ("DA_Treasure_GildedWeapon", "Gilded Weapon", 75, False),
     ("DA_Treasure_Chest", "Adventurer Chest", 250, False),
+    ("DA_Treasure_PrizeChest", "Prize Chest", 350, False),
     ("DA_Artifact_SeeingStone", "Seeing Stone", 1200, True),
 ]
 for name, display, value, stone in TREASURES:
     path = DIR + "/" + name
-    if eal.does_asset_exist(path):
-        require(eal.delete_asset(path), "delete existing treasure asset %s" % path)
-    da = require(
-        asset_tools.create_asset(name, DIR, unreal.TreasureDataAsset, unreal.DataAssetFactory()),
-        "create treasure asset %s" % path,
-    )
+    # [2026-11-01 T-082] Load-or-create: the original delete-then-create
+    # only worked on a virgin Content tree - delete_asset leaves the
+    # package in memory in a commandlet run, so re-runs died on
+    # "already exists". Updating the loaded asset in place is also the
+    # safer retune path: actor references to the DA survive.
+    da = eal.load_asset(path) if eal.does_asset_exist(path) else None
+    if da is None:
+        da = require(
+            asset_tools.create_asset(name, DIR, unreal.TreasureDataAsset, unreal.DataAssetFactory()),
+            "create treasure asset %s" % path,
+        )
     da.set_editor_property("display_name", display)
     da.set_editor_property("gold_value", value)
     da.set_editor_property("is_seeing_stone", stone)
@@ -83,12 +104,66 @@ cls = require(unreal.load_class(None, "/Script/UnderTheMountain.TreasureActor"),
 for a in list(eas.get_all_level_actors()):
     if a.get_actor_label().startswith("Treasure_"):
         require(eas.destroy_actor(a), "destroy prior placement %s" % a.get_actor_label())
+# [2026-11-01 T-082] Bulk fill to the GAMEPLAY.md section 8 total:
+# 1800 gold of Trinket-Piece-Prize treasure (each item <=399; the
+# Seeing Stone is an artifact and never counts as bulk). Before this
+# the lair held 310 bulk. The plan below spreads denominations over
+# all four chambers so scent ribbon widths (bracketed by value) vary
+# in every room, with the hoard richest. The script asserts its own
+# sum and bracket spread before placing anything - a retune that
+# breaks the section 8 total fails here, not in a hand count.
+# Coordinates are chamber-centre offsets in the CURRENT lair chain
+# (C1 0, C2 6000, C3 12000, hoard 19000); T-066's topology rebuild
+# re-runs this script with new centres, the denominations and the
+# 1800 total carry over unchanged.
+VALUES = {name: value for name, _display, value, _stone in TREASURES}
+CHAMBERS = [("C1", 0), ("C2", 6000), ("C3", 12000), ("Hoard", 19000)]
+SLOTS = [(-1000, -900), (1000, -800), (-800, 900), (900, 700), (-1200, 200),
+         (1200, -200), (0, -1100), (0, 1100), (-500, -500), (500, 500)]
+PLAN = [
+    # (chamber, asset, extra placements beyond the four originals below)
+    ("C1", "DA_Treasure_Goblet", 2), ("C1", "DA_Treasure_Coins", 2),
+    ("C1", "DA_Treasure_JewelledCup", 1),
+    ("C2", "DA_Treasure_Goblet", 2), ("C2", "DA_Treasure_Coins", 2),
+    ("C2", "DA_Treasure_JewelledCup", 2), ("C2", "DA_Treasure_GildedWeapon", 1),
+    ("C3", "DA_Treasure_Goblet", 2), ("C3", "DA_Treasure_Coins", 2),
+    ("C3", "DA_Treasure_JewelledCup", 2), ("C3", "DA_Treasure_GildedWeapon", 1),
+    ("Hoard", "DA_Treasure_Goblet", 1), ("Hoard", "DA_Treasure_Coins", 2),
+    ("Hoard", "DA_Treasure_JewelledCup", 3), ("Hoard", "DA_Treasure_GildedWeapon", 2),
+    ("Hoard", "DA_Treasure_Chest", 1), ("Hoard", "DA_Treasure_PrizeChest", 1),
+]
 PLACEMENTS = [
     ("Treasure_Goblet", "DA_Treasure_Goblet", (0, 900, 160)),
     ("Treasure_JewelledCup", "DA_Treasure_JewelledCup", (6000, -1000, 160)),
     ("Treasure_Chest", "DA_Treasure_Chest", (12000, 1000, 160)),
     ("Treasure_SeeingStone", "DA_Artifact_SeeingStone", (19000, 0, 300)),
 ]
+_centres = dict(CHAMBERS)
+_slot_use = {name: 0 for name, _cx in CHAMBERS}
+_counters = {}
+for chamber, asset, count in PLAN:
+    cx = _centres[chamber]
+    for _ in range(count):
+        dx, dy = SLOTS[_slot_use[chamber] % len(SLOTS)]
+        _slot_use[chamber] += 1
+        _counters[asset] = _counters.get(asset, 0) + 1
+        label = "Treasure_%s_%02d" % (asset.replace("DA_Treasure_", "").replace("DA_Artifact_", ""),
+                                      _counters[asset])
+        PLACEMENTS.append((label, asset, (cx + dx, dy, 160)))
+_bulk_total = sum(VALUES[asset] for _label, asset, _loc in PLACEMENTS
+                  if VALUES[asset] <= 399)
+_brackets = {"Trinket(1-24)": 0, "Piece(25-99)": 0, "Prize(100-399)": 0}
+for _label, asset, _loc in PLACEMENTS:
+    v = VALUES[asset]
+    if v <= 24:
+        _brackets["Trinket(1-24)"] += 1
+    elif v <= 99:
+        _brackets["Piece(25-99)"] += 1
+    elif v <= 399:
+        _brackets["Prize(100-399)"] += 1
+require(_bulk_total == 1800, "bulk total is %d, section 8 wants 1800" % _bulk_total)
+require(all(n > 0 for n in _brackets.values()), "a bulk bracket is empty: %s" % _brackets)
+print("TREASURE_BULK_TOTAL", _bulk_total, "placements", len(PLACEMENTS), "brackets", _brackets)
 for label, asset, loc in PLACEMENTS:
     a = require(eas.spawn_actor_from_class(cls, unreal.Vector(*loc)), "spawn %s" % label)
     a.set_actor_label(label)
