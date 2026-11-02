@@ -72,12 +72,21 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	UPROPERTY(VisibleAnywhere, Category = "Dragon")
 	TObjectPtr<UDragonCombatComponent> Combat;
 
-	// [2026-10-28 T-015] Visible fire-breath volume: engine cone on the
-	// capsule (capsule forward is pawn forward), shown exactly while
-	// Combat->IsFiring(). Display only — the cone test that damages
-	// thieves is UDragonCombatComponent::IsInFireCone math.
+	// [2026-11-01 T-051] Fire-breath presentation: a pooled Niagara
+	// stream (NS_FireBreath, authored by Scripts/create_combat_assets.py
+	// via the editor - see that file) plus a flickering point light,
+	// both driven from Combat->IsFiring() in Tick. Display only — the
+	// cone test that damages thieves is UDragonCombatComponent::
+	// IsInFireCone math. Replaces the T-015 orange cone mesh, which
+	// read as geometry, not fire. The Niagara component is created
+	// once and Activate/Deactivate-cycled (pooling: no per-shot
+	// spawns); the light's intensity is the flicker, its visibility
+	// follows the breath.
 	UPROPERTY(VisibleAnywhere, Category = "Dragon")
-	TObjectPtr<UStaticMeshComponent> FireCone;
+	TObjectPtr<class UNiagaraComponent> FireBreathFX;
+
+	UPROPERTY(VisibleAnywhere, Category = "Dragon")
+	TObjectPtr<class UPointLightComponent> FireLight;
 
 	UPROPERTY(VisibleAnywhere, Category = "Dragon")
 	TObjectPtr<USpringArmComponent> CameraBoom;

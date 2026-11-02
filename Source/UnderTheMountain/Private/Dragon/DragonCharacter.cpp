@@ -19,6 +19,11 @@
 #include "UnderTheMountain.h"
 
 #include "Camera/CameraComponent.h"
+#include "Components/PointLightComponent.h"
+#include "HAL/IConsoleManager.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
+
 #include "Animation/AnimSequence.h"
 #include "Engine/Engine.h"
 #include "EnhancedInputComponent.h"
@@ -34,6 +39,21 @@
 #include "Engine/StaticMesh.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInterface.h"
+
+namespace
+{
+// [2026-11-01 T-051] Dev/measurement switch: hold the breath
+// visuals (Niagara + light) on without firing, for captures and
+// fps measurement. Damage is never routed through this - it only
+// feeds the presentation branch in Tick.
+TAutoConsoleVariable<int32> CVarForceFireVisuals(
+	TEXT("utm.fire.forcevisuals"), 0,
+	TEXT("1 = hold fire-breath visuals on (Niagara stream + light) without firing. Dev/capture use only."));
+bool ForceFireVisuals()
+{
+	return CVarForceFireVisuals.GetValueOnGameThread() != 0;
+}
+} // namespace
 
 ADragonCharacter::ADragonCharacter()
 {
@@ -54,37 +74,31 @@ ADragonCharacter::ADragonCharacter()
 	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
 	Camera->SetupAttachment(CameraBoom);
 
-	// [2026-10-28 T-015] Fire-breath volume, display only. Attached to
-	// the capsule (not the skeletal mesh) so capsule forward — the
-	// pawn's +X — is the cone's forward and the mesh's T-032 yaw/scale
-	// can never skew it. Orientation choice: the engine cone's axis is
-	// its local Z, so pitch +90 (FRotator(90,0,0)) lays that axis onto
-	// pawn +X with the cone opening away from the dragon and the narrow
-	// end back at the nose; centred 700cm ahead at scale (14,8,8) the
-	// 100cm engine cone spans roughly Combat's FireRange 1400 with a
-	// girth near its 30-degree half-angle. NoCollision: damage is the
-	// component's IsInFireCone math, never physics overlap.
-	FireCone = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("FireCone"));
-	FireCone->SetupAttachment(GetCapsuleComponent());
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> ConeMesh(TEXT("/Engine/BasicShapes/Cone.Cone"));
-	if (ConeMesh.Succeeded())
+	// [2026-11-01 T-051] Fire-breath presentation (replaces the T-015
+	// cone mesh): a pooled Niagara stream at the nose plus a point
+	// light, both attached to the capsule so capsule forward — the
+	// pawn's +X — is the breath direction and the mesh's yaw/scale
+	// can never skew it. The Niagara asset is authored outside code
+	// (NS_FireBreath; see create_combat_assets.py); when it is absent
+	// the pawn still breathes (damage is combat math, never the FX),
+	// it just breathes invisibly - logged once below, not per tick.
+	FireBreathFX = CreateDefaultSubobject<UNiagaraComponent>(TEXT("FireBreathFX"));
+	FireBreathFX->SetupAttachment(GetCapsuleComponent());
+	FireBreathFX->SetRelativeLocation(FVector(150.0f, 0.0f, 60.0f));
+	FireBreathFX->SetAutoActivate(false);
+	static ConstructorHelpers::FObjectFinder<UNiagaraSystem> FireSystem(
+		TEXT("/Game/Dragon/NS_FireBreath.NS_FireBreath"));
+	if (FireSystem.Succeeded())
 	{
-		FireCone->SetStaticMesh(ConeMesh.Object);
+		FireBreathFX->SetAsset(FireSystem.Object);
 	}
-	FireCone->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	FireCone->SetRelativeLocation(FVector(700.0f, 0.0f, 30.0f));
-	FireCone->SetRelativeRotation(FRotator(90.0f, 0.0f, 0.0f));
-	FireCone->SetRelativeScale3D(FVector(14.0f, 8.0f, 8.0f));
-	// [2026-10-28 T-015] M_FireBreath is authored by a separate script;
-	// when it is absent the cone keeps the engine default material —
-	// still a visible shape, never an invisible breath.
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> FireMaterial(
-		TEXT("/Game/Dragon/M_FireBreath.M_FireBreath"));
-	if (FireMaterial.Succeeded())
-	{
-		FireCone->SetMaterial(0, FireMaterial.Object);
-	}
-	FireCone->SetVisibility(false);
+	FireLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("FireLight"));
+	FireLight->SetupAttachment(GetCapsuleComponent());
+	FireLight->SetRelativeLocation(FVector(400.0f, 0.0f, 60.0f));
+	FireLight->SetLightColor(FLinearColor(1.0f, 0.45f, 0.1f));
+	FireLight->SetAttenuationRadius(1800.0f);
+	FireLight->SetIntensity(0.0f);
+	FireLight->SetVisibility(false);
 
 	// [2026-10-28 T-032] The real dragon: SK_Dragon_v4 (T-029 rig/walk)
 	// replaces the greybox ball as the visible body. Probed bounds are
@@ -827,9 +841,34 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 			Combat->TickFire(DeltaSeconds, Stats, FireOrigin, FireForward, CombatBrains,
 							 CombatLocations, CombatGoats, CombatGoatLocations);
 		}
-		if (FireCone != nullptr)
+		// [2026-11-01 T-051] Breath presentation follows IsFiring
+		// exactly: the pooled Niagara activates once per breath (no
+		// per-frame spawns) and the point light flickers around a
+		// base intensity while lit, so terrain and thieves in the
+		// cone catch firelight. utm.fire.forcevisuals (below) can
+		// hold the visuals on for captures/measurements without
+		// touching damage, which stays Combat's math alone.
+		const bool bBreathVisible = Combat->IsFiring() || ForceFireVisuals();
+		if (FireBreathFX != nullptr)
 		{
-			FireCone->SetVisibility(Combat->IsFiring());
+			if (bBreathVisible && !FireBreathFX->IsActive())
+			{
+				FireBreathFX->Activate(true);
+			}
+			else if (!bBreathVisible && FireBreathFX->IsActive())
+			{
+				FireBreathFX->Deactivate();
+			}
+		}
+		if (FireLight != nullptr)
+		{
+			FireLight->SetVisibility(bBreathVisible);
+			if (bBreathVisible)
+			{
+				const float Flicker =
+					0.85f + 0.3f * FMath::Sin(GetWorld() ? GetWorld()->GetTimeSeconds() * 37.0f : 0.0f);
+				FireLight->SetIntensity(9000.0f * Flicker);
+			}
 		}
 		// [2026-10-28 T-015] The component exposes no IsEating(): TickEat
 		// is called every tick and its result is the state (None = no
