@@ -48,3 +48,29 @@ path = "/Game/Dragon/NS_FireBreath"
 require(eal.does_asset_exist(path), "NS_FireBreath missing at %s - author it per the header" % path)
 system = require(eal.load_asset(path), "load %s" % path)
 print("FIRE_BREATH_VERIFIED", path, system.get_class().get_name())
+
+# [2026-11-01 T-055] M_Scorch: the scorch-disc material (flat,
+# near-black, translucent so the ground ghosts through). Created
+# here because it is a plain material - unlike the Niagara above,
+# Python authors materials fine. Load-or-create, as in
+# create_treasures.py (delete-then-create dies in commandlets).
+mel = unreal.MaterialEditingLibrary
+asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
+scorch_path = "/Game/Dragon/M_Scorch"
+if not eal.does_asset_exist(scorch_path):
+    mat = require(
+        asset_tools.create_asset("M_Scorch", "/Game/Dragon", unreal.Material,
+                                 unreal.MaterialFactoryNew()),
+        "create M_Scorch")
+    mat.set_editor_property("blend_mode", unreal.BlendMode.BLEND_TRANSLUCENT)
+    c = mel.create_material_expression(
+        mat, unreal.MaterialExpressionConstant3Vector, -400, -100)
+    c.set_editor_property("constant", unreal.LinearColor(0.02, 0.015, 0.01, 1.0))
+    mel.connect_material_property(c, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+    o = mel.create_material_expression(
+        mat, unreal.MaterialExpressionConstant, -400, 100)
+    o.set_editor_property("r", 0.6)
+    mel.connect_material_property(o, "", unreal.MaterialProperty.MP_OPACITY)
+    mel.recompile_material(mat)
+    require(eal.save_asset(scorch_path), "save M_Scorch")
+print("SCORCH_VERIFIED", scorch_path)

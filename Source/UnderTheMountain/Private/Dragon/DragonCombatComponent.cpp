@@ -7,6 +7,7 @@
 
 #include "Dragon/DragonCombatComponent.h"
 #include "UnderTheMountain.h"
+#include "World/BurnablePropActor.h"
 
 #include "Dragon/DragonStatsComponent.h"
 #include "Livestock/GoatActor.h"
@@ -115,7 +116,9 @@ int32 UDragonCombatComponent::TickFire(float Dt, UDragonStatsComponent* Stats,
 									   const TArray<UThiefBrain*>& Brains,
 									   const TArray<FVector>& BrainLocations,
 									   const TArray<AGoatActor*>& Goats,
-									   const TArray<FVector>& GoatLocations)
+									   const TArray<FVector>& GoatLocations,
+									   const TArray<ABurnablePropActor*>& Burnables,
+									   const TArray<FVector>& BurnableLocations)
 {
 	if (!bFiring)
 	{
@@ -210,6 +213,25 @@ int32 UDragonCombatComponent::TickFire(float Dt, UDragonStatsComponent* Stats,
 		}
 		Goat->ApplyGoatDamage(FireDps * EffectiveDt);
 		++NumDamaged;
+	}
+
+	// [2026-11-01 T-055] Burnable props in the cone accumulate
+	// exposure (seconds, not DPS): ignition is the prop's own
+	// threshold call. Already-burning/burnt props ignore it inside
+	// AddFireExposure, so no state check is needed here.
+	const int32 PropCount = FMath::Min(Burnables.Num(), BurnableLocations.Num());
+	for (int32 Index = 0; Index < PropCount; ++Index)
+	{
+		ABurnablePropActor* Prop = Burnables[Index];
+		if (Prop == nullptr)
+		{
+			continue;
+		}
+		if (!IsInFireCone(Origin, Forward, BurnableLocations[Index], FireRange, FireConeHalfAngleDeg))
+		{
+			continue;
+		}
+		Prop->AddFireExposure(EffectiveDt);
 	}
 
 	// [2026-10-28 T-015] An emptied pool ends the breath. Checking

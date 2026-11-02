@@ -21,6 +21,7 @@
 #include "DragonCombatComponent.generated.h"
 
 class AGoatActor;
+class ABurnablePropActor;
 class UDragonStatsComponent;
 class UThiefBrain;
 
@@ -178,10 +179,15 @@ class UNDERTHEMOUNTAIN_API UDragonCombatComponent : public UActorComponent
 	// breath does not check what a target is before setting it on
 	// fire, only where it stands. Goats ride as a second pair of
 	// parallel arrays so the thief path is untouched.
+	// [2026-11-01 T-055] Burnable props ride as a third pair: in
+	// the cone they accumulate exposure seconds (their own state
+	// machine decides ignition), never HP damage.
 	int32 TickFire(float Dt, UDragonStatsComponent* Stats, const FVector& Origin,
 				   const FVector& Forward, const TArray<UThiefBrain*>& Brains,
 				   const TArray<FVector>& BrainLocations, const TArray<AGoatActor*>& Goats,
-				   const TArray<FVector>& GoatLocations);
+				   const TArray<FVector>& GoatLocations,
+				   const TArray<ABurnablePropActor*>& Burnables,
+				   const TArray<FVector>& BurnableLocations);
 
 	// [2026-10-28 T-015] Attempts a roar at game-time
 	// CurrentTimeSeconds (injected so tests own the clock — this

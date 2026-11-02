@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-01 — T-055 — The earth catches fire: hold your breath on crates, barrels, carts or fences and they ignite, burn, and stay burnt rubble with a scorch mark; burning props hurt anything standing in them, and sustained fire on the ground leaves scorch discs
+
 2026-11-01 — T-054 — Death and pain read now: killed thieves fall into a ragdoll settle and flinch when hit, and goats are real animated Meshy goats that walk their pasture and tip onto their side when killed (no more spheres with boxes for heads)
 
 2026-11-01 — T-053 — The towns have people now: villagers wander and idle in the valley village and Village N and scatter when the dragon gets close, and every farmstead has goats — 19 new inhabitants at no measured frame cost (about 74 fps in the village)

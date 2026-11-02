@@ -14,6 +14,7 @@
 #include "Thief/ThiefBrain.h"
 #include "Thief/ThiefDataAsset.h"
 #include "Treasure/TreasureRegistry.h"
+#include "World/BurnablePropActor.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -132,8 +133,10 @@ bool FDragonCombatFireTest::RunTest(const FString& Parameters)
 											FVector(-500.0f, 0.0f, 0.0f)};
 	const TArray<AGoatActor*> NoGoats;
 	const TArray<FVector> NoGoatLocations;
+	const TArray<ABurnablePropActor*> NoProps;
+	const TArray<FVector> NoPropLocations;
 	const int32 Damaged = Combat->TickFire(1.2f, Stats, Origin, Forward, Brains, BrainLocations,
-										   NoGoats, NoGoatLocations);
+										   NoGoats, NoGoatLocations, NoProps, NoPropLocations);
 	TestEqual(TEXT("exactly one brain was damaged by the breath"), Damaged, 1);
 	TestTrue(TEXT("1.2 s of held breath kills the burglar in the cone"),
 			 Burglar->State() == EThiefState::Dead);
@@ -183,13 +186,15 @@ bool FDragonCombatFireGoatTest::RunTest(const FString& Parameters)
 
 	const TArray<UThiefBrain*> NoBrains;
 	const TArray<FVector> NoBrainLocations;
+	const TArray<ABurnablePropActor*> NoProps;
+	const TArray<FVector> NoPropLocations;
 	const TArray<AGoatActor*> Goats = {InCone, Behind};
 	const TArray<FVector> GoatLocations = {FVector(500.0f, 0.0f, 0.0f),
 										   FVector(-500.0f, 0.0f, 0.0f)};
 
 	TestEqual(TEXT("first second burns exactly the goat in the cone"),
 			  Combat->TickFire(1.0f, Stats, Origin, Forward, NoBrains, NoBrainLocations, Goats,
-							   GoatLocations),
+							   GoatLocations, NoProps, NoPropLocations),
 			  1);
 	TestEqual(TEXT("18 DPS for 1 s leaves the goat at 12 HP"), InCone->HP, 12.0f);
 	TestFalse(TEXT("goat still alive after one second"), InCone->IsDead());
@@ -197,14 +202,14 @@ bool FDragonCombatFireGoatTest::RunTest(const FString& Parameters)
 
 	TestEqual(TEXT("second second still burns the goat in the cone"),
 			  Combat->TickFire(1.0f, Stats, Origin, Forward, NoBrains, NoBrainLocations, Goats,
-							   GoatLocations),
+							   GoatLocations, NoProps, NoPropLocations),
 			  1);
 	TestTrue(TEXT("fire-killed goat is dead"), InCone->IsDead());
 	TestTrue(TEXT("fire-killed goat is eatable, not eaten"), !InCone->IsEaten());
 
 	TestEqual(TEXT("a third second counts no corpse twice"),
 			  Combat->TickFire(1.0f, Stats, Origin, Forward, NoBrains, NoBrainLocations, Goats,
-							   GoatLocations),
+							   GoatLocations, NoProps, NoPropLocations),
 			  0);
 	TestEqual(TEXT("corpse HP stays at zero"), InCone->HP, 0.0f);
 
@@ -322,6 +327,56 @@ bool FDragonCombatRoarEatTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("goat restores 10 HP (50 -> 60)"), EatStats->HP, 60.0f);
 		TestTrue(TEXT("goat is eaten after the channel"), Goat->IsEaten());
 	}
+
+	return true;
+}
+
+// [2026-11-01 T-055] Burnable contract: exposure below the 1.2 s
+// threshold does nothing, at it the prop ignites, burning/burnt
+// never move backwards, and the pure rule agrees at the edges.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDragonCombatBurnTest, "UnderTheMountain.Dragon.CombatBurn",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDragonCombatBurnTest::RunTest(const FString& Parameters)
+{
+	TestTrue(TEXT("half exposure does not ignite"),
+			 ABurnablePropActor::StateAfterExposure(EBurnState::Intact, 0.6f, 1.2f) == EBurnState::Intact);
+	TestTrue(TEXT("full exposure ignites"),
+			 ABurnablePropActor::StateAfterExposure(EBurnState::Intact, 1.2f, 1.2f) == EBurnState::Burning);
+	TestTrue(TEXT("burning never un-ignites"),
+			 ABurnablePropActor::StateAfterExposure(EBurnState::Burning, 0.0f, 1.2f) == EBurnState::Burning);
+	TestTrue(TEXT("burnt is permanent"),
+			 ABurnablePropActor::StateAfterExposure(EBurnState::Burnt, 99.0f, 1.2f) == EBurnState::Burnt);
+
+	ABurnablePropActor* Prop = NewObject<ABurnablePropActor>();
+	TestTrue(TEXT("prop starts intact"), Prop->GetBurnState() == EBurnState::Intact);
+	TestTrue(TEXT("0.6 s of breath does not ignite"),
+			 Prop->AddFireExposure(0.6f) == EBurnState::Intact);
+	TestTrue(TEXT("exposure accumulates"), FMath::IsNearlyEqual(Prop->GetExposure(), 0.6f, 0.001f));
+	TestTrue(TEXT("second 0.6 s ignites"), Prop->AddFireExposure(0.6f) == EBurnState::Burning);
+	TestTrue(TEXT("burning ignores more exposure"),
+			 Prop->AddFireExposure(5.0f) == EBurnState::Burning);
+
+	// Through the combat seam: a prop in the cone ignites after
+	// 1.2 s of held breath, one behind the dragon never warms.
+	ABurnablePropActor* InCone = NewObject<ABurnablePropActor>();
+	UDragonStatsComponent* Stats = NewObject<UDragonStatsComponent>();
+	Stats->Stamina = 100.0f;
+	UDragonCombatComponent* Combat = NewObject<UDragonCombatComponent>();
+	TestTrue(TEXT("fire starts"), Combat->TryStartFire(Stats));
+	const TArray<UThiefBrain*> NoBrains;
+	const TArray<FVector> NoBrainLocations;
+	const TArray<AGoatActor*> NoGoats;
+	const TArray<FVector> NoGoatLocations;
+	const TArray<ABurnablePropActor*> Props = {InCone};
+	const TArray<FVector> PropLocations = {FVector(500.0f, 0.0f, 0.0f)};
+	Combat->TickFire(1.0f, Stats, FVector::ZeroVector, FVector(1.0f, 0.0f, 0.0f), NoBrains,
+					 NoBrainLocations, NoGoats, NoGoatLocations, Props, PropLocations);
+	TestTrue(TEXT("1.0 s in cone is not yet lit"), InCone->GetBurnState() == EBurnState::Intact);
+	Combat->TickFire(0.3f, Stats, FVector::ZeroVector, FVector(1.0f, 0.0f, 0.0f), NoBrains,
+					 NoBrainLocations, NoGoats, NoGoatLocations, Props, PropLocations);
+	TestTrue(TEXT("1.3 s in cone ignites through the seam"),
+			 InCone->GetBurnState() == EBurnState::Burning);
 
 	return true;
 }

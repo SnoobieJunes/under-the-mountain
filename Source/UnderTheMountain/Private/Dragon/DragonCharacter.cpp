@@ -17,6 +17,8 @@
 #include "Thief/ThiefCharacter.h"
 #include "UI/DragonTintWidget.h"
 #include "UnderTheMountain.h"
+#include "World/BurnablePropActor.h"
+#include "World/ScorchMarkActor.h"
 
 #include "Camera/CameraComponent.h"
 #include "Components/DirectionalLightComponent.h"
@@ -307,6 +309,24 @@ void ADragonCharacter::SetWeather(int32 State)
 	// Keep the cvar in step so Tick's change-detection does not
 	// immediately re-apply the console's older value.
 	CVarWeatherState->Set(CurrentWeatherState, ECVF_SetByConsole);
+}
+
+void ADragonCharacter::BurnTest()
+{
+	TArray<ABurnablePropActor*> Props;
+	TArray<FVector> Locations;
+	GatherBurnableTargets(Props, Locations);
+	int32 Ignited = 0;
+	for (int32 Index = 0; Index < Props.Num(); ++Index)
+	{
+		if (Props[Index] != nullptr && Locations.IsValidIndex(Index) &&
+			FVector::Dist(Locations[Index], GetActorLocation()) <= 3000.0f)
+		{
+			Props[Index]->IgniteNow();
+			++Ignited;
+		}
+	}
+	UE_LOG(LogUnderTheMountain, Log, TEXT("BurnTest: ignited %d prop(s)"), Ignited);
 }
 
 void ADragonCharacter::ApplyWeather(int32 NewState)
@@ -609,6 +629,129 @@ void ADragonCharacter::GatherGoatTargets(TArray<AGoatActor*>& OutGoats,
 		}
 		OutGoats.Add(Goat);
 		OutLocations.Add(Goat->GetActorLocation());
+	}
+}
+
+void ADragonCharacter::GatherBurnableTargets(TArray<ABurnablePropActor*>& OutProps,
+											 TArray<FVector>& OutLocations)
+{
+	// [2026-11-01 T-055] Parallel arrays for TickFire's prop seam.
+	OutProps.Reset();
+	OutLocations.Reset();
+	if (GetWorld() == nullptr)
+	{
+		return;
+	}
+	TArray<AActor*> Actors;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ABurnablePropActor::StaticClass(), Actors);
+	for (AActor* Actor : Actors)
+	{
+		ABurnablePropActor* Prop = Cast<ABurnablePropActor>(Actor);
+		if (Prop == nullptr)
+		{
+			continue;
+		}
+		OutProps.Add(Prop);
+		OutLocations.Add(Prop->GetActorLocation());
+	}
+}
+
+void ADragonCharacter::ApplyBurningAreaDamage(float DeltaSeconds)
+{
+	// [2026-11-01 T-055] A burning prop is a small fire: anything
+	// alive inside its BurnAreaRadius takes the breath's DPS (the
+	// same seams fire uses, corpses skipped by those seams).
+	// Targets are gathered here, not only while firing - a prop
+	// keeps burning after the breath stops.
+	if (Combat == nullptr || GetWorld() == nullptr || DeltaSeconds <= 0.0f)
+	{
+		return;
+	}
+	TArray<UThiefBrain*> Brains;
+	TArray<FVector> BrainLocations;
+	GatherCombatTargets(Brains, BrainLocations);
+	TArray<AGoatActor*> Goats;
+	TArray<FVector> GoatLocations;
+	GatherGoatTargets(Goats, GoatLocations);
+	TArray<ABurnablePropActor*> Props;
+	TArray<FVector> PropLocations;
+	GatherBurnableTargets(Props, PropLocations);
+	for (int32 PropIndex = 0; PropIndex < Props.Num(); ++PropIndex)
+	{
+		ABurnablePropActor* Prop = Props[PropIndex];
+		if (Prop == nullptr || Prop->GetBurnState() != EBurnState::Burning)
+		{
+			continue;
+		}
+		const FVector Centre = PropLocations[PropIndex];
+		const float Radius = Prop->BurnAreaRadius;
+		for (int32 Index = 0; Index < Brains.Num() && Index < BrainLocations.Num(); ++Index)
+		{
+			if (Brains[Index] != nullptr && Brains[Index]->State() != EThiefState::Dead &&
+				FVector::Dist(BrainLocations[Index], Centre) <= Radius)
+			{
+				Brains[Index]->ApplyDamage(Combat->FireDps * DeltaSeconds, BrainLocations[Index]);
+			}
+		}
+		for (int32 Index = 0; Index < Goats.Num() && Index < GoatLocations.Num(); ++Index)
+		{
+			if (Goats[Index] != nullptr && !Goats[Index]->IsDead() &&
+				FVector::Dist(GoatLocations[Index], Centre) <= Radius)
+			{
+				Goats[Index]->ApplyGoatDamage(Combat->FireDps * DeltaSeconds);
+			}
+		}
+	}
+}
+
+void ADragonCharacter::MaybeSpawnGroundScorch(const FVector& Origin, const FVector& Forward)
+{
+	// [2026-11-01 T-055] Ground scorch: while the breath points at
+	// the ground (aim below horizontal), a 0.25 s-throttled trace
+	// accumulates burn time per spot; 1.0 s on one spot leaves a
+	// disc. Dedup 200 cm, cap 64 per session - the marks are
+	// persistent, so unbounded spawning is unbounded actors.
+	GroundScorchTimer -= GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.0f;
+	if (Forward.Z > -0.25f || GroundScorchTimer > 0.0f || GetWorld() == nullptr)
+	{
+		return;
+	}
+	GroundScorchTimer = 0.25f;
+	FHitResult Hit;
+	const FVector End = Origin + Forward * Combat->FireRange;
+	if (!GetWorld()->LineTraceSingleByChannel(Hit, Origin, End, ECC_Visibility))
+	{
+		return;
+	}
+	for (const FVector& Existing : ScorchLocations)
+	{
+		if (FVector::Dist2D(Existing, Hit.Location) < 200.0f)
+		{
+			GroundScorchAccum += 0.25f;
+			if (GroundScorchAccum >= 1.0f && ScorchLocations.Num() < 64)
+			{
+				// Already marked nearby: nothing new to spawn.
+				GroundScorchAccum = 0.0f;
+			}
+			return;
+		}
+	}
+	GroundScorchAccum += 0.25f;
+	if (GroundScorchAccum < 1.0f)
+	{
+		return;
+	}
+	GroundScorchAccum = 0.0f;
+	if (ScorchLocations.Num() >= 64)
+	{
+		return;
+	}
+	const FVector Spot = Hit.Location + FVector(0.0f, 0.0f, 4.0f);
+	if (AScorchMarkActor* Scorch = GetWorld()->SpawnActor<AScorchMarkActor>(Spot, FRotator::ZeroRotator))
+	{
+		Scorch->SetDiameter(500.0f);
+		ScorchLocations.Add(Spot);
+		UE_LOG(LogUnderTheMountain, Log, TEXT("Scorch mark left at %s"), *Spot.ToString());
 	}
 }
 
@@ -930,10 +1073,13 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 		TArray<FVector> CombatLocations;
 		TArray<AGoatActor*> CombatGoats;
 		TArray<FVector> CombatGoatLocations;
+		TArray<ABurnablePropActor*> CombatProps;
+		TArray<FVector> CombatPropLocations;
 		if (bWantsFire)
 		{
 			GatherCombatTargets(CombatBrains, CombatLocations);
 			GatherGoatTargets(CombatGoats, CombatGoatLocations);
+			GatherBurnableTargets(CombatProps, CombatPropLocations);
 			if (!Combat->IsFiring())
 			{
 				Combat->TryStartFire(Stats);
@@ -946,8 +1092,13 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 			const FVector FireForward =
 				Controller != nullptr ? GetControlRotation().Vector() : GetActorForwardVector();
 			Combat->TickFire(DeltaSeconds, Stats, FireOrigin, FireForward, CombatBrains,
-							 CombatLocations, CombatGoats, CombatGoatLocations);
+							 CombatLocations, CombatGoats, CombatGoatLocations, CombatProps,
+							 CombatPropLocations);
+			MaybeSpawnGroundScorch(FireOrigin, FireForward);
 		}
+		// [2026-11-01 T-055] Burning props keep hurting after the
+		// breath stops, so this runs every tick, firing or not.
+		ApplyBurningAreaDamage(DeltaSeconds);
 		// [2026-11-01 T-051] Breath presentation follows IsFiring
 		// exactly: the pooled Niagara activates once per breath (no
 		// per-frame spawns) and the point light flickers around a

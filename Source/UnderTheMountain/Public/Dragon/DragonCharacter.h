@@ -106,6 +106,14 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	UFUNCTION(Exec)
 	void SetWeather(int32 State);
 
+	// [2026-11-01 T-055] Dev/capture switch: ignite every burnable
+	// prop within 30 m. Exists so the burn -> rubble -> scorch
+	// chain can be proven from -ExecCmds and captures without
+	// playing a full breath onto a crate first; it calls the same
+	// IgniteNow the exposure threshold calls.
+	UFUNCTION(Exec)
+	void BurnTest();
+
 	// [2026-11-01 T-052] Apply a weather state (0 Clear, 1 Rain) to
 	// the world's sky actors (sun, sky light, fog - found by class
 	// in the current world) and this pawn's rain FX, and log it.
@@ -266,6 +274,23 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// actor + location as parallel arrays, gathered only while fire
 	// is wanted (TickFire burns goats through the same cone).
 	void GatherGoatTargets(TArray<AGoatActor*>& OutGoats, TArray<FVector>& OutLocations);
+
+	// [2026-11-01 T-055] The burnable-prop half of the fire seam,
+	// plus the two things burning props cause: area damage around
+	// lit props, and ground scorch while the breath is held on the
+	// ground. Scorch dedups by proximity and caps per session so a
+	// long firefight cannot spawn discs without bound.
+	void GatherBurnableTargets(TArray<class ABurnablePropActor*>& OutProps,
+							   TArray<FVector>& OutLocations);
+	void ApplyBurningAreaDamage(float DeltaSeconds);
+	void MaybeSpawnGroundScorch(const FVector& Origin, const FVector& Forward);
+
+	// [2026-11-01 T-055] Scorch bookkeeping: disc locations this
+	// session (dedup radius checked against these) and the
+	// accumulator/throttle for ground hits while firing downward.
+	TArray<FVector> ScorchLocations;
+	float GroundScorchAccum = 0.0f;
+	float GroundScorchTimer = 0.0f;
 
 	// [2026-11-01 T-077] Crush application, pawn side: the landing
 	// path damages every thief/goat within Combat->CrushRadius of
