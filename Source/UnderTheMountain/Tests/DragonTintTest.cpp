@@ -7,6 +7,7 @@
 #include "Misc/AutomationTest.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Dragon/DragonAppearanceComponent.h"
+#include "UI/DragonTintWidget.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Engine/SkeletalMesh.h"
@@ -102,6 +103,79 @@ bool FDragonTintTest::RunTest(const FString& Parameters)
 			TestTrue(TEXT("MID tint equals component tint"), Written == Appearance->GetScaleTint());
 		}
 	}
+
+	// [2026-11-01 T-060] Picker pad corners at hue 0 (the mapping the
+	// drag handler calls verbatim): top-left (S=0, V=1) is white,
+	// top-right (S=1, V=1) is the pure hue, the bottom edge (V=0) is
+	// black, and out-of-range drags clamp to the nearest edge instead
+	// of producing out-of-gamut colours.
+	TestTrue(TEXT("pad top-left is white"),
+			 UDragonTintWidget::ColourForPadPosition(0.0f, 0.0f, 0.0f)
+				 .Equals(FLinearColor(1.0f, 1.0f, 1.0f, 1.0f), 0.0001f));
+	TestTrue(TEXT("pad top-right at hue 0 is red"),
+			 UDragonTintWidget::ColourForPadPosition(0.0f, 1.0f, 0.0f)
+				 .Equals(FLinearColor(1.0f, 0.0f, 0.0f, 1.0f), 0.0001f));
+	TestTrue(TEXT("pad bottom-right is black"),
+			 UDragonTintWidget::ColourForPadPosition(0.0f, 1.0f, 1.0f)
+				 .Equals(FLinearColor(0.0f, 0.0f, 0.0f, 1.0f), 0.0001f));
+	TestTrue(TEXT("pad top-right at hue 240 is blue"),
+			 UDragonTintWidget::ColourForPadPosition(240.0f, 1.0f, 0.0f)
+				 .Equals(FLinearColor(0.0f, 0.0f, 1.0f, 1.0f), 0.0001f));
+	TestTrue(TEXT("pad out-of-range clamps to pure hue"),
+			 UDragonTintWidget::ColourForPadPosition(0.0f, 2.0f, -1.0f)
+				 .Equals(FLinearColor(1.0f, 0.0f, 0.0f, 1.0f), 0.0001f));
+
+	// [2026-11-01 T-060] Hue strip mapping: left edge 0 degrees,
+	// middle 180, right edge wraps 360 back to 0, and off-strip
+	// drags clamp.
+	TestEqual(TEXT("strip left is hue 0"), UDragonTintWidget::HueForStripPosition(0.0f), 0.0f);
+	TestEqual(TEXT("strip middle is hue 180"), UDragonTintWidget::HueForStripPosition(0.5f), 180.0f);
+	TestEqual(TEXT("strip right wraps to hue 0"), UDragonTintWidget::HueForStripPosition(1.0f), 0.0f);
+	TestEqual(TEXT("strip clamps below 0"), UDragonTintWidget::HueForStripPosition(-1.0f), 0.0f);
+
+	// [2026-11-01 T-060] HSV<->RGB conversions: exact primaries,
+	// hue wrap/clamp on hostile input, and a mixed-colour round-trip
+	// (dragging through grey must not invent colour on the way back).
+	TestTrue(TEXT("HSV red"), UDragonTintWidget::HsvToRgb(0.0f, 1.0f, 1.0f)
+								  .Equals(FLinearColor(1.0f, 0.0f, 0.0f, 1.0f), 0.0001f));
+	TestTrue(TEXT("HSV green"), UDragonTintWidget::HsvToRgb(120.0f, 1.0f, 1.0f)
+									.Equals(FLinearColor(0.0f, 1.0f, 0.0f, 1.0f), 0.0001f));
+	TestTrue(TEXT("HSV 360 wraps to red"),
+			 UDragonTintWidget::HsvToRgb(360.0f, 1.0f, 1.0f)
+				 .Equals(FLinearColor(1.0f, 0.0f, 0.0f, 1.0f), 0.0001f));
+	TestTrue(TEXT("HSV -120 wraps to blue"),
+			 UDragonTintWidget::HsvToRgb(-120.0f, 1.0f, 1.0f)
+				 .Equals(FLinearColor(0.0f, 0.0f, 1.0f, 1.0f), 0.0001f));
+	TestTrue(TEXT("HSV clamps S/V"),
+			 UDragonTintWidget::HsvToRgb(0.0f, -1.0f, 2.0f)
+				 .Equals(FLinearColor(1.0f, 1.0f, 1.0f, 1.0f), 0.0001f));
+	{
+		const FLinearColor Mixed(0.25f, 0.5f, 0.75f, 1.0f);
+		float H = 0.0f, S = 0.0f, V = 0.0f;
+		UDragonTintWidget::RgbToHsv(Mixed, H, S, V);
+		TestTrue(TEXT("RGB->HSV->RGB round-trips a mixed colour"),
+				 UDragonTintWidget::HsvToRgb(H, S, V).Equals(Mixed, 0.0001f));
+		float GH = 0.0f, GS = 1.0f, GV = 0.0f;
+		UDragonTintWidget::RgbToHsv(FLinearColor(0.5f, 0.5f, 0.5f, 1.0f), GH, GS, GV);
+		TestEqual(TEXT("grey has zero saturation"), GS, 0.0f);
+		TestEqual(TEXT("grey keeps its value"), GV, 0.5f);
+	}
+
+	// [2026-11-01 T-060] Picker output lands through the same
+	// component seam the sliders used: clamped, alpha 1 (bSave=false
+	// keeps this probe out of every save slot).
+	Appearance->SetScaleTint(UDragonTintWidget::HsvToRgb(120.0f, 1.0f, 0.5f), false);
+	TestTrue(TEXT("picker green at half value writes through the component"),
+			 Appearance->GetScaleTint().Equals(FLinearColor(0.0f, 0.5f, 0.0f, 1.0f), 0.0001f));
+
+	// [2026-11-01 T-060] The three RGB sliders are gone: the widget
+	// class carries no slider members anymore.
+	TestNull(TEXT("no RedSlider member"),
+			 UDragonTintWidget::StaticClass()->FindPropertyByName(TEXT("RedSlider")));
+	TestNull(TEXT("no GreenSlider member"),
+			 UDragonTintWidget::StaticClass()->FindPropertyByName(TEXT("GreenSlider")));
+	TestNull(TEXT("no BlueSlider member"),
+			 UDragonTintWidget::StaticClass()->FindPropertyByName(TEXT("BlueSlider")));
 
 	// [2026-10-28 T-039] Reset only the TEST slot to canonical white;
 	// the player's real slot was never touched by this suite, so there
