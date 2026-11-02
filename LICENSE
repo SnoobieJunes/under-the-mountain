@@ -1,0 +1,44 @@
+Under the Mountain — Proprietary License
+
+Copyright (c) 2026 Auston LeRoy. All rights reserved.
+
+The software, source code, game design, narrative, art, models, animations,
+audio, and all other content in this repository (collectively, "the Work")
+are the exclusive property of the copyright holder.
+
+PERMITTED
+- Viewing the Work in this private repository.
+- Downloading, building, and running the Work solely to evaluate it for the
+  Meta AI Developer Hackathon 2026, or with the copyright holder's prior
+  written permission for review purposes.
+
+NOT PERMITTED
+Without the prior written permission of the copyright holder, you may not:
+- copy, redistribute, publish, sublicense, sell, rent, or lease the Work or
+  any part of it;
+- modify, adapt, translate, or create derivative works from the Work;
+- use the Work or any part of it for any commercial purpose;
+- extract or reuse code, assets, models, animations, audio, or design
+  elements in any other project;
+- remove or alter any copyright, attribution, or license notice.
+
+THIRD-PARTY COMPONENTS
+This project is built with Unreal Engine, which remains subject to the
+Unreal Engine End User License Agreement (Epic Games, Inc.). Third-party
+assets and tools used in development (including AI-generation services)
+remain subject to their own respective terms. This license grants no rights
+in any third-party component.
+
+NO WARRANTY
+THE WORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY
+ARISING FROM THE USE OF THE WORK.
+
+This is a proprietary, all-rights-reserved license. It is intentionally NOT
+an open-source license: no open-source rights are granted. If no license
+file were present, the same all-rights-reserved default would apply under
+copyright law; this file states the evaluation permission above explicitly.
+
+For permissions beyond evaluation, contact the copyright holder.

@@ -7,9 +7,13 @@ Build/
 *.sln
 *.xcworkspace
 .DS_Store
+# Blender backup files
+*.blend1
+*.blend2
 # secrets
 .env
 *.p8
 # Meshy task payloads with keys, if any
 *_secret*
-/Config/DefaultInput.ini is editor-generated on first run; real input config is authored in T-003
+# Editor-generated on first run; real input config is authored in code (T-003)
+/Config/DefaultInput.ini
