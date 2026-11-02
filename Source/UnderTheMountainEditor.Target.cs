@@ -11,6 +11,6 @@ public class UnderTheMountainEditorTarget : TargetRules
 		Type = TargetType.Editor;
 		DefaultBuildSettings = BuildSettingsVersion.V7;
 		IncludeOrderVersion = EngineIncludeOrderVersion.Unreal5_8;
-		ExtraModuleNames.Add("UnderTheMountain");
+		ExtraModuleNames.AddRange(new string[] { "UnderTheMountain", "UnderTheMountainEditor" });
 	}
 }
