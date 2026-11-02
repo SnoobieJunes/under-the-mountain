@@ -29,3 +29,22 @@ What a loop adds on top:
    The task loop → PICK), and end. A stuck loop parks itself instead of
    spinning.
 7. **Untouchables** — Content/Meshy/Raw/ import sources, the pinned EngineAssociation in the .uproject, generated Binaries/Intermediate folders.
+8. **Route by size, not by default (owner rule, 2026-11-01)** — delegate to
+   `muse_turn` only when the deliverable is large and self-contained
+   (>~200 new lines, multi-file draft, bulk tests, survey/doc, asset batch)
+   AND the brief fits on one page with exact signatures and file lists.
+   One call per deliverable, implementation + its tests together, output
+   files first. Everything else — single file pair, bug fixes, anything
+   needing compile-error iteration, editor/PIE work — the parent does
+   directly; a compiler error is never bounced back to Muse, it is fixed
+   locally. Rationale: Hermes cuts `muse_turn` at ~420s while the plugin's
+   own deadline is longer, so an oversized chunk dies as an orphaned
+   `muse serve` (T-060, 2026-11-01: ~10% of a 5-hour subscription bucket
+   bought tests-only and an uncompilable tree; the parent finished it
+   in-session). On any `muse_turn` timeout: `git status` + check for a
+   still-running `muse serve` and the live log before anything else —
+   files on disk are the result, the return text is not — and never
+   re-run the same brief blind. Muse is the drafter, never the finisher:
+   every delegated chunk gets the parent's diff read, build, and gate
+   before the next chunk. Stay in one session across iterations (prompt
+   cache is the cheap path); do not start a fresh session per task.
