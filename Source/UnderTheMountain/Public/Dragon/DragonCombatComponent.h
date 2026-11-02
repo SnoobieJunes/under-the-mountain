@@ -110,6 +110,32 @@ class UNDERTHEMOUNTAIN_API UDragonCombatComponent : public UActorComponent
 	UPROPERTY(EditAnywhere, Category = "Dragon|Combat|Eat")
 	float ThiefFoodHP = 15.0f;
 
+	// [2026-11-01 T-077] Crush tuning (docs/GAMEPLAY.md section 5.4
+	// sets crush at 40). CrushMinImpactSpeed is the anti-farming
+	// threshold invented by T-077 and recorded in GAMEPLAY.md: 300
+	// cm/s is half the dragon's MaxWalkSpeed (600), so a deliberate
+	// charge or a committed descent crushes, while a gentle touchdown
+	// (a controlled landing settles far below 300 vertical) or idle
+	// body contact never does. CrushRadius is the landing footprint:
+	// what is under the dragon when it comes down, in cm.
+	UPROPERTY(EditAnywhere, Category = "Dragon|Combat|Crush")
+	float CrushDamage = 40.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Dragon|Combat|Crush")
+	float CrushMinImpactSpeed = 300.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Dragon|Combat|Crush")
+	float CrushRadius = 300.0f;
+
+	// [2026-11-01 T-077] Pure crush rule: the damage one impact
+	// deals. At or above MinImpactSpeed the full Damage lands; below
+	// it, zero — a gentle touchdown must not farm kills, so there is
+	// no partial credit. Speed is signed-agnostic (a fall and a
+	// charge are both speeds), negative tuning clamps to zero damage
+	// rather than healing the victim. Static so tests exercise the
+	// shipped rule verbatim.
+	static float CrushDamageForImpact(float ImpactSpeed, float Damage, float MinImpactSpeed);
+
 	// [2026-10-28 T-015] Pure cone test: true when Target is within
 	// Range of Origin AND the angle between (Target - Origin) and
 	// Forward is no more than HalfAngleDeg (the exact edge counts as

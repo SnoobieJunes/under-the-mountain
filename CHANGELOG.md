@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-01 — T-077 — Landing on or charging into a thief or goat now crushes it (40 damage, per GAMEPLAY.md §5.4): drops and ground charges at 300 cm/s or faster kill what's under the dragon, gentle touchdowns don't
+
 2026-11-01 — T-060 — The C-key scale-colour picker is now one draggable colour pad plus a hue strip (drag to browse shades, the dragon recolours live and the choice saves as before); the three separate R/G/B sliders are gone
 
 2026-10-31 — Owner review processed — Sandbox guarantee written into PLAN/GAMEPLAY (PT-LOOP is a benchmark, never rails; unscripted "go rogue" demo capture is supported), music is friend-composed and will be ingested — never generated — under T-071, the dragon pipeline is stated everywhere as Muse multi-images → Meshy mesh/textures → Blender rig/animation → Unreal, and a Meshy credit forecast + spend guardrails now own the remaining ~450 efficient / ~625 quality-safe estimate (no user-visible change)

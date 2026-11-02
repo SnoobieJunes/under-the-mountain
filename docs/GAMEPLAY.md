@@ -415,6 +415,14 @@ Dragon damage baseline: claw 25, tail 20 (arc, bypasses frontal block),
 fire 18/s in cone (halved vs fire cloaks ≥3★), crush (land/run over) 40,
 eat = kill on grabbed/incapacitated target only.
 
+Crush threshold `[tuning: T-077, invented 2026-11-01]`: crush only lands
+at an impact/ground speed of **300 cm/s or more** — half the dragon's
+600 cm/s walk speed, so a deliberate charge or a committed descent
+crushes and a gentle touchdown or idle body contact never farms kills.
+Landing crush covers a 300 cm ground-plane footprint under the dragon;
+run-over applies to the contacted thief/goat, debounced to one crush
+per 0.5 s of grinding contact.
+
 | Counter | Burglar | Dwarf party | Adventurer |
 |---|---|---|---|
 | **Roar** (10 stam, §2) | Drops loot, flees 4 s panic (random dir, then crack) | Carrier drops 1 item; party holds (guard braces) — roar alone insufficient `[derived: party = organised]` | **Primary counter**: drops all loot, flees to exit; if outside lair, +4 notoriety pts (§4) and he talks |

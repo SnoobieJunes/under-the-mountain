@@ -63,6 +63,19 @@ bool UDragonCombatComponent::IsInFireCone(const FVector& Origin, const FVector& 
 	return AngleDeg <= HalfAngleDeg + 0.001f;
 }
 
+float UDragonCombatComponent::CrushDamageForImpact(float ImpactSpeed, float Damage,
+												   float MinImpactSpeed)
+{
+	// [2026-11-01 T-077] Threshold is inclusive and speed is a
+	// magnitude: exactly at the charge speed crushes, and direction
+	// (falling vs running) never matters to a body being landed on.
+	if (FMath::Abs(ImpactSpeed) < MinImpactSpeed)
+	{
+		return 0.0f;
+	}
+	return FMath::Max(0.0f, Damage);
+}
+
 bool UDragonCombatComponent::TryStartFire(UDragonStatsComponent* Stats)
 {
 	// [2026-10-28 T-015] Both refusals log at Warning: "fire did

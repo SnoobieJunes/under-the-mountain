@@ -271,4 +271,68 @@ bool FDragonCombatRoarEatTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// [2026-11-01 T-077] Crush contract: the pure rule (below the 300
+// cm/s charge threshold nothing is farmed, at it the full 40 from
+// GAMEPLAY.md section 5.4 lands, sign never matters), then that 40
+// applied through the exact seams the pawn uses — a 20 HP burglar
+// brain and a 30 HP goat both die to one crush, and a corpse takes
+// no second count.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDragonCombatCrushTest, "UnderTheMountain.Dragon.CombatCrush",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDragonCombatCrushTest::RunTest(const FString& Parameters)
+{
+	UDragonCombatComponent* Combat = NewObject<UDragonCombatComponent>();
+	TestEqual(TEXT("spec crush damage is 40"), Combat->CrushDamage, 40.0f);
+	TestEqual(TEXT("crush threshold is 300 cm/s"), Combat->CrushMinImpactSpeed, 300.0f);
+
+	TestEqual(TEXT("gentle touchdown crushes nothing"),
+			  UDragonCombatComponent::CrushDamageForImpact(100.0f, Combat->CrushDamage,
+														   Combat->CrushMinImpactSpeed),
+			  0.0f);
+	TestEqual(TEXT("just below threshold crushes nothing"),
+			  UDragonCombatComponent::CrushDamageForImpact(299.0f, Combat->CrushDamage,
+														   Combat->CrushMinImpactSpeed),
+			  0.0f);
+	TestEqual(TEXT("at threshold the full crush lands"),
+			  UDragonCombatComponent::CrushDamageForImpact(300.0f, Combat->CrushDamage,
+														   Combat->CrushMinImpactSpeed),
+			  40.0f);
+	TestEqual(TEXT("a fast fall crushes the same as a charge"),
+			  UDragonCombatComponent::CrushDamageForImpact(-1800.0f, Combat->CrushDamage,
+														   Combat->CrushMinImpactSpeed),
+			  40.0f);
+	TestEqual(TEXT("negative damage tuning heals nobody"),
+			  UDragonCombatComponent::CrushDamageForImpact(900.0f, -40.0f,
+														   Combat->CrushMinImpactSpeed),
+			  0.0f);
+
+	// The pawn's landing path hands this damage to the brain seam.
+	UTreasureRegistry* Registry = MakeSingleTreasureRegistry(FVector(0.0f, 0.0f, 0.0f));
+	UThiefBrain* Burglar = MakeCombatBrain(MakeBurglarConfig(), Registry, TEXT("CrushBurglar"));
+	const float ThiefDamage = UDragonCombatComponent::CrushDamageForImpact(
+		900.0f, Combat->CrushDamage, Combat->CrushMinImpactSpeed);
+	TestTrue(TEXT("one crush kills a 20 HP burglar"),
+			 Burglar->ApplyDamage(ThiefDamage, FVector::ZeroVector));
+	TestTrue(TEXT("crushed burglar is dead"), Burglar->State() == EThiefState::Dead);
+	TestFalse(TEXT("a crushed corpse is not counted twice"),
+			  Burglar->ApplyDamage(ThiefDamage, FVector::ZeroVector));
+
+	// And to the goat seam: 30 HP against the same 40.
+	AGoatActor* Goat = NewObject<AGoatActor>();
+	TestTrue(TEXT("one crush kills a 30 HP goat"), Goat->ApplyGoatDamage(ThiefDamage));
+	TestTrue(TEXT("crushed goat is dead and eatable"), Goat->IsDead() && !Goat->IsEaten());
+	TestFalse(TEXT("a crushed goat corpse is not counted twice"), Goat->ApplyGoatDamage(ThiefDamage));
+
+	// Below-threshold damage (0) leaves both seams untouched.
+	UThiefBrain* Bystander = MakeCombatBrain(MakeBurglarConfig(), Registry, TEXT("GentleBurglar"));
+	TestFalse(TEXT("a gentle touchdown kills no burglar"),
+			  Bystander->ApplyDamage(UDragonCombatComponent::CrushDamageForImpact(
+										 100.0f, Combat->CrushDamage, Combat->CrushMinImpactSpeed),
+									 FVector::ZeroVector));
+	TestEqual(TEXT("bystander kept full HP"), Bystander->HP(), 20.0f);
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

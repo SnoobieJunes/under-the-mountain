@@ -149,6 +149,13 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// never from a live read in here.
 	virtual void Landed(const FHitResult& Hit) override;
 
+	// [2026-11-01 T-077] Run-over crush: physical contact while
+	// grounded at charge speed routes into ApplyCrushVictim for the
+	// contacted actor only. Airborne contact is Landed's job.
+	virtual void NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrimitiveComponent* OtherComp,
+						   bool bSelfMoved, FVector HitLocation, FVector HitNormal, FVector NormalImpulse,
+						   const FHitResult& Hit) override;
+
   private:
 	// [2026-10-27 T-003] Enhanced Input actions are instantiated in code for
 	// the skeleton: one C++ source of truth, no hand-authored .uassets to
@@ -214,6 +221,22 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// UDragonCombatComponent consumes. Gathered only when a verb
 	// needs targets, never as idle per-frame bookkeeping.
 	void GatherCombatTargets(TArray<UThiefBrain*>& OutBrains, TArray<FVector>& OutLocations);
+
+	// [2026-11-01 T-077] Crush application, pawn side: the landing
+	// path damages every thief/goat within Combat->CrushRadius of
+	// Centre; the run-over path damages only the contacted actor.
+	// Both ask UDragonCombatComponent::CrushDamageForImpact first —
+	// zero damage means no victim is touched and nothing is logged
+	// as a crush. Every actual crush logs one line naming it, which
+	// is the PIE evidence the task requires.
+	void ApplyLandingCrush(const FVector& Centre, float ImpactSpeed);
+	void ApplyCrushVictim(AActor* Victim, float ImpactSpeed, const TCHAR* Source);
+
+	// [2026-11-01 T-077] World-time of the last run-over crush.
+	// NotifyHit fires repeatedly while two capsules grind together;
+	// this 0.5 s debounce (checked in NotifyHit) makes one pass one
+	// crush per half-second instead of per-physics-step damage.
+	float LastCrushTimeSeconds = -1000.0f;
 	bool bDiving = false;
 
 	// [2026-10-28 T-015] True while the fire input is held; Tick turns

@@ -648,6 +648,112 @@ void ADragonCharacter::Landed(const FHitResult& Hit)
 			   TEXT("Hard landing: impact %.1f cm/s, HP damage %.1f (HP now %.1f)"), ImpactSpeed, Damage,
 			   Stats->HP);
 	}
+	// [2026-11-01 T-077] Whatever was under the dragon takes the
+	// crush half of the landing. This runs even when the dragon
+	// itself took no damage: the hard-landing threshold (800) guards
+	// the dragon's HP, the crush threshold (300) guards victims —
+	// conflating them would make most real landings harmless to the
+	// thief standing exactly where the dragon came down.
+	ApplyLandingCrush(GetActorLocation(), ImpactSpeed);
+}
+
+void ADragonCharacter::ApplyLandingCrush(const FVector& Centre, float ImpactSpeed)
+{
+	if (Combat == nullptr || GetWorld() == nullptr)
+	{
+		return;
+	}
+	const float Damage = UDragonCombatComponent::CrushDamageForImpact(
+		ImpactSpeed, Combat->CrushDamage, Combat->CrushMinImpactSpeed);
+	if (Damage <= 0.0f)
+	{
+		return;
+	}
+	// [2026-11-01 T-077] Footprint is a ground-plane radius: a thief
+	// on the ledge above the landing point is not crushed by a
+	// landing below it, however close the 3D distance reads.
+	TArray<AActor*> Thieves;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), AThiefCharacter::StaticClass(), Thieves);
+	for (AActor* Actor : Thieves)
+	{
+		if (FVector::Dist2D(Centre, Actor->GetActorLocation()) <= Combat->CrushRadius)
+		{
+			ApplyCrushVictim(Actor, ImpactSpeed, TEXT("landing"));
+		}
+	}
+	TArray<AActor*> Goats;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), AGoatActor::StaticClass(), Goats);
+	for (AActor* Actor : Goats)
+	{
+		if (FVector::Dist2D(Centre, Actor->GetActorLocation()) <= Combat->CrushRadius)
+		{
+			ApplyCrushVictim(Actor, ImpactSpeed, TEXT("landing"));
+		}
+	}
+}
+
+void ADragonCharacter::ApplyCrushVictim(AActor* Victim, float ImpactSpeed, const TCHAR* Source)
+{
+	if (Victim == nullptr || Combat == nullptr)
+	{
+		return;
+	}
+	const float Damage = UDragonCombatComponent::CrushDamageForImpact(
+		ImpactSpeed, Combat->CrushDamage, Combat->CrushMinImpactSpeed);
+	if (Damage <= 0.0f)
+	{
+		return;
+	}
+	// [2026-11-01 T-077] Damage routes through the same seams fire
+	// uses (brain for thieves, ApplyGoatDamage for goats); both
+	// ignore corpses, so a crush can never double-count a kill.
+	// The log line names the crush, the source and the victim —
+	// this is the PIE evidence line the task asks for.
+	if (AThiefCharacter* Thief = Cast<AThiefCharacter>(Victim))
+	{
+		Thief->ApplyThiefDamage(Damage);
+		UE_LOG(LogUnderTheMountain, Log, TEXT("Crush (%s): dragon crushed thief %s for %.1f at %.1f cm/s"),
+			   Source, *Thief->GetName(), Damage, FMath::Abs(ImpactSpeed));
+	}
+	else if (AGoatActor* Goat = Cast<AGoatActor>(Victim))
+	{
+		Goat->ApplyGoatDamage(Damage);
+		UE_LOG(LogUnderTheMountain, Log, TEXT("Crush (%s): dragon crushed goat %s for %.1f at %.1f cm/s"),
+			   Source, *Goat->GetName(), Damage, FMath::Abs(ImpactSpeed));
+	}
+}
+
+void ADragonCharacter::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other,
+								 UPrimitiveComponent* OtherComp, bool bSelfMoved, FVector HitLocation,
+								 FVector HitNormal, FVector NormalImpulse, const FHitResult& Hit)
+{
+	Super::NotifyHit(MyComp, Other, OtherComp, bSelfMoved, HitLocation, HitNormal, NormalImpulse, Hit);
+	// [2026-11-01 T-077] Run-over: grounded contact only (airborne
+	// impacts are Landed's landing crush), at charge speed, against
+	// a crushable actor, debounced so grinding contact is one crush
+	// per half-second rather than per physics step.
+	if (Combat == nullptr || Other == nullptr || GetWorld() == nullptr ||
+		GetCharacterMovement() == nullptr || !GetCharacterMovement()->IsMovingOnGround())
+	{
+		return;
+	}
+	if (!Other->IsA<AThiefCharacter>() && !Other->IsA<AGoatActor>())
+	{
+		return;
+	}
+	const float Now = GetWorld()->GetTimeSeconds();
+	if (Now - LastCrushTimeSeconds < 0.5f)
+	{
+		return;
+	}
+	const float GroundSpeed = FVector(GetVelocity().X, GetVelocity().Y, 0.0f).Size();
+	if (UDragonCombatComponent::CrushDamageForImpact(GroundSpeed, Combat->CrushDamage,
+													 Combat->CrushMinImpactSpeed) <= 0.0f)
+	{
+		return;
+	}
+	LastCrushTimeSeconds = Now;
+	ApplyCrushVictim(Other, GroundSpeed, TEXT("run-over"));
 }
 
 void ADragonCharacter::Tick(float DeltaSeconds)
