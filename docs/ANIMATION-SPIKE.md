@@ -6,6 +6,9 @@ in substance below, and every "idk" or blank was decided by the agent under
 the owner's best-judgement instruction. No new animation has been authored or
 observed in PIE during this spike. T-059's CC0-only survey and the three-pose
 rig diagnosis remain evidence gates.
+[2026-11-01: T-059 landed and is integrated below ("T-059 integration");
+the three-pose rig diagnosis remains T-058's gate. This spike closes with
+T-067; implementation is T-068.]
 
 ## Executive finding
 
@@ -362,6 +365,7 @@ Do these in order; stop at the first level that passes rendered gates:
 
 1. Run the three-pose T-058 diagnosis and fix Fly/tuck.
 2. Keep T-059 report-only, CC0-only, and judge it mainly for locomotion value.
+   [Done 2026-11-01 — docs/ANIMATION-SOURCES.md; see "T-059 integration".]
 3. Build the C++ AnimInstance parent + lean AnimBP graph + montage/additive skeleton.
 4. Author the adopted v1 loops/transitions and Sleep/Wake set, using the
    batched contact-sheet gate.
@@ -401,6 +405,26 @@ What remains empirical rather than preferential: whether the current skin
 passes full spread, how far programmatic loops can go before hand polish is
 needed, whether any CC0 locomotion source is worth retargeting, and the final
 wingbeat curves once flight exists in PIE.
+
+## T-059 integration [2026-11-01]
+
+docs/ANIMATION-SOURCES.md (T-059, report only) surveyed six CC0 sources
+against §D's criteria. Outcome, integrated per T-067's Accept:
+
+- **Adopted v1 set and architecture confirmed unchanged.** No CC0 source
+  offers flight, roar, combat, sleep/wake, or hit/defeat motion matched to
+  our rig; hero work stays Blender-authored behind the batched gates.
+- **One route amendment:** "Later locomotion depth" (trot/gallop,
+  start/stop/turn) now has a named retarget candidate — Quaternius
+  Ultimate Animated Animals (CC0, 12 quadrupeds, 12+ clips incl. gallop).
+  Quaternius Ultimate Monsters' two dragons are the named flap-timing
+  reference for T-058's Fly v2; direct wing retarget is unproven until
+  their wing bones are inspected (no published joint count).
+- **Shortfall recorded:** credible CC0 suppliers number one. The empirical
+  question above ("whether any CC0 locomotion source is worth
+  retargeting") is answered *probably, for later locomotion only* — worth
+  one adoption spike (separate owner-approved task), not a v1 dependency.
+- Nothing was downloaded into Content/ or adopted under T-059.
 
 ## Unverified register
 
