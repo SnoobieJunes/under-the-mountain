@@ -133,14 +133,21 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDragonAnimStateTest, "UnderTheMountain.Dragon.
 
 bool FDragonAnimStateTest::RunTest(const FString& Parameters)
 {
-	TestTrue(TEXT("flying and diving is Fly"),
-			 ADragonCharacter::SelectAnimState(true, true, 900.0f, -500.0f) == EDragonAnimState::Fly);
+	// [2026-11-01 T-068] Contract updated with Hover/Dive: a dive is its
+	// [2026-11-01 T-068] own swept-wing state (not fast Fly), the slow
+	// [2026-11-01 T-068] precision band is Hover, and Glide now means fast
+	// [2026-11-01 T-068] descending cruise with wings held. Ground rules and
+	// [2026-11-01 T-068] "dive ignored on the ground" are unchanged.
+	TestTrue(TEXT("flying and diving is Dive"),
+			 ADragonCharacter::SelectAnimState(true, true, 900.0f, -500.0f) == EDragonAnimState::Dive);
 	TestTrue(TEXT("fast climbing flight is Fly"),
 			 ADragonCharacter::SelectAnimState(true, false, 900.0f, 300.0f) == EDragonAnimState::Fly);
-	TestTrue(TEXT("slow descending flight is Glide"),
-			 ADragonCharacter::SelectAnimState(true, false, 10.0f, -100.0f) == EDragonAnimState::Glide);
-	TestTrue(TEXT("slow climbing flight is Fly"),
-			 ADragonCharacter::SelectAnimState(true, false, 10.0f, 200.0f) == EDragonAnimState::Fly);
+	TestTrue(TEXT("fast descending cruise is Glide"),
+			 ADragonCharacter::SelectAnimState(true, false, 900.0f, -200.0f) == EDragonAnimState::Glide);
+	TestTrue(TEXT("slow descending precision flight is Hover"),
+			 ADragonCharacter::SelectAnimState(true, false, 10.0f, -100.0f) == EDragonAnimState::Hover);
+	TestTrue(TEXT("slow climbing precision flight is Hover"),
+			 ADragonCharacter::SelectAnimState(true, false, 10.0f, 200.0f) == EDragonAnimState::Hover);
 	TestTrue(TEXT("moving on the ground is Walk"),
 			 ADragonCharacter::SelectAnimState(false, false, 300.0f, 0.0f) == EDragonAnimState::Walk);
 	TestTrue(TEXT("still on the ground is Idle"),
@@ -198,6 +205,32 @@ bool FDragonFlyAnimPoseTest::RunTest(const FString& Parameters)
 		UpTransform.GetRotation().AngularDistance(DownTransform.GetRotation());
 	TestTrue(FString::Printf(TEXT("wing shoulder swings between flap keys (%.3f rad)"), Swing),
 			 Swing > 0.15);
+
+	// [2026-11-01 T-068] T-058 tuck proof: every leg's upper bone must sit
+	// [2026-11-01 T-068] far from its bind rotation in Fly (T-043 left legs
+	// [2026-11-01 T-068] unkeyed, i.e. exactly at bind — the owner-visible
+	// [2026-11-01 T-068] defect). 0.3 rad ~ 17 deg is far under the authored
+	// [2026-11-01 T-068] 48-62 deg tuck but far above bind-pose noise.
+	const FReferenceSkeleton& RefSkeleton = Skeleton->GetReferenceSkeleton();
+	for (const TCHAR* LegBone :
+		 {TEXT("frontleg_upper_L"), TEXT("frontleg_upper_R"), TEXT("hindleg_upper_L"),
+		  TEXT("hindleg_upper_R")})
+	{
+		const int32 LegIndex = RefSkeleton.FindBoneIndex(LegBone);
+		TestTrue(FString::Printf(TEXT("%s bone exists"), LegBone), LegIndex != INDEX_NONE);
+		if (LegIndex == INDEX_NONE)
+		{
+			continue;
+		}
+		FTransform LegTransform;
+		FlyAnim->GetBoneTransform(LegTransform, FSkeletonPoseBoneIndex(LegIndex),
+								  FAnimExtractContext(0.25), true);
+		const FTransform& RefTransform = RefSkeleton.GetRefBonePose()[LegIndex];
+		const double Tuck =
+			LegTransform.GetRotation().AngularDistance(RefTransform.GetRotation());
+		TestTrue(FString::Printf(TEXT("%s is tucked off bind in Fly (%.3f rad)"), LegBone, Tuck),
+				 Tuck > 0.3);
+	}
 	return true;
 }
 

@@ -325,6 +325,133 @@ bool UDragonCombatComponent::TryRoar(float CurrentTimeSeconds, UDragonStatsCompo
 	return true;
 }
 
+bool UDragonCombatComponent::IsInArc2D(const FVector& Origin, const FVector& Forward,
+									   const FVector& Target, float Range, float HalfAngleDeg)
+{
+	// [2026-11-01 T-068] Ground-plane arc: height must not rescue a thief
+	// [2026-11-01 T-068] from a wing gust at ankle level, nor doom one on a
+	// [2026-11-01 T-068] ledge — these verbs sweep the floor the dragon owns.
+	const FVector2D Offset(Target.X - Origin.X, Target.Y - Origin.Y);
+	const float Distance = Offset.Size();
+	if (Distance > Range)
+	{
+		return false;
+	}
+	if (Distance < 1.0f)
+	{
+		return true;
+	}
+	const FVector2D Fwd = FVector2D(Forward.X, Forward.Y).GetSafeNormal();
+	if (Fwd.IsNearlyZero())
+	{
+		return false;
+	}
+	const float CosAngle = FMath::Clamp(FVector2D::DotProduct(Fwd, Offset / Distance), -1.0f, 1.0f);
+	return FMath::RadiansToDegrees(FMath::Acos(CosAngle)) <= HalfAngleDeg;
+}
+
+bool UDragonCombatComponent::TryWingBuffet(float CurrentTimeSeconds, UDragonStatsComponent* Stats,
+										   const FVector& Origin, const FVector& Forward,
+										   const TArray<UThiefBrain*>& Brains,
+										   const TArray<FVector>& BrainLocations, int32& OutNumDazed)
+{
+	OutNumDazed = 0;
+	// [2026-11-01 T-068] TryRoar's gating contract, verbatim order:
+	// [2026-11-01 T-068] null stats, cooldown, then stamina; blocked = free.
+	if (Stats == nullptr)
+	{
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("DragonCombat TryWingBuffet refused: stats component is null"));
+		return false;
+	}
+	const float SinceLast = CurrentTimeSeconds - LastBuffetTime;
+	if (SinceLast < WingBuffetCooldownSeconds)
+	{
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("DragonCombat TryWingBuffet blocked: %.1fs of buffet cooldown remain"),
+			   WingBuffetCooldownSeconds - SinceLast);
+		return false;
+	}
+	if (!Stats->TryConsumeStamina(WingBuffetCost))
+	{
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("DragonCombat TryWingBuffet blocked: stamina %.1f below the %.1f buffet cost"),
+			   Stats->Stamina, WingBuffetCost);
+		return false;
+	}
+	LastBuffetTime = CurrentTimeSeconds;
+	const int32 Count = FMath::Min(Brains.Num(), BrainLocations.Num());
+	for (int32 Index = 0; Index < Count; ++Index)
+	{
+		UThiefBrain* Brain = Brains[Index];
+		if (Brain == nullptr || Brain->State() == EThiefState::Dead)
+		{
+			continue;
+		}
+		if (!IsInArc2D(Origin, Forward, BrainLocations[Index], WingBuffetRadius, WingBuffetHalfAngleDeg))
+		{
+			continue;
+		}
+		Brain->OnWingBuffet(BrainLocations[Index]);
+		++OutNumDazed;
+	}
+	UE_LOG(LogUnderTheMountain, Log, TEXT("DragonCombat wing buffet dazed %d within %.0fcm"), OutNumDazed,
+		   WingBuffetRadius);
+	return true;
+}
+
+bool UDragonCombatComponent::TryTailSlam(float CurrentTimeSeconds, UDragonStatsComponent* Stats,
+										 const FVector& Origin, const FVector& Forward,
+										 const TArray<UThiefBrain*>& Brains,
+										 const TArray<FVector>& BrainLocations, int32& OutNumHit)
+{
+	OutNumHit = 0;
+	if (Stats == nullptr)
+	{
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("DragonCombat TryTailSlam refused: stats component is null"));
+		return false;
+	}
+	const float SinceLast = CurrentTimeSeconds - LastTailSlamTime;
+	if (SinceLast < TailSlamCooldownSeconds)
+	{
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("DragonCombat TryTailSlam blocked: %.1fs of tail-slam cooldown remain"),
+			   TailSlamCooldownSeconds - SinceLast);
+		return false;
+	}
+	if (!Stats->TryConsumeStamina(TailSlamCost))
+	{
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("DragonCombat TryTailSlam blocked: stamina %.1f below the %.1f slam cost"),
+			   Stats->Stamina, TailSlamCost);
+		return false;
+	}
+	LastTailSlamTime = CurrentTimeSeconds;
+	// [2026-11-01 T-068] Rear arc: the tail sweeps behind the dragon, which
+	// [2026-11-01 T-068] is exactly why GAMEPLAY section 5.4 says it bypasses
+	// [2026-11-01 T-068] a frontal shield block.
+	const FVector Backward = -Forward;
+	const int32 Count = FMath::Min(Brains.Num(), BrainLocations.Num());
+	for (int32 Index = 0; Index < Count; ++Index)
+	{
+		UThiefBrain* Brain = Brains[Index];
+		if (Brain == nullptr || Brain->State() == EThiefState::Dead)
+		{
+			continue;
+		}
+		if (!IsInArc2D(Origin, Backward, BrainLocations[Index], TailSlamRadius, TailSlamHalfAngleDeg))
+		{
+			continue;
+		}
+		Brain->ApplyDamage(TailSlamDamage, BrainLocations[Index]);
+		++OutNumHit;
+	}
+	UE_LOG(LogUnderTheMountain, Log, TEXT("DragonCombat tail slam hit %d within %.0fcm rear arc"), OutNumHit,
+		   TailSlamRadius);
+	return true;
+}
+
 bool UDragonCombatComponent::StartEatThief(UThiefBrain* Brain)
 {
 	// [2026-10-28 T-015] Refusals are named, per the component's

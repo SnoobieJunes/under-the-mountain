@@ -123,6 +123,14 @@ tag, choose the owing one.
 <!-- Real entries accumulate below, NEWEST AT THE TOP. The top entries are
      session-start required reading (count: AGENTS.md → Session ritual). -->
 
+## 2026-11-01 — T-068 shipped as flight-core slice; ABP graph + hero clips deferred  [scope]
+- Task: T-068 (docs/ANIMATION-SPIKE.md v1 set; T-058 closed by the same work)
+- What: Owner picked up "T-059" for a Meshy/Blender animation test; T-059 was already closed on stretch-scope, so under owner direction the work became T-068 in an isolated worktree (muse/t068-flight-anim, stretch docs folded in). Shipped slice: UDragonAnimInstance C++ parent (all decisions as tested statics), 8 Blender-authored/imported clips (Idle, Fly v2, Glide, Hover, Takeoff, Land, Roar, HitLight), per-state pawn driver with flap curves + mesh pitch/bank + one-shot stand-in for montages, wing buffet + tail slam as full verbs. NOT shipped from T-068's Accept: the ABP_Dragon AnimBP graph itself, Hit heavy / Defeat / Sleep/Wake / fire-aim / claw / bite clips, and in-engine PIE captures (Blender contact sheets only). Zero Meshy credits spent — Meshy rig/animation remains biped-only per the spike, so Blender was both the capable and the free route.
+- Why: One session cannot honestly close a 7-10-session task; the flight core is the owner-visible win (T-058's complaint) and every deferred item now has its seam built (AnimInstance variables, one-shot call sites, combat verbs). Closing T-068 whole would have been a false attestation.
+- Where: Source/UnderTheMountain/{Public,Private}/Dragon/DragonAnimInstance.*, DragonCharacter.*, DragonCombatComponent.*, Thief/ThiefBrain.* (Dazed), Tests/DragonAnimTest.cpp + DragonFlightTest.cpp, Scripts/create_dragon_anims.py + import_dragon_anims.py, Content/Meshy/Dragon/ (8 FBX + 8 uassets + t068_*.png), TASKS.md (T-068 narrowed, T-058/T-059/T-067 closed).
+- Plan: T-068's Accept named the full v1 set + ABP graph → the task stays open with the remainder as its Accept (owed work on the board, per the rules); docs/PLAN.md is not falsified (it does not sequence clips inside T-068) and folds at the next sweep. Import foot-gun found en route: a CDO-referenced AnimSequence cannot be delete/rename-replaced from a commandlet — import_dragon_anims.py's header records the workaround (free the path before launch).
+- Commit(s): this commit
+
 ## 2026-11-01 — Intro wake-up ships without the T-068 Sleep/Wake clips  [decision]
 - Task: T-018 (docs/GAMEPLAY.md intro branches; T-068 animation set)
 - What: The intro sequence shipped with a restrained camera move (boom 240→700 over the wake) and no skeletal Sleep/Wake animation, because T-068 (the reusable Sleep/Wake clip set the decision names) is owner-gated and not yet done - no sleep or wake clip exists in the project. The sequence states are named and timed so T-068's clips drop into the WakeUp state without restructuring (the pawn comment at the camera ease says so).

@@ -88,6 +88,34 @@ class UNDERTHEMOUNTAIN_API UDragonCombatComponent : public UActorComponent
 	UPROPERTY(EditAnywhere, Category = "Dragon|Combat|Roar")
 	float RoarRadius = 1200.0f;
 
+	// [2026-11-01 T-068] Wing buffet `[tuning: PT-THIEF]`, priced from
+	// [2026-11-01 T-068] precedents: cost between claw (-4) and roar (-10)
+	// [2026-11-01 T-068] because it dazes a frontal group without damage;
+	// [2026-11-01 T-068] 700 cm / 140 deg arc = wingspan reach, inside roar.
+	UPROPERTY(EditAnywhere, Category = "Dragon|Combat|Buffet")
+	float WingBuffetCost = 8.0f;
+	UPROPERTY(EditAnywhere, Category = "Dragon|Combat|Buffet")
+	float WingBuffetRadius = 700.0f;
+	UPROPERTY(EditAnywhere, Category = "Dragon|Combat|Buffet")
+	float WingBuffetHalfAngleDeg = 70.0f;
+	UPROPERTY(EditAnywhere, Category = "Dragon|Combat|Buffet")
+	float WingBuffetCooldownSeconds = 3.0f;
+
+	// [2026-11-01 T-068] Tail slam: damage 20 + cost -4 are GAMEPLAY.md
+	// [2026-11-01 T-068] section 5.4/section 2 verbatim (tail bypasses the
+	// [2026-11-01 T-068] frontal shield block because it arcs behind);
+	// [2026-11-01 T-068] 500 cm / 110 deg rear arc `[tuning: PT-THIEF]`.
+	UPROPERTY(EditAnywhere, Category = "Dragon|Combat|Tail")
+	float TailSlamCost = 4.0f;
+	UPROPERTY(EditAnywhere, Category = "Dragon|Combat|Tail")
+	float TailSlamDamage = 20.0f;
+	UPROPERTY(EditAnywhere, Category = "Dragon|Combat|Tail")
+	float TailSlamRadius = 500.0f;
+	UPROPERTY(EditAnywhere, Category = "Dragon|Combat|Tail")
+	float TailSlamHalfAngleDeg = 55.0f;
+	UPROPERTY(EditAnywhere, Category = "Dragon|Combat|Tail")
+	float TailSlamCooldownSeconds = 2.0f;
+
 	// [2026-10-28 T-015] Eat tuning (docs/GAMEPLAY.md section 2):
 	// a 2 s channel makes eating a decision taken under pressure,
 	// not an instant heal. EatRange is enforced by the pawn (it
@@ -204,6 +232,26 @@ class UNDERTHEMOUNTAIN_API UDragonCombatComponent : public UActorComponent
 	bool TryRoar(float CurrentTimeSeconds, UDragonStatsComponent* Stats, const FVector& Origin,
 				 const TArray<UThiefBrain*>& Brains, const TArray<FVector>& BrainLocations);
 
+	// [2026-11-01 T-068] Wing buffet: same gating contract as TryRoar
+	// [2026-11-01 T-068] (cooldown first, blocked = free + Warning). Every
+	// [2026-11-01 T-068] live brain in the frontal arc gets OnWingBuffet
+	// [2026-11-01 T-068] (fumble one item, Dazed). Returns hit count via
+	// [2026-11-01 T-068] OutNumDazed so the pawn can log/knock back actors.
+	bool TryWingBuffet(float CurrentTimeSeconds, UDragonStatsComponent* Stats, const FVector& Origin,
+					   const FVector& Forward, const TArray<UThiefBrain*>& Brains,
+					   const TArray<FVector>& BrainLocations, int32& OutNumDazed);
+
+	// [2026-11-01 T-068] Tail slam: rear-arc damage (Forward negated).
+	// [2026-11-01 T-068] ApplyDamage owns death/loot; this owns gating+arc.
+	bool TryTailSlam(float CurrentTimeSeconds, UDragonStatsComponent* Stats, const FVector& Origin,
+					 const FVector& Forward, const TArray<UThiefBrain*>& Brains,
+					 const TArray<FVector>& BrainLocations, int32& OutNumHit);
+
+	// [2026-11-01 T-068] Pure arc test shared by both verbs (range + half
+	// [2026-11-01 T-068] angle in the ground plane; zero offset = inside).
+	static bool IsInArc2D(const FVector& Origin, const FVector& Forward, const FVector& Target,
+						  float Range, float HalfAngleDeg);
+
 	// [2026-10-28 T-015] Begins the eat channel on a dead thief.
 	// Only a non-null brain in EThiefState::Dead qualifies — the
 	// dragon eats corpses, it does not swallow thieves mid-flee.
@@ -241,6 +289,8 @@ class UNDERTHEMOUNTAIN_API UDragonCombatComponent : public UActorComponent
 	// cooldown at any plausible CurrentTimeSeconds (including 0).
 	bool bFiring = false;
 	float LastRoarTime = -1000.0f;
+	float LastBuffetTime = -1000.0f;   // [2026-11-01 T-068]
+	float LastTailSlamTime = -1000.0f; // [2026-11-01 T-068]
 
 	// [2026-10-28 T-015] The pending meal: at most one of these is
 	// non-null (StartEat* clears the other). UPROPERTY TObjectPtrs

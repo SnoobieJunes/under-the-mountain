@@ -15,6 +15,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Dragon/DragonAnimInstance.h" // [2026-11-01 T-068] EDragonAnimState owner
 #include "GameFramework/Character.h"
 #include "DragonCharacter.generated.h"
 
@@ -32,17 +33,8 @@ class UStaticMeshComponent;
 class UCameraComponent;
 class UAnimSequence;
 
-// [2026-10-28 T-043] Flight animation state chosen purely from
-// movement facts by ADragonCharacter::SelectAnimState. Idle/Walk are
-// the grounded states from T-032; Fly is powered flight and Glide is
-// wings-held flight (the fly clip at a low play rate in Tick).
-enum class EDragonAnimState : uint8
-{
-	Idle,
-	Walk,
-	Fly,
-	Glide
-};
+// [2026-11-01 T-068] EDragonAnimState is owned by DragonAnimInstance.h
+// [2026-11-01 T-068] (included above, before generated.h per UHT rules).
 
 UCLASS()
 class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
@@ -183,13 +175,40 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	UPROPERTY(VisibleAnywhere, Category = "Dragon")
 	TObjectPtr<UAnimSequence> FlyAnim;
 
-	// [2026-10-28 T-043] Pure animation-state selection, testable
-	// without a world: flying and diving -> Fly (powered, fast flap
-	// in Tick); flying, not diving, slow (HorizontalSpeed < 50) and
-	// not climbing (VerticalSpeed <= 0) -> Glide (wings held; Tick
-	// plays FlyAnim at a low rate so it reads as a glide); flying
-	// otherwise -> Fly; not flying with HorizontalSpeed > 20 ->
-	// Walk; otherwise Idle. Dive only matters airborne.
+	// [2026-11-01 T-068] T-068 clip set (Scripts/create_dragon_anims.py +
+	// [2026-11-01 T-068] import_dragon_anims.py). All null-safe: a missing
+	// [2026-11-01 T-068] clip falls back to FlyAnim or bind pose in Tick, so
+	// [2026-11-01 T-068] an un-imported checkout still flies like T-043 did.
+	UPROPERTY(VisibleAnywhere, Category = "Dragon")
+	TObjectPtr<UAnimSequence> GlideAnim;
+	UPROPERTY(VisibleAnywhere, Category = "Dragon")
+	TObjectPtr<UAnimSequence> HoverAnim;
+	UPROPERTY(VisibleAnywhere, Category = "Dragon")
+	TObjectPtr<UAnimSequence> IdleAnim;
+	UPROPERTY(VisibleAnywhere, Category = "Dragon")
+	TObjectPtr<UAnimSequence> TakeoffAnim;
+	UPROPERTY(VisibleAnywhere, Category = "Dragon")
+	TObjectPtr<UAnimSequence> LandAnim;
+	UPROPERTY(VisibleAnywhere, Category = "Dragon")
+	TObjectPtr<UAnimSequence> RoarAnim;
+	UPROPERTY(VisibleAnywhere, Category = "Dragon")
+	TObjectPtr<UAnimSequence> HitAnim;
+
+	// [2026-11-01 T-068] Play a one-shot clip (takeoff/land/roar/hit) over
+	// [2026-11-01 T-068] locomotion for its length, then locomotion resumes.
+	// [2026-11-01 T-068] This is the single-node stand-in for montage slots;
+	// [2026-11-01 T-068] ABP_Dragon montages replace it without call-site churn.
+	void PlayOneShot(UAnimSequence* Clip);
+
+	// [2026-11-01 T-068] Wing buffet (X) and tail slam (Z): rules live in
+	// [2026-11-01 T-068] UDragonCombatComponent; the pawn gathers targets.
+	void HandleWingBuffet();
+	void HandleTailSlam();
+
+	// [2026-11-01 T-068] Pure animation-state selection, kept as the pawn's
+	// [2026-11-01 T-068] public seam; delegates to
+	// [2026-11-01 T-068] UDragonAnimInstance::SelectLocomotionState (see that
+	// [2026-11-01 T-068] header for the full rule incl. Hover/Dive).
 	static EDragonAnimState SelectAnimState(bool bFlying, bool bDiving, float HorizontalSpeed,
 											float VerticalSpeed);
 
@@ -240,6 +259,11 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	TObjectPtr<UInputAction> RoarAction;
 	UPROPERTY()
 	TObjectPtr<UInputAction> EatAction;
+	// [2026-11-01 T-068] Wing buffet (X / DPad Left) and tail slam (Z / DPad Right).
+	UPROPERTY()
+	TObjectPtr<UInputAction> WingBuffetAction;
+	UPROPERTY()
+	TObjectPtr<UInputAction> TailSlamAction;
 	UPROPERTY()
 	TObjectPtr<UDragonTintWidget> TintWidget;
 	bool bTintPickerOpen = false;
@@ -360,6 +384,17 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// mesh, so Tick only calls Play/Stop on SelectAnimState
 	// transitions (replaces the T-032 bPlayingWalk bool).
 	EDragonAnimState CurrentAnimState = EDragonAnimState::Idle;
+
+	// [2026-11-01 T-068] One-shot playback clock: while > 0 the locomotion
+	// [2026-11-01 T-068] driver is suppressed; at expiry Tick forces a
+	// [2026-11-01 T-068] locomotion re-entry by invalidating CurrentAnimState.
+	float OneShotTimeRemaining = 0.0f;
+
+	// [2026-11-01 T-068] Smoothed visual mesh tilt (degrees) + last yaw, for
+	// [2026-11-01 T-068] bank-from-turn-rate. Display only: capsule untouched.
+	float MeshBankDegrees = 0.0f;
+	float MeshPitchDegrees = 0.0f;
+	float LastActorYaw = 0.0f;
 
 	// [2026-10-28 T-011] Last Tick's vertical velocity (cm/s, signed).
 	// Captured before Tick's flight logic runs so Landed() can recover
