@@ -5,6 +5,8 @@
 
 2026-11-01 — T-052 — The exterior has a sky: sun with shadows, atmosphere, a fly-through cloud deck and height fog — plus weather: type `Weather` in the console (or set utm.weather.state) to trade clear skies for dim blue rain at about 1 ms of frame cost
 
+2026-11-01 — T-067 — Animation spike closed: T-059's survey is integrated in docs/ANIMATION-SPIKE.md and the adopted v1 clip set stands confirmed (later trot/gallop gains a named CC0 retarget candidate); implementation is T-068 (no user-visible change)
+
 2026-11-01 — T-059 — CC0 animation survey landed (docs/ANIMATION-SOURCES.md): Quaternius quadruped locomotion is the one credible CC0 retarget source, its low-poly dragons the only winged candidate; no CC0 flight/combat source matches our wing, so hero clips stay Blender-authored — report only, nothing adopted (no user-visible change)
 
 2026-11-01 — T-051 — Fire breath reads as fire now: a real Niagara particle stream and a flickering orange light replace the orange cone mesh (same damage underneath; about 73 fps measured in the village with the breath lit)
