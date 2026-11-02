@@ -188,6 +188,26 @@ ADragonCharacter::ADragonCharacter()
 		FlyAnim = FlyAnimAsset.Object;
 		GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode);
 	}
+	// [2026-11-01 T-068] T-068 clips, loaded like FlyAnim; every one is
+	// [2026-11-01 T-068] optional (Tick falls back per state) so a checkout
+	// [2026-11-01 T-068] that has not run import_dragon_anims.py still works.
+	{
+		auto LoadClip = [this](const TCHAR* Path) -> UAnimSequence*
+		{
+			// [2026-11-01 T-068] Optional finder: a missing T-068 clip (import not
+			// [2026-11-01 T-068] run yet) must not spam CDO errors; Tick's null
+			// [2026-11-01 T-068] fallback is the contract.
+			ConstructorHelpers::FObjectFinderOptional<UAnimSequence> Finder(Path);
+			return Finder.Succeeded() ? Finder.Get() : nullptr;
+		};
+		GlideAnim = LoadClip(TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_GlideAnim.SK_Dragon_v4_GlideAnim"));
+		HoverAnim = LoadClip(TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_HoverAnim.SK_Dragon_v4_HoverAnim"));
+		IdleAnim = LoadClip(TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_IdleAnim.SK_Dragon_v4_IdleAnim"));
+		TakeoffAnim = LoadClip(TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_TakeoffAnim.SK_Dragon_v4_TakeoffAnim"));
+		LandAnim = LoadClip(TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_LandAnim.SK_Dragon_v4_LandAnim"));
+		RoarAnim = LoadClip(TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_RoarAnim.SK_Dragon_v4_RoarAnim"));
+		HitAnim = LoadClip(TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_HitAnim.SK_Dragon_v4_HitAnim"));
+	}
 
 	// [2026-10-28 T-041] PlaceholderBody removed: the skeletal mesh
 	// above is the visible body (T-032), and nothing referenced the
@@ -215,27 +235,10 @@ bool ADragonCharacter::IsFlying() const
 EDragonAnimState ADragonCharacter::SelectAnimState(bool bFlying, bool bDiving, float HorizontalSpeed,
 												   float VerticalSpeed)
 {
-	// [2026-10-28 T-043] Pure state selection (see header for the full
-	// rule). Glide is slow and not climbing: wings held, played as
-	// FlyAnim at a low rate in Tick; every other airborne case is
-	// powered Fly, and dive only matters while airborne.
-	if (bFlying)
-	{
-		if (bDiving)
-		{
-			return EDragonAnimState::Fly;
-		}
-		if (HorizontalSpeed < 50.0f && VerticalSpeed <= 0.0f)
-		{
-			return EDragonAnimState::Glide;
-		}
-		return EDragonAnimState::Fly;
-	}
-	if (HorizontalSpeed > 20.0f)
-	{
-		return EDragonAnimState::Walk;
-	}
-	return EDragonAnimState::Idle;
+	// [2026-11-01 T-068] Delegates to the AnimInstance statics (the single
+	// [2026-11-01 T-068] owner of the rule); kept so the pawn's public seam
+	// [2026-11-01 T-068] and its tests did not move when Hover/Dive landed.
+	return UDragonAnimInstance::SelectLocomotionState(bFlying, bDiving, HorizontalSpeed, VerticalSpeed);
 }
 
 void ADragonCharacter::ApplyTrapSlow(float Factor, float Seconds)
@@ -265,7 +268,8 @@ bool ADragonCharacter::HasInputActions() const
 	return MoveAction != nullptr && LookAction != nullptr && FlapAction != nullptr &&
 		   ToggleFlightAction != nullptr && DiveAction != nullptr && TrueSightAction != nullptr &&
 		   TintAction != nullptr && FireAction != nullptr && RoarAction != nullptr &&
-		   EatAction != nullptr && MappingContext != nullptr;
+		   EatAction != nullptr && WingBuffetAction != nullptr && TailSlamAction != nullptr &&
+		   MappingContext != nullptr;
 }
 
 void ADragonCharacter::EnsureInputActions()
@@ -416,6 +420,9 @@ void ADragonCharacter::BuildInputActions()
 	FireAction = MakeAction(TEXT("IA_Fire"), EInputActionValueType::Boolean);
 	RoarAction = MakeAction(TEXT("IA_Roar"), EInputActionValueType::Boolean);
 	EatAction = MakeAction(TEXT("IA_Eat"), EInputActionValueType::Boolean);
+	// [2026-11-01 T-068] Buffet/slam verbs, press-edge like Roar.
+	WingBuffetAction = MakeAction(TEXT("IA_WingBuffet"), EInputActionValueType::Boolean);
+	TailSlamAction = MakeAction(TEXT("IA_TailSlam"), EInputActionValueType::Boolean);
 
 	MappingContext = NewObject<UInputMappingContext>(this, TEXT("IMC_Dragon"));
 	auto Map = [this](UInputAction* Action, FKey Key)
@@ -445,6 +452,10 @@ void ADragonCharacter::BuildInputActions()
 	Map(FireAction, EKeys::LeftMouseButton);
 	Map(RoarAction, EKeys::R);
 	Map(EatAction, EKeys::E);
+	// [2026-11-01 T-068] X = wing buffet, Z = tail slam (Q stays reserved
+	// [2026-11-01 T-068] for T-076 claw; both free in the shipped map).
+	Map(WingBuffetAction, EKeys::X);
+	Map(TailSlamAction, EKeys::Z);
 	// Gamepad: left stick move, right stick look, bottom face flap,
 	// top face toggle flight, right trigger dive.
 	Map(MoveAction, EKeys::Gamepad_Left2D);
@@ -459,6 +470,10 @@ void ADragonCharacter::BuildInputActions()
 	Map(FireAction, EKeys::Gamepad_LeftTrigger);
 	Map(RoarAction, EKeys::Gamepad_LeftShoulder);
 	Map(EatAction, EKeys::Gamepad_RightShoulder);
+	// [2026-11-01 T-068] Pad: DPad Left/Right (Down/Up stay reserved for
+	// [2026-11-01 T-068] T-061 scent toggle and T-063 steer-to-camera).
+	Map(WingBuffetAction, EKeys::Gamepad_DPad_Left);
+	Map(TailSlamAction, EKeys::Gamepad_DPad_Right);
 }
 
 void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -526,6 +541,8 @@ void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	if (EatAction != nullptr)
 	{
 		EIC->BindAction(EatAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleEat);
+		EIC->BindAction(WingBuffetAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleWingBuffet);
+		EIC->BindAction(TailSlamAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleTailSlam);
 	}
 }
 
@@ -568,7 +585,14 @@ void ADragonCharacter::HandleFlap()
 
 void ADragonCharacter::HandleToggleFlight()
 {
-	GetCharacterMovement()->SetMovementMode(IsFlying() ? MOVE_Walking : MOVE_Flying);
+	const bool bWasFlying = IsFlying();
+	GetCharacterMovement()->SetMovementMode(bWasFlying ? MOVE_Walking : MOVE_Flying);
+	// [2026-11-01 T-068] Leaving the ground plays the takeoff leap once;
+	// [2026-11-01 T-068] locomotion (Fly/Hover by speed) takes over after.
+	if (!bWasFlying)
+	{
+		PlayOneShot(TakeoffAnim);
+	}
 }
 
 void ADragonCharacter::HandleDive(const FInputActionValue& Value)
@@ -1065,6 +1089,68 @@ void ADragonCharacter::HandleFireEnd()
 	}
 }
 
+void ADragonCharacter::PlayOneShot(UAnimSequence* Clip)
+{
+	// [2026-11-01 T-068] Null clip = no-op (un-imported checkout): the verb
+	// [2026-11-01 T-068] still happened, only its presentation is absent.
+	if (Clip == nullptr)
+	{
+		return;
+	}
+	if (USkeletalMeshComponent* Mesh = GetMesh())
+	{
+		Mesh->PlayAnimation(Clip, false);
+		Mesh->SetPlayRate(1.0f);
+		OneShotTimeRemaining = Clip->GetPlayLength();
+	}
+}
+
+void ADragonCharacter::HandleWingBuffet()
+{
+	if (Combat == nullptr)
+	{
+		UE_LOG(LogUnderTheMountain, Warning, TEXT("Wing buffet ignored: no combat component"));
+		return;
+	}
+	TArray<UThiefBrain*> Brains;
+	TArray<FVector> Locations;
+	GatherCombatTargets(Brains, Locations);
+	const float Now = GetWorld() != nullptr ? GetWorld()->GetTimeSeconds() : 0.0f;
+	int32 NumDazed = 0;
+	const bool bBuffeted = Combat->TryWingBuffet(Now, Stats, GetActorLocation(), GetActorForwardVector(),
+												 Brains, Locations, NumDazed);
+	if (bBuffeted)
+	{
+		// [2026-11-01 T-068] Grounded buffet mantles like the roar clip;
+		// [2026-11-01 T-068] airborne it must not interrupt flight locomotion.
+		if (!IsFlying())
+		{
+			PlayOneShot(RoarAnim);
+		}
+		UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon wing buffet: dazed %d"), NumDazed);
+	}
+}
+
+void ADragonCharacter::HandleTailSlam()
+{
+	if (Combat == nullptr)
+	{
+		UE_LOG(LogUnderTheMountain, Warning, TEXT("Tail slam ignored: no combat component"));
+		return;
+	}
+	TArray<UThiefBrain*> Brains;
+	TArray<FVector> Locations;
+	GatherCombatTargets(Brains, Locations);
+	const float Now = GetWorld() != nullptr ? GetWorld()->GetTimeSeconds() : 0.0f;
+	int32 NumHit = 0;
+	const bool bSlammed = Combat->TryTailSlam(Now, Stats, GetActorLocation(), GetActorForwardVector(),
+											  Brains, Locations, NumHit);
+	if (bSlammed)
+	{
+		UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon tail slam: hit %d"), NumHit);
+	}
+}
+
 void ADragonCharacter::HandleRoar()
 {
 	// [2026-10-28 T-015] The pawn supplies world facts (time, origin,
@@ -1079,6 +1165,12 @@ void ADragonCharacter::HandleRoar()
 	GatherCombatTargets(Brains, Locations);
 	const float Now = GetWorld() != nullptr ? GetWorld()->GetTimeSeconds() : 0.0f;
 	const bool bRoared = Combat->TryRoar(Now, Stats, GetActorLocation(), Brains, Locations);
+	// [2026-11-01 T-068] A roar that actually fired is now visible, not
+	// [2026-11-01 T-068] just audible-in-the-log: mantle + head-throw clip.
+	if (bRoared)
+	{
+		PlayOneShot(RoarAnim);
+	}
 	// [2026-11-01 T-016] A roar that scares thieves while the
 	// dragon is OUTSIDE the lair is a witnessed act (+4, once per
 	// roar); inside, nobody outside hears about it.
@@ -1239,6 +1331,9 @@ void ADragonCharacter::Landed(const FHitResult& Hit)
 	// conflating them would make most real landings harmless to the
 	// thief standing exactly where the dragon came down.
 	ApplyLandingCrush(GetActorLocation(), ImpactSpeed);
+	// [2026-11-01 T-068] Touchdown reads: flare/settle clip on any landing,
+	// [2026-11-01 T-068] the flinch instead when the landing drew blood.
+	PlayOneShot(Damage > 0.0f && HitAnim != nullptr ? HitAnim : LandAnim);
 }
 
 void ADragonCharacter::ApplyLandingCrush(const FVector& Centre, float ImpactSpeed)
@@ -1504,67 +1599,89 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 			}
 		}
 	}
-	// [2026-10-28 T-043] State-driven single-node playback (replaces
-	// the T-032 walk-only bool, which played the walk cycle in
-	// mid-air): SelectAnimState picks Idle/Walk/Fly/Glide from flight
-	// and speed facts; Play/Stop fire on state change only so
-	// PlayAnimation never restarts every frame. Fly plays FlyAnim at
-	// 1.6 while diving else 1.0; Glide reuses FlyAnim at 0.25 so the
-	// held wings read as a glide. A null clip for the desired state
-	// falls back to Stop() (bind pose).
+	// [2026-11-01 T-068] Animation driver. Locomotion states come from
+	// [2026-11-01 T-068] UDragonAnimInstance (Idle/Walk/Fly/Glide/Hover/Dive),
+	// [2026-11-01 T-068] each with its own clip now (Glide is no longer slowed
+	// [2026-11-01 T-068] Fly; Dive reuses the held Glide pose near-frozen).
+	// [2026-11-01 T-068] Play rate follows the wingbeat curves EVERY tick, not
+	// [2026-11-01 T-068] just on transitions, so a climb visibly works harder.
+	// [2026-11-01 T-068] One-shots (takeoff/land/roar/hit) suppress locomotion
+	// [2026-11-01 T-068] until OneShotTimeRemaining expires. A null clip for a
+	// [2026-11-01 T-068] state falls back to FlyAnim, then bind pose — an
+	// [2026-11-01 T-068] un-imported checkout flies exactly like T-043 did.
 	if (USkeletalMeshComponent* Mesh = GetMesh())
 	{
 		const FVector AnimVelocity = GetCharacterMovement()->Velocity;
-		const EDragonAnimState DesiredState =
-			SelectAnimState(IsFlying(), bDiving, AnimVelocity.Size2D(), AnimVelocity.Z);
-		if (DesiredState != CurrentAnimState)
+		const float AnimHS = AnimVelocity.Size2D();
+		if (OneShotTimeRemaining > 0.0f)
 		{
-			// [2026-10-28 T-047] Log transitions: the wing-animation
-			// failure report had no runtime evidence either way, and
-			// this one line per change is what proves the state
-			// machine fires in a live session.
-			UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon anim state -> %d (flying=%d diving=%d)"),
-				   static_cast<int32>(DesiredState), IsFlying() ? 1 : 0, bDiving ? 1 : 0);
-			CurrentAnimState = DesiredState;
-			switch (DesiredState)
+			OneShotTimeRemaining -= DeltaSeconds;
+			if (OneShotTimeRemaining <= 0.0f)
 			{
-			case EDragonAnimState::Idle:
-				Mesh->Stop();
-				break;
-			case EDragonAnimState::Walk:
-				if (WalkAnim != nullptr)
-				{
-					Mesh->PlayAnimation(WalkAnim, true);
-					Mesh->SetPlayRate(1.0f);
-				}
-				else
-				{
-					Mesh->Stop();
-				}
-				break;
-			case EDragonAnimState::Fly:
-				if (FlyAnim != nullptr)
-				{
-					Mesh->PlayAnimation(FlyAnim, true);
-					Mesh->SetPlayRate(bDiving ? 1.6f : 1.0f);
-				}
-				else
-				{
-					Mesh->Stop();
-				}
-				break;
-			case EDragonAnimState::Glide:
-				if (FlyAnim != nullptr)
-				{
-					Mesh->PlayAnimation(FlyAnim, true);
-					Mesh->SetPlayRate(0.25f);
-				}
-				else
-				{
-					Mesh->Stop();
-				}
-				break;
+				// [2026-11-01 T-068] Force locomotion re-entry next tick.
+				CurrentAnimState = static_cast<EDragonAnimState>(255);
 			}
+		}
+		else
+		{
+			const EDragonAnimState DesiredState =
+				SelectAnimState(IsFlying(), bDiving, AnimHS, AnimVelocity.Z);
+			if (DesiredState != CurrentAnimState)
+			{
+				UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon anim state -> %d (flying=%d diving=%d)"),
+					   static_cast<int32>(DesiredState), IsFlying() ? 1 : 0, bDiving ? 1 : 0);
+				CurrentAnimState = DesiredState;
+				UAnimSequence* Clip = nullptr;
+				switch (DesiredState)
+				{
+				case EDragonAnimState::Idle:
+					Clip = IdleAnim;
+					break;
+				case EDragonAnimState::Walk:
+					Clip = WalkAnim;
+					break;
+				case EDragonAnimState::Glide:
+				case EDragonAnimState::Dive:
+					Clip = GlideAnim != nullptr ? GlideAnim : FlyAnim;
+					break;
+				case EDragonAnimState::Hover:
+					Clip = HoverAnim != nullptr ? HoverAnim : FlyAnim;
+					break;
+				default:
+					Clip = FlyAnim;
+					break;
+				}
+				if (Clip != nullptr)
+				{
+					Mesh->PlayAnimation(Clip, true);
+				}
+				else
+				{
+					Mesh->Stop();
+				}
+			}
+			Mesh->SetPlayRate(
+				UDragonAnimInstance::ComputeFlapPlayRate(CurrentAnimState, AnimHS, AnimVelocity.Z));
+		}
+		// [2026-11-01 T-068] Visual body tilt: pitch with the flight path,
+		// [2026-11-01 T-068] bank into turns. Mesh-only (base yaw -90 from the
+		// [2026-11-01 T-068] constructor); the capsule and movement never tilt,
+		// [2026-11-01 T-068] so collision truth is untouched. Smoothed so a
+		// [2026-11-01 T-068] velocity step can never snap the body.
+		{
+			const float Yaw = GetActorRotation().Yaw;
+			const float YawRate = DeltaSeconds > 0.0f
+									  ? FMath::FindDeltaAngleDegrees(LastActorYaw, Yaw) / DeltaSeconds
+									  : 0.0f;
+			LastActorYaw = Yaw;
+			const float TargetBank =
+				IsFlying() ? UDragonAnimInstance::ComputeBankDegrees(YawRate, AnimHS) : 0.0f;
+			const float TargetPitch =
+				IsFlying() ? UDragonAnimInstance::ComputeMeshPitchDegrees(AnimHS, AnimVelocity.Z) : 0.0f;
+			const float Blend = FMath::Clamp(DeltaSeconds * 5.0f, 0.0f, 1.0f);
+			MeshBankDegrees = FMath::Lerp(MeshBankDegrees, TargetBank, Blend);
+			MeshPitchDegrees = FMath::Lerp(MeshPitchDegrees, TargetPitch, Blend);
+			Mesh->SetRelativeRotation(FRotator(MeshPitchDegrees, -90.0f, MeshBankDegrees));
 		}
 	}
 	// [2026-10-28 T-011] Snapshot vertical velocity before any flight work

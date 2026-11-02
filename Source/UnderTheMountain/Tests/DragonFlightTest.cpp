@@ -133,14 +133,21 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDragonAnimStateTest, "UnderTheMountain.Dragon.
 
 bool FDragonAnimStateTest::RunTest(const FString& Parameters)
 {
-	TestTrue(TEXT("flying and diving is Fly"),
-			 ADragonCharacter::SelectAnimState(true, true, 900.0f, -500.0f) == EDragonAnimState::Fly);
+	// [2026-11-01 T-068] Contract updated with Hover/Dive: a dive is its
+	// [2026-11-01 T-068] own swept-wing state (not fast Fly), the slow
+	// [2026-11-01 T-068] precision band is Hover, and Glide now means fast
+	// [2026-11-01 T-068] descending cruise with wings held. Ground rules and
+	// [2026-11-01 T-068] "dive ignored on the ground" are unchanged.
+	TestTrue(TEXT("flying and diving is Dive"),
+			 ADragonCharacter::SelectAnimState(true, true, 900.0f, -500.0f) == EDragonAnimState::Dive);
 	TestTrue(TEXT("fast climbing flight is Fly"),
 			 ADragonCharacter::SelectAnimState(true, false, 900.0f, 300.0f) == EDragonAnimState::Fly);
-	TestTrue(TEXT("slow descending flight is Glide"),
-			 ADragonCharacter::SelectAnimState(true, false, 10.0f, -100.0f) == EDragonAnimState::Glide);
-	TestTrue(TEXT("slow climbing flight is Fly"),
-			 ADragonCharacter::SelectAnimState(true, false, 10.0f, 200.0f) == EDragonAnimState::Fly);
+	TestTrue(TEXT("fast descending cruise is Glide"),
+			 ADragonCharacter::SelectAnimState(true, false, 900.0f, -200.0f) == EDragonAnimState::Glide);
+	TestTrue(TEXT("slow descending precision flight is Hover"),
+			 ADragonCharacter::SelectAnimState(true, false, 10.0f, -100.0f) == EDragonAnimState::Hover);
+	TestTrue(TEXT("slow climbing precision flight is Hover"),
+			 ADragonCharacter::SelectAnimState(true, false, 10.0f, 200.0f) == EDragonAnimState::Hover);
 	TestTrue(TEXT("moving on the ground is Walk"),
 			 ADragonCharacter::SelectAnimState(false, false, 300.0f, 0.0f) == EDragonAnimState::Walk);
 	TestTrue(TEXT("still on the ground is Idle"),
@@ -198,6 +205,109 @@ bool FDragonFlyAnimPoseTest::RunTest(const FString& Parameters)
 		UpTransform.GetRotation().AngularDistance(DownTransform.GetRotation());
 	TestTrue(FString::Printf(TEXT("wing shoulder swings between flap keys (%.3f rad)"), Swing),
 			 Swing > 0.15);
+
+	// [2026-11-01 T-068] T-058 tuck proof: every leg's upper bone must sit
+	// [2026-11-01 T-068] far from its bind rotation in Fly (T-043 left legs
+	// [2026-11-01 T-068] unkeyed, i.e. exactly at bind — the owner-visible
+	// [2026-11-01 T-068] defect). 0.3 rad ~ 17 deg is far under the authored
+	// [2026-11-01 T-068] 48-62 deg tuck but far above bind-pose noise.
+	const FReferenceSkeleton& RefSkeleton = Skeleton->GetReferenceSkeleton();
+	for (const TCHAR* LegBone :
+		 {TEXT("frontleg_upper_L"), TEXT("frontleg_upper_R"), TEXT("hindleg_upper_L"),
+		  TEXT("hindleg_upper_R")})
+	{
+		const int32 LegIndex = RefSkeleton.FindBoneIndex(LegBone);
+		TestTrue(FString::Printf(TEXT("%s bone exists"), LegBone), LegIndex != INDEX_NONE);
+		if (LegIndex == INDEX_NONE)
+		{
+			continue;
+		}
+		FTransform LegTransform;
+		FlyAnim->GetBoneTransform(LegTransform, FSkeletonPoseBoneIndex(LegIndex),
+								  FAnimExtractContext(0.25), true);
+		const FTransform& RefTransform = RefSkeleton.GetRefBonePose()[LegIndex];
+		const double Tuck =
+			LegTransform.GetRotation().AngularDistance(RefTransform.GetRotation());
+		TestTrue(FString::Printf(TEXT("%s is tucked off bind in Fly (%.3f rad)"), LegBone, Tuck),
+				 Tuck > 0.3);
+	}
+	// [2026-11-01 T-068] Real-span proof (v5 rig, Scripts/lengthen_wings.py):
+	// [2026-11-01 T-068] compose every bone's local Fly transform up the
+	// [2026-11-01 T-068] reference hierarchy and measure the distance between
+	// [2026-11-01 T-068] the two wing_finger origins in the held Glide pose
+	// [2026-11-01 T-068] (mid-flap Fly converges over the back). The v4 rig
+	// [2026-11-01 T-068] (0.43-unit chain, tips beside the hips) cannot pass
+	// [2026-11-01 T-068] the ratio below; v5 (0.85 chain) does. No pose-scale:
+	// [2026-11-01 T-068] this measures bone lengths + rotations only.
+	{
+		UAnimSequence* GlideAnim = LoadObject<UAnimSequence>(
+			nullptr, TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_GlideAnim.SK_Dragon_v4_GlideAnim"));
+		TestNotNull(TEXT("SK_Dragon_v4_GlideAnim loads"), GlideAnim);
+		const int32 NumBones = RefSkeleton.GetNum();
+		TArray<FTransform> Component;
+		Component.SetNum(NumBones);
+		for (int32 Index = 0; Index < NumBones && GlideAnim != nullptr; ++Index)
+		{
+			FTransform Local;
+			GlideAnim->GetBoneTransform(Local, FSkeletonPoseBoneIndex(Index), FAnimExtractContext(0.0),
+										true);
+			const int32 Parent = RefSkeleton.GetParentIndex(Index);
+			Component[Index] = Parent == INDEX_NONE ? Local : Local * Component[Parent];
+		}
+		const int32 TipL = RefSkeleton.FindBoneIndex(TEXT("wing_finger_L"));
+		const int32 TipR = RefSkeleton.FindBoneIndex(TEXT("wing_finger_R"));
+		TestTrue(TEXT("wing finger bones exist"), TipL != INDEX_NONE && TipR != INDEX_NONE);
+		if (TipL != INDEX_NONE && TipR != INDEX_NONE)
+		{
+			const double Span = FVector::Distance(Component[TipL].GetLocation(),
+												  Component[TipR].GetLocation());
+			const int32 PelvisIndex = RefSkeleton.FindBoneIndex(TEXT("pelvis"));
+			const int32 HeadIndex = RefSkeleton.FindBoneIndex(TEXT("head"));
+			const double Body = (PelvisIndex != INDEX_NONE && HeadIndex != INDEX_NONE)
+									? FVector::Distance(Component[PelvisIndex].GetLocation(),
+														Component[HeadIndex].GetLocation())
+									: 0.0;
+			// [2026-11-01 T-068] Ratio, not cm: FBX unit scale is an import
+			// [2026-11-01 T-068] detail, span-vs-body is the design contract.
+			// [2026-11-01 T-068] v4's ratio was ~0.55 (95 cm span measured on
+			// [2026-11-01 T-068] v5 here vs ~55 by chain proportion); 0.9
+			// [2026-11-01 T-068] separates the rigs with margin.
+			TestTrue(FString::Printf(TEXT("wingtip span %.1f vs body %.1f (ratio %.2f)"), Span, Body,
+									 Body > 0.0 ? Span / Body : 0.0),
+					 Body > 0.0 && Span / Body > 0.9);
+		}
+		// [2026-11-02 T-068] Straightness proof (owner playtest 2026-11-02: tips
+		// [2026-11-02 T-068] straight out, fully extended, bird flap). Segment
+		// [2026-11-02 T-068] directions between composed bone origins must stay
+		// [2026-11-02 T-068] near-collinear in Glide: the shipped zigzag measured
+		// [2026-11-02 T-068] 30-57 deg at the elbow in Blender's evaluated pose.
+		if (TipL != INDEX_NONE && TipR != INDEX_NONE)
+		{
+			for (const TCHAR* Side : {TEXT("L"), TEXT("R")})
+			{
+				TArray<FVector> Points;
+				for (const TCHAR* Base :
+					 {TEXT("wing_shoulder"), TEXT("wing_elbow"), TEXT("wing_wrist"), TEXT("wing_finger")})
+				{
+					const int32 Idx = RefSkeleton.FindBoneIndex(FName(FString::Printf(TEXT("%s_%s"), Base, Side)));
+					if (Idx != INDEX_NONE)
+					{
+						Points.Add(Component[Idx].GetLocation());
+					}
+				}
+				TestEqual(FString::Printf(TEXT("wing chain %s has 4 joints"), Side), Points.Num(), 4);
+				for (int32 Seg = 0; Seg + 2 < Points.Num(); ++Seg)
+				{
+					const FVector A = (Points[Seg + 1] - Points[Seg]).GetSafeNormal();
+					const FVector B = (Points[Seg + 2] - Points[Seg + 1]).GetSafeNormal();
+					const double Bend = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(
+						static_cast<double>(FVector::DotProduct(A, B)), -1.0, 1.0)));
+					TestTrue(FString::Printf(TEXT("wing %s joint %d stays straight (%.1f deg)"), Side, Seg, Bend),
+							 Bend < 25.0);
+				}
+			}
+		}
+	}
 	return true;
 }
 

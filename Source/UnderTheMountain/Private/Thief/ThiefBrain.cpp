@@ -26,6 +26,8 @@ const TCHAR* ThiefStateName(EThiefState State)
 		return TEXT("Flee");
 	case EThiefState::Scared:
 		return TEXT("Scared");
+	case EThiefState::Dazed:
+		return TEXT("Dazed");
 	case EThiefState::Trapped:
 		return TEXT("Trapped");
 	case EThiefState::Dead:
@@ -266,6 +268,17 @@ void UThiefBrain::Tick(float Dt, const FVector& ThiefLocation)
 		}
 		break;
 
+	case EThiefState::Dazed:
+		// [2026-11-01 T-068] Stunned in place; when the daze clears the
+		// [2026-11-01 T-068] thief runs (loot it kept still rides along).
+		Destination = ThiefLocation;
+		DazeTimer -= Dt;
+		if (DazeTimer <= 0.0f)
+		{
+			TransitionTo(EThiefState::Flee, TEXT("buffet daze faded"));
+		}
+		break;
+
 	case EThiefState::Trapped:
 	case EThiefState::Dead:
 		// [2026-10-28 T-014] No movement: destination is the thief
@@ -306,6 +319,31 @@ void UThiefBrain::OnRoar(const FVector& ThiefLocation)
 void UThiefBrain::OnRoar()
 {
 	OnRoar(LastKnownLocation);
+}
+
+void UThiefBrain::OnWingBuffet(const FVector& ThiefLocation)
+{
+	LastKnownLocation = ThiefLocation;
+	if (CurrentState == EThiefState::Dead || ConfigAsset == nullptr)
+	{
+		return;
+	}
+	// [2026-11-01 T-068] The gust fumbles exactly one item (roar's
+	// [2026-11-01 T-068] hold-fast rule); the daze, not loot loss, is the point.
+	if (Carried.Num() > 0)
+	{
+		DropItem(Carried[0], ThiefLocation);
+	}
+	TargetId = NAME_None;
+	GrabTimer = 0.0f;
+	DazeTimer = DazedSeconds;
+	Destination = ThiefLocation;
+	TransitionTo(EThiefState::Dazed, TEXT("wing buffet"));
+}
+
+void UThiefBrain::OnWingBuffet()
+{
+	OnWingBuffet(LastKnownLocation);
 }
 
 bool UThiefBrain::ApplyDamage(float Damage, const FVector& ThiefLocation)

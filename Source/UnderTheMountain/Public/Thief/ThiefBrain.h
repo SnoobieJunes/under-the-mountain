@@ -30,7 +30,10 @@ enum class EThiefState : uint8
 	Flee,
 	Scared,
 	Trapped,
-	Dead
+	Dead,
+	// [2026-11-01 T-068] Wing-buffet daze: stands stunned (destination =
+	// [2026-11-01 T-068] self) until DazeTimer expires, then Flees.
+	Dazed
 };
 
 // [2026-10-28 T-014] The brain itself. AThiefCharacter owns one per
@@ -53,6 +56,8 @@ class UNDERTHEMOUNTAIN_API UThiefBrain : public UObject
 	// for the exit, loot already dropped) before plain Flee resumes.
 	UPROPERTY(EditAnywhere, Category = "Thief")
 	float ScaredSeconds = 6.0f;
+	// [2026-11-01 T-068] Buffet daze length `[tuning: PT-THIEF]`.
+	float DazedSeconds = 2.5f;
 
 	// [2026-10-28 T-014] Binds config + registry and resets all runtime
 	// state (HP from Config.MaxHP, empty hands, Sneak). Either pointer
@@ -98,6 +103,16 @@ class UNDERTHEMOUNTAIN_API UThiefBrain : public UObject
 	// [2026-10-28 T-014] Convenience overload for callers without a
 	// location handy; drops at the last location Tick reported.
 	void OnRoar();
+
+	// [2026-11-01 T-068] Wing buffet landed: fumble one carried item and
+	// [2026-11-01 T-068] stand dazed for DazedSeconds, then Flee. Dead
+	// [2026-11-01 T-068] thieves and a null config ignore it, like OnRoar.
+	void OnWingBuffet(const FVector& ThiefLocation);
+	void OnWingBuffet();
+	bool IsDazed() const
+	{
+		return CurrentState == EThiefState::Dazed;
+	}
 
 	// [2026-10-28 T-014] Subtracts Damage (negative damage is ignored;
 	// healing is a separate, later verb). On reaching 0 HP the thief
@@ -145,6 +160,7 @@ class UNDERTHEMOUNTAIN_API UThiefBrain : public UObject
 	FName TargetId = NAME_None;
 	float GrabTimer = 0.0f;
 	float ScareTimer = 0.0f;
+	float DazeTimer = 0.0f; // [2026-11-01 T-068] counts down in Dazed
 
 	int32 NumTrapsPlaced = 0;
 	bool bReachedExit = false;

@@ -3,6 +3,14 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-02 — T-058 — Bird wings, not bat sails: the membrane is detached from the hips and tail so each wing is an independent arm on the armature-diagram gull line (shoulder high, straight out and down to the tips), flapping as one rigid straight wing
+
+2026-11-02 — T-058 — Wings now flap straight like a bird's: one rigid fully-extended wing per side, tips pointing straight out and never folding back to the body through the whole stroke (the previous clip measured 100+ degrees of bend at the wrist — fixed in the rig data and locked by a test)
+
+2026-11-01 — T-058 — The wings are actually bigger now, in the skeleton itself: longer wing bones and a larger membrane replace the first pass's pose-stretch, so the span (~1.7× the old tips-beside-hips reach) is the dragon's real anatomy in every pose, folded or flying
+
+2026-11-01 — T-058/T-068 — Flight finally looks like flight: wings spread to full span and beat around it, all four legs tuck streamlined, glides hold still instead of slow-flapping, hovers beat deep with legs ready, the body pitches with the dive and banks into turns, and takeoff/landing/roar have real animation — plus two new verbs, wing buffet (X: dazes thieves in front of you) and tail slam (Z: 20 damage behind you, through a shield)
+
 2026-11-01 — T-019 — A real HUD: HP and stamina bars bottom-left, gold counter, notoriety star pips and wave state top-right on translucent panels — and the intro choice popup got the same modern treatment (centred panel, gold title, ember Chase button). Every action works on gamepad or keyboard/mouse alone, intro choice included
 
 2026-11-01 — T-018 — The game has a first minute now: you wake on your hoard as the camera pulls back, a gnome-thief grabs your gold, and the game stops to ask — let it go (it will talk: +1/2 a star of notoriety) or chase it down. Ignoring the question answers it for you, so it can never soft-lock
