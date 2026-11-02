@@ -126,6 +126,9 @@ void AThiefCharacter::BeginPlay()
 	}
 	UE_LOG(LogUnderTheMountain, Log, TEXT("Thief %s spawned at %s, exit %s"), *GetName(),
 		   *GetActorLocation().ToString(), *ExitLocation.ToString());
+	// [2026-11-01 T-054] Capture after the mesh setup above: the
+	// flinch adds pitch over exactly this rotation.
+	BaseMeshRotation = GetMesh()->GetRelativeRotation();
 }
 
 void AThiefCharacter::Tick(float DeltaSeconds)
@@ -137,6 +140,59 @@ void AThiefCharacter::Tick(float DeltaSeconds)
 	}
 
 	Brain->Tick(DeltaSeconds, GetActorLocation());
+
+	// [2026-11-01 T-054] Death + hit presentation. Death is a
+	// one-shot transition: stop locomotion and movement, then hand
+	// the body to its PhysicsAsset (the Meshy *_rigged_PhysicsAsset
+	// imported beside every thief mesh) for the ragdoll settle. A
+	// corpse with no physics asset keeps its final pose instead -
+	// logged once, never retried per tick.
+	if (ShouldEnterRagdoll(Brain->State()) && !bRagdollEntered)
+	{
+		bRagdollEntered = true;
+		GetCharacterMovement()->DisableMovement();
+		GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		GetMesh()->Stop();
+		if (GetMesh()->GetPhysicsAsset() != nullptr)
+		{
+			GetMesh()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			GetMesh()->SetSimulatePhysics(true);
+			UE_LOG(LogUnderTheMountain, Log, TEXT("Thief %s died: ragdoll settle"), *GetName());
+		}
+		else
+		{
+			UE_LOG(LogUnderTheMountain, Warning,
+				   TEXT("Thief %s died: no PhysicsAsset on mesh, holding death pose"), *GetName());
+		}
+		return;
+	}
+	if (bRagdollEntered)
+	{
+		return;
+	}
+
+	// [2026-11-01 T-054] Hit flinch: any HP drop starts a 0.28 s
+	// pitch kick on the mesh (relative pitch added over the -90
+	// rest offset set in BeginPlay). The brain owns HP; this actor
+	// only mirrors the change it observes.
+	const float BrainHP = Brain->HP();
+	if (LastBrainHP >= 0.0f && BrainHP < LastBrainHP)
+	{
+		FlinchTimeRemaining = 0.28f;
+	}
+	LastBrainHP = BrainHP;
+	if (FlinchTimeRemaining > 0.0f)
+	{
+		FlinchTimeRemaining = FMath::Max(0.0f, FlinchTimeRemaining - DeltaSeconds);
+		const float Kick = FlinchPitchDegrees(FlinchTimeRemaining, 0.28f);
+		FRotator FlinchRotation = BaseMeshRotation;
+		FlinchRotation.Pitch += Kick;
+		GetMesh()->SetRelativeRotation(FlinchRotation);
+		if (FlinchTimeRemaining <= 0.0f)
+		{
+			GetMesh()->SetRelativeRotation(BaseMeshRotation);
+		}
+	}
 
 	// [2026-10-28 T-014] Trap placement, timer-gated: docs/GAMEPLAY.md
 	// 5.2 says the trapper "pauses to place traps", so the actor
@@ -317,4 +373,24 @@ void AThiefCharacter::OnRoarHeard()
 bool AThiefCharacter::ApplyThiefDamage(float Damage)
 {
 	return Brain != nullptr && Brain->ApplyDamage(Damage, GetActorLocation());
+}
+
+bool AThiefCharacter::ShouldEnterRagdoll(EThiefState State)
+{
+	// [2026-11-01 T-054] Only death ragdolls; every living state
+	// (including Scared) keeps steering and single-node locomotion.
+	return State == EThiefState::Dead;
+}
+
+float AThiefCharacter::FlinchPitchDegrees(float TimeRemaining, float Duration)
+{
+	// [2026-11-01 T-054] Sine bump over the flinch window: zero at
+	// both ends (no pose snap), 14 degrees at the middle. Outside
+	// the window - or with a broken duration - no kick at all.
+	if (Duration <= 0.0f || TimeRemaining <= 0.0f || TimeRemaining >= Duration)
+	{
+		return 0.0f;
+	}
+	const float Phase = 1.0f - (TimeRemaining / Duration);
+	return 14.0f * FMath::Sin(Phase * PI);
 }

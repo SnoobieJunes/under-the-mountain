@@ -7,16 +7,16 @@
 // BeginPlay (placement sets the location before BeginPlay runs, so
 // the captured location IS the authored home) unless SetHomeLocation
 // overrode it first; the actor never leaves WanderRadius of home and
-// never leaves home's Z plane; Body and Head are NoCollision — the
+// never leaves home's Z plane; the skeletal mesh is NoCollision — the
 // dragon capsule and world geometry own collision, and the pawn
 // finds goats by range, not by touching them.
 // [2026-10-28 T-015] HP is clamped at 0 from below by
 // ApplyGoatDamage; once dead the goat never wanders again, and once
 // eaten it is hidden, collision-free, and stays eaten — neither
 // transition reverses.
-// [2026-10-28 T-017] Honest scope: the sphere/cube body below is a
-// greybox stand-in until the Meshy goat (docs/WORLD-ASSETS.md LIV-01,
-// approval-gated) replaces it. Wander uses no navmesh: the pasture
+// [2026-11-01 T-054] The Meshy goat (liv-goat_rigged, LIV-01)
+// replaced the greybox in T-054; the honest-scope note that stood
+// here is retired with it. Wander uses no navmesh: the pasture
 // is open and flat, so steering straight at a random in-radius
 // target is enough.
 
@@ -42,17 +42,21 @@ class UNDERTHEMOUNTAIN_API AGoatActor : public AActor
 	UPROPERTY(VisibleAnywhere, Category = "Livestock")
 	TObjectPtr<USceneComponent> SceneRoot;
 
-	// [2026-10-28 T-017] Greybox body: engine sphere scaled into a
-	// goat-ish ellipsoid in the constructor. Replaced wholesale when
-	// the Meshy goat (LIV-01) is approved; wander logic never reads it.
+	// [2026-11-01 T-054] The real goat: liv-goat_rigged skeletal
+	// mesh with its walk clip, replacing the T-017 sphere/cube
+	// greybox (removed below - the greybox read as a statue with a
+	// box on it, and the decision in docs/ANIMATION-SPIKE.md wants
+	// authored motion). Death is an authored side-fall: the mesh
+	// rolls over DeathFallSeconds via DeathFallRollDegrees and
+	// then holds, so an edible corpse stays exactly where it fell.
 	UPROPERTY(VisibleAnywhere, Category = "Livestock")
-	TObjectPtr<UStaticMeshComponent> Body;
+	TObjectPtr<class USkeletalMeshComponent> GoatMesh;
 
-	// [2026-10-28 T-017] Greybox head: engine cube attached to Body so
-	// heading reads at a glance while flying over. Like Body, it is a
-	// stand-in for the LIV-01 mesh, not authored art.
-	UPROPERTY(VisibleAnywhere, Category = "Livestock")
-	TObjectPtr<UStaticMeshComponent> Head;
+	// [2026-11-01 T-054] Side-fall curve: roll in degrees at fall
+	// progress Alpha (0 standing, 1 fully over). Ease-out cubic to
+	// -88 degrees (2 short of flat, so the body reads settled, not
+	// clipped through the floor); clamped outside [0,1].
+	static float DeathFallRollDegrees(float Alpha);
 
 	// [2026-10-28 T-017] Overrides the wander home. Placement normally
 	// just sets the actor location before BeginPlay captures it as
@@ -163,4 +167,13 @@ class UNDERTHEMOUNTAIN_API AGoatActor : public AActor
 	// cleared — there is no resurrection verb for livestock.
 	bool bDead = false;
 	bool bEaten = false;
+
+	// [2026-11-01 T-054] Death-fall progress 0..1, advanced in
+	// Tick after death over DeathFallSeconds, then held forever.
+	float DeathFallAlpha = 0.0f;
+
+	// [2026-11-01 T-054] Walk clip (constructor-loaded,
+	// FObjectFinder is constructor-only - the T-053 lesson).
+	UPROPERTY()
+	TObjectPtr<class UAnimSequence> WalkAnim;
 };

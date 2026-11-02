@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-01 — T-054 — Death and pain read now: killed thieves fall into a ragdoll settle and flinch when hit, and goats are real animated Meshy goats that walk their pasture and tip onto their side when killed (no more spheres with boxes for heads)
+
 2026-11-01 — T-053 — The towns have people now: villagers wander and idle in the valley village and Village N and scatter when the dragon gets close, and every farmstead has goats — 19 new inhabitants at no measured frame cost (about 74 fps in the village)
 
 2026-11-01 — T-052 — The exterior has a sky: sun with shadows, atmosphere, a fly-through cloud deck and height fog — plus weather: type `Weather` in the console (or set utm.weather.state) to trade clear skies for dim blue rain at about 1 ms of frame cost

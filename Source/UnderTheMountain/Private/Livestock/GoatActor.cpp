@@ -10,8 +10,18 @@
 #include "Livestock/GoatActor.h"
 #include "UnderTheMountain.h"
 
-#include "Components/StaticMeshComponent.h"
+#include "Animation/AnimSequence.h"
+#include "Animation/AnimSingleNodeInstance.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
 #include "UObject/ConstructorHelpers.h"
+
+namespace
+{
+// [2026-11-01 T-054] How long the authored side-fall takes, in
+// seconds: fast enough to read as a fall, slow enough to see.
+constexpr float DeathFallSeconds = 0.6f;
+} // namespace
 
 AGoatActor::AGoatActor()
 {
@@ -22,43 +32,35 @@ AGoatActor::AGoatActor()
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	SetRootComponent(SceneRoot);
 
-	Body = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Body"));
-	Body->SetupAttachment(SceneRoot);
-	// [2026-10-28 T-017] Engine sphere stretched into a goat-ish
-	// ellipsoid: long in X (the heading axis Tick yaws onto), narrower
-	// and shorter across. Guarded on Succeeded() like the other
-	// greybox actors so a missing engine asset degrades to an
-	// invisible-but-wandering goat instead of a construction crash.
-	Body->SetRelativeScale3D(FVector(1.4f, 0.9f, 0.9f));
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(
-		TEXT("/Engine/BasicShapes/Sphere.Sphere"));
-	if (SphereMesh.Succeeded())
+	// [2026-11-01 T-054] The Meshy goat (liv-goat_rigged + its walk
+	// clip) replaces the T-017 sphere/cube greybox. NoCollision as
+	// before: the dragon finds goats by eat range, never by touch.
+	// Loads are guarded so a missing asset degrades to an invisible
+	// wandering goat, never a construction crash.
+	GoatMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("GoatMesh"));
+	GoatMesh->SetupAttachment(SceneRoot);
+	GoatMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	static ConstructorHelpers::FObjectFinder<USkeletalMesh> GoatMeshAsset(
+		TEXT("/Game/Meshy/World/liv-goat_rigged.liv-goat_rigged"));
+	if (GoatMeshAsset.Succeeded())
 	{
-		Body->SetStaticMesh(SphereMesh.Object);
+		GoatMesh->SetSkeletalMeshAsset(GoatMeshAsset.Object);
 	}
-
-	Head = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Head"));
-	Head->SetupAttachment(Body);
-	// [2026-10-28 T-017] Cube head perched at the body's front-top so
-	// the goat's heading is readable from dragon altitude. The offset
-	// and scale are relative to Body (its attachment parent).
-	Head->SetRelativeLocation(FVector(55.0f, 0.0f, 35.0f));
-	Head->SetRelativeScale3D(FVector(0.45f, 0.4f, 0.45f));
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMesh(
-		TEXT("/Engine/BasicShapes/Cube.Cube"));
-	if (CubeMesh.Succeeded())
+	GoatMesh->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> GoatWalkAnim(
+		TEXT("/Game/Meshy/World/liv-goat_rigged_Anim.liv-goat_rigged_Anim"));
+	if (GoatWalkAnim.Succeeded())
 	{
-		Head->SetStaticMesh(CubeMesh.Object);
+		WalkAnim = GoatWalkAnim.Object;
 	}
+}
 
-	// [2026-10-28 T-017] NoCollision on both meshes: the dragon capsule
-	// and world geometry own collision, and a collidable greybox
-	// would only snag flight. [2026-10-28 T-015] The eat verb finds
-	// goats by range from the pawn (UDragonCombatComponent::EatRange),
-	// never by touching them, so NoCollision stays correct now that
-	// goats are edible.
-	Body->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	Head->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+float AGoatActor::DeathFallRollDegrees(float Alpha)
+{
+	// [2026-11-01 T-054] Ease-out cubic: fast tip, soft settle.
+	const float T = FMath::Clamp(Alpha, 0.0f, 1.0f);
+	const float Eased = 1.0f - FMath::Pow(1.0f - T, 3.0f);
+	return -88.0f * Eased;
 }
 
 void AGoatActor::SetHomeLocation(const FVector& NewHomeLocation)
@@ -170,7 +172,34 @@ void AGoatActor::Tick(float DeltaSeconds)
 	// for the dragon's eat channel.
 	if (bDead || bEaten)
 	{
+		// [2026-11-01 T-054] The authored side-fall plays here, in
+		// the dead branch: roll the mesh over DeathFallSeconds and
+		// hold. The corpse does not translate - where it fell is
+		// where it is eaten from (the T-015 contract above).
+		if (!bEaten && DeathFallAlpha < 1.0f && GoatMesh != nullptr)
+		{
+			DeathFallAlpha = FMath::Min(1.0f, DeathFallAlpha + DeltaSeconds / DeathFallSeconds);
+			FRotator FallRotation = GoatMesh->GetRelativeRotation();
+			FallRotation.Roll = DeathFallRollDegrees(DeathFallAlpha);
+			GoatMesh->SetRelativeRotation(FallRotation);
+			if (DeathFallAlpha >= 1.0f)
+			{
+				GoatMesh->Stop();
+			}
+		}
 		return;
+	}
+
+	// [2026-11-01 T-054] Walk clip while alive (the wander below
+	// always moves or repicks, so a living goat is a walking goat);
+	// started once via the node's current-asset check.
+	if (WalkAnim != nullptr && GoatMesh != nullptr)
+	{
+		UAnimSingleNodeInstance* Node = GoatMesh->GetSingleNodeInstance();
+		if (Node == nullptr || Node->GetAnimationAsset() != WalkAnim)
+		{
+			GoatMesh->PlayAnimation(WalkAnim, true);
+		}
 	}
 
 	RepickTimer += DeltaSeconds;

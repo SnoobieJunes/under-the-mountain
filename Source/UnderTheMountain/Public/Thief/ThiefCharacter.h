@@ -14,6 +14,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "Thief/ThiefBrain.h"
 #include "ThiefCharacter.generated.h"
 
 class UAnimSequence;
@@ -63,6 +64,19 @@ class UNDERTHEMOUNTAIN_API AThiefCharacter : public ACharacter
 	// reports whether the blow killed the thief.
 	bool ApplyThiefDamage(float Damage);
 
+	// [2026-11-01 T-054] Death presentation rule: a Dead brain means
+	// the ragdoll (physics settle), every other state means the
+	// single-node locomotion. Pure so the test proves the wiring
+	// decision without a world.
+	static bool ShouldEnterRagdoll(EThiefState State);
+
+	// [2026-11-01 T-054] Hit-flinch curve: pitch kick in degrees at
+	// TimeRemaining of a Duration-second flinch - a sine bump (0 at
+	// both ends, peak mid-flinch), clamped outside the window.
+	// Authored in code because no hit-reaction clip exists in the
+	// Meshy sets; if one is authored later it replaces this curve.
+	static float FlinchPitchDegrees(float TimeRemaining, float Duration);
+
   protected:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
@@ -105,4 +119,16 @@ class UNDERTHEMOUNTAIN_API AThiefCharacter : public ACharacter
 	// traps"). The brain owns budget/state rules; this actor owns
 	// the cadence and the ATrapActor spawn.
 	float TrapPlaceTimer = 0.0f;
+
+	// [2026-11-01 T-054] Hit-reaction bookkeeping: last brain HP
+	// seen (a drop starts a flinch), seconds left on the flinch,
+	// and the one-shot ragdoll latch for the death transition.
+	float LastBrainHP = -1.0f;
+	float FlinchTimeRemaining = 0.0f;
+	bool bRagdollEntered = false;
+
+	// [2026-11-01 T-054] The mesh's rest relative rotation,
+	// captured at BeginPlay so the flinch can add pitch over it
+	// instead of overwriting the engine's -90 yaw on GetMesh().
+	FRotator BaseMeshRotation = FRotator::ZeroRotator;
 };
