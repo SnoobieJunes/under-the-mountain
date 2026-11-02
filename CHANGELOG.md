@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-01 — T-019 — A real HUD: HP and stamina bars bottom-left, gold counter, notoriety star pips and wave state top-right on translucent panels — and the intro choice popup got the same modern treatment (centred panel, gold title, ember Chase button). Every action works on gamepad or keyboard/mouse alone, intro choice included
+
 2026-11-01 — T-018 — The game has a first minute now: you wake on your hoard as the camera pulls back, a gnome-thief grabs your gold, and the game stops to ask — let it go (it will talk: +1/2 a star of notoriety) or chase it down. Ignoring the question answers it for you, so it can never soft-lock
 
 2026-11-01 — T-016 — It is a game now: thief waves roll in on a stagger and loot your hoard while notoriety stars climb for every witnessed act (escapes, public kills, roars, burnt buildings), the hoard drains as loot walks out, and surviving the final wave rich wins — ignoring a wave is allowed, and the world keeps score anyway

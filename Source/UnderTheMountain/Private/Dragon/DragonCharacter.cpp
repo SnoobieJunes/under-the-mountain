@@ -16,6 +16,7 @@
 #include "Thief/ThiefBrain.h"
 #include "Thief/ThiefCharacter.h"
 #include "Thief/ThiefDataAsset.h"
+#include "UI/DragonHUDWidget.h"
 #include "UI/DragonTintWidget.h"
 #include "UI/IntroChoiceWidget.h"
 #include "UnderTheMountain.h"
@@ -853,6 +854,23 @@ void ADragonCharacter::TickIntro(float DeltaSeconds)
 		}
 		break;
 	case EIntroState::Choice:
+		// [2026-11-01 T-019] Gamepad parity for the choice: A
+		// (bottom face) = Chase, B (right face) = Let go, polled
+		// here so a pad-only player is never stuck at a
+		// mouse-only prompt. Mouse clicks remain the other path.
+		if (APlayerController* PC = Cast<APlayerController>(GetController()))
+		{
+			if (PC->WasInputKeyJustPressed(EKeys::Gamepad_FaceButton_Bottom))
+			{
+				HandleIntroChoice(1);
+				break;
+			}
+			if (PC->WasInputKeyJustPressed(EKeys::Gamepad_FaceButton_Right))
+			{
+				HandleIntroChoice(0);
+				break;
+			}
+		}
 		if (!bIntroChoiceShown)
 		{
 			bIntroChoiceShown = true;
@@ -1332,6 +1350,43 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 	if (DesiredWeather != CurrentWeatherState)
 	{
 		ApplyWeather(DesiredWeather);
+	}
+	// [2026-11-01 T-019] HUD: create once for the local player,
+	// then feed it the subsystems' numbers every tick. This is
+	// the live readout the T-016 debug line prototyped; the debug
+	// line stays (it also works headless in logs' stead).
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		if (PC->IsLocalController())
+		{
+			if (HUDWidget == nullptr)
+			{
+				HUDWidget = CreateWidget<UDragonHUDWidget>(PC, UDragonHUDWidget::StaticClass());
+				if (HUDWidget != nullptr)
+				{
+					HUDWidget->AddToViewport(5);
+				}
+			}
+			if (HUDWidget != nullptr && GetWorld() != nullptr)
+			{
+				UNotorietySubsystem* Notoriety = GetWorld()->GetSubsystem<UNotorietySubsystem>();
+				UHoardSubsystem* Hoard = GetWorld()->GetSubsystem<UHoardSubsystem>();
+				UWaveSubsystem* Waves = GetWorld()->GetSubsystem<UWaveSubsystem>();
+				UTreasureSubsystem* TreasureSub = GetWorld()->GetSubsystem<UTreasureSubsystem>();
+				if (Notoriety && Hoard && Waves && TreasureSub && TreasureSub->Registry() && Stats)
+				{
+					static const TCHAR* WaveWords[] = {TEXT("Intermission"), TEXT("Spawning"),
+													   TEXT("Active"), TEXT("Session over")};
+					const int32 WaveIndex =
+						FMath::Clamp(static_cast<int32>(Waves->GetWaveState()), 0, 3);
+					HUDWidget->Refresh(Stats->HP, Stats->MaxHP, Stats->Stamina, Stats->MaxStamina,
+									   Notoriety->GetStars(), Notoriety->GetPoints(),
+									   Hoard->GetCurrentHoard(TreasureSub->Registry()->TotalGold()),
+									   Hoard->GetStartingHoard(), Waves->GetCurrentWave(),
+									   WaveWords[WaveIndex]);
+				}
+			}
+		}
 	}
 	// [2026-11-01 T-018] Intro sequence (camera, gnome, choice).
 	TickIntro(DeltaSeconds);

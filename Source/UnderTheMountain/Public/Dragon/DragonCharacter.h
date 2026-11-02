@@ -248,6 +248,11 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// gnome steals and dismissed at FreePlay.
 	UPROPERTY()
 	TObjectPtr<class UIntroChoiceWidget> IntroWidget;
+
+	// [2026-11-01 T-019] The HUD, created lazily on the first Tick
+	// with a local controller (possession lands after BeginPlay).
+	UPROPERTY()
+	TObjectPtr<class UDragonHUDWidget> HUDWidget;
 	UPROPERTY()
 	TObjectPtr<UInputMappingContext> MappingContext;
 
