@@ -285,10 +285,23 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	void ApplyBurningAreaDamage(float DeltaSeconds);
 	void MaybeSpawnGroundScorch(const FVector& Origin, const FVector& Forward);
 
+	// [2026-11-01 T-016] The game-loop audit (0.5 s cadence from
+	// Tick): session start, escape/death/ignition accounting into
+	// Notoriety + Hoard, wave driving, and outcome classification.
+	void AuditGameLoop(float DeltaSeconds);
+
 	// [2026-11-01 T-055] Scorch bookkeeping: disc locations this
 	// session (dedup radius checked against these) and the
 	// accumulator/throttle for ground hits while firing downward.
 	TArray<FVector> ScorchLocations;
+
+	// [2026-11-01 T-016] Game-loop audit bookkeeping: thieves and
+	// props already accounted for (by actor name - unique per
+	// spawn), so an escape/death/ignition is counted exactly once.
+	TSet<FName> CountedThiefEvents;
+	TSet<FName> CountedPropBurns;
+	float LoopAuditTimer = 0.0f;
+	bool bOutcomeLogged = false;
 	float GroundScorchAccum = 0.0f;
 	float GroundScorchTimer = 0.0f;
 

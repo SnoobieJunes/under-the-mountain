@@ -17,6 +17,10 @@
 #include "Thief/ThiefCharacter.h"
 #include "UI/DragonTintWidget.h"
 #include "UnderTheMountain.h"
+#include "Hoard/HoardSubsystem.h"
+#include "Notoriety/NotorietySubsystem.h"
+#include "Treasure/TreasureSubsystem.h"
+#include "Waves/WaveSubsystem.h"
 #include "World/BurnablePropActor.h"
 #include "World/ScorchMarkActor.h"
 
@@ -755,6 +759,114 @@ void ADragonCharacter::MaybeSpawnGroundScorch(const FVector& Origin, const FVect
 	}
 }
 
+void ADragonCharacter::AuditGameLoop(float DeltaSeconds)
+{
+	// [2026-11-01 T-016] The pawn is the only actor guaranteed to
+	// tick from second zero, so it drives the loop: session start,
+	// event accounting, waves, outcome. Subsystems own the rules;
+	// this function only observes and forwards, at 0.5 s cadence
+	// (events are second-scale; per-frame audits would waste the
+	// actor scans).
+	UWorld* World = GetWorld();
+	if (World == nullptr)
+	{
+		return;
+	}
+	UNotorietySubsystem* Notoriety = World->GetSubsystem<UNotorietySubsystem>();
+	UHoardSubsystem* Hoard = World->GetSubsystem<UHoardSubsystem>();
+	UWaveSubsystem* Waves = World->GetSubsystem<UWaveSubsystem>();
+	UTreasureSubsystem* TreasureSub = World->GetSubsystem<UTreasureSubsystem>();
+	if (Notoriety == nullptr || Hoard == nullptr || Waves == nullptr || TreasureSub == nullptr ||
+		TreasureSub->Registry() == nullptr)
+	{
+		return;
+	}
+	Hoard->RecordSessionStart(TreasureSub->Registry()->TotalGold());
+	Waves->TickWave(DeltaSeconds);
+
+	LoopAuditTimer += DeltaSeconds;
+	if (LoopAuditTimer < 0.5f)
+	{
+		return;
+	}
+	LoopAuditTimer = 0.0f;
+
+	TArray<AActor*> ThiefActors;
+	UGameplayStatics::GetAllActorsOfClass(World, AThiefCharacter::StaticClass(), ThiefActors);
+	for (AActor* Actor : ThiefActors)
+	{
+		AThiefCharacter* Thief = Cast<AThiefCharacter>(Actor);
+		UThiefBrain* Brain = Thief ? Thief->GetBrain() : nullptr;
+		if (Brain == nullptr)
+		{
+			continue;
+		}
+		const FName Key = FName(*FString::Printf(TEXT("%s|%d"), *Thief->GetName(),
+												 static_cast<int32>(Brain->State())));
+		if (Brain->ReachedExit() && !CountedThiefEvents.Contains(Thief->GetFName()))
+		{
+			CountedThiefEvents.Add(Thief->GetFName());
+			const bool bWithLoot = Brain->CarriedItems().Num() > 0;
+			Notoriety->AddEscapePoints(bWithLoot);
+			int64 Stolen = 0;
+			for (const FName& ItemId : Brain->CarriedItems())
+			{
+				if (const FTreasureEntry* Entry = TreasureSub->Registry()->Find(ItemId))
+				{
+					Stolen += Entry->GoldValue;
+				}
+			}
+			if (Stolen > 0)
+			{
+				Hoard->RecordTheft(Stolen, *Thief->GetName());
+			}
+		}
+		if (Brain->State() == EThiefState::Dead && !CountedThiefEvents.Contains(Key))
+		{
+			CountedThiefEvents.Add(Key);
+			Notoriety->AddPublicKillPoints(Thief->GetActorLocation());
+		}
+	}
+
+	TArray<ABurnablePropActor*> Props;
+	TArray<FVector> PropLocations;
+	GatherBurnableTargets(Props, PropLocations);
+	for (ABurnablePropActor* Prop : Props)
+	{
+		if (Prop != nullptr && Prop->GetBurnState() != EBurnState::Intact &&
+			!CountedPropBurns.Contains(Prop->GetFName()))
+		{
+			CountedPropBurns.Add(Prop->GetFName());
+			Notoriety->AddStructureHitPoints();
+		}
+	}
+
+	// [2026-11-01 T-016] Outcome: dragon down loses immediately;
+	// final-wave survival scores the hoard. Logged once; the
+	// session-end screen is T-072's, this is the state it reads.
+	if (!bOutcomeLogged)
+	{
+		const bool bDragonDown = Stats != nullptr && Stats->HP <= 0.0f;
+		// [2026-11-01 T-016] Fractions come from DA_HoardThresholds
+		// when the asset exists (its class defaults otherwise) -
+		// never literals, per the section 8 AT note.
+		const UHoardThresholdsAsset* Thresholds = Hoard->Thresholds();
+		const float WinFraction = Thresholds ? Thresholds->WinFraction : 0.5f;
+		const float LoseFraction = Thresholds ? Thresholds->LoseFraction : 0.2f;
+		const EHoardOutcome Outcome = UHoardSubsystem::ClassifyOutcome(
+			Hoard->GetCurrentHoard(TreasureSub->Registry()->TotalGold()), Hoard->GetStartingHoard(),
+			WinFraction, LoseFraction, Waves->IsSessionOver(), bDragonDown);
+		if (Outcome != EHoardOutcome::InProgress)
+		{
+			bOutcomeLogged = true;
+			UE_LOG(LogUnderTheMountain, Log,
+				   TEXT("Session outcome: %d (hoard %lld of %lld, stars %d, wave %d)"),
+				   static_cast<int32>(Outcome), Hoard->GetCurrentHoard(TreasureSub->Registry()->TotalGold()),
+				   Hoard->GetStartingHoard(), Notoriety->GetStars(), Waves->GetCurrentWave());
+		}
+	}
+}
+
 void ADragonCharacter::HandleFire(const FInputActionValue& Value)
 {
 	// [2026-10-28 T-015] Latch only — Tick owns starting/ticking the
@@ -787,6 +899,17 @@ void ADragonCharacter::HandleRoar()
 	GatherCombatTargets(Brains, Locations);
 	const float Now = GetWorld() != nullptr ? GetWorld()->GetTimeSeconds() : 0.0f;
 	const bool bRoared = Combat->TryRoar(Now, Stats, GetActorLocation(), Brains, Locations);
+	// [2026-11-01 T-016] A roar that scares thieves while the
+	// dragon is OUTSIDE the lair is a witnessed act (+4, once per
+	// roar); inside, nobody outside hears about it.
+	if (bRoared && GetWorld() != nullptr &&
+		!UNotorietySubsystem::IsInsideLair(GetActorLocation()))
+	{
+		if (UNotorietySubsystem* Notoriety = GetWorld()->GetSubsystem<UNotorietySubsystem>())
+		{
+			Notoriety->AddRoarOutsidePoints();
+		}
+	}
 	UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon roar: %s (%d thieves in world)"),
 		   bRoared ? TEXT("roared") : TEXT("blocked — see combat warning above"), Brains.Num());
 }
@@ -1048,6 +1171,10 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 	{
 		ApplyWeather(DesiredWeather);
 	}
+	// [2026-11-01 T-016] Game loop: waves, notoriety/hoard
+	// accounting and outcome classification, driven from here
+	// (the pawn is the one actor that always ticks).
+	AuditGameLoop(DeltaSeconds);
 	// [2026-10-28 T-014] Trap-slow expiry: restore the captured speeds
 	// in the same tick the clock runs out.
 	if (TrapSlowTimeRemaining > 0.0f)
@@ -1145,6 +1272,17 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 		else if (EatResult == EEatResult::AteGoat)
 		{
 			UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon ate a goat"));
+			// [2026-11-01 T-016] Livestock eaten at a settlement is
+			// witnessed (+3); eaten inside the lair gains nothing
+			// (the same inside/outside rule as kills).
+			if (GetWorld() != nullptr &&
+				!UNotorietySubsystem::IsInsideLair(GetActorLocation()))
+			{
+				if (UNotorietySubsystem* Notoriety = GetWorld()->GetSubsystem<UNotorietySubsystem>())
+				{
+					Notoriety->AddLivestockEatPoints();
+				}
+			}
 		}
 	}
 	// [2026-10-28 T-043] State-driven single-node playback (replaces
@@ -1262,6 +1400,29 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 	// stable-key line (replaced in place, never scrolling) shown while
 	// airborne. GEngine is null in headless automation runs, hence the
 	// guard — the -nullrhi test path must never dereference it.
+	if (GEngine)
+	{
+		// [2026-11-01 T-016] Game-state line, always on (T-019 owns
+		// the real HUD; this is the debug readout it will replace):
+		// stars/points, hoard of starting, wave and its state.
+		if (UWorld* World = GetWorld())
+		{
+			UNotorietySubsystem* Notoriety = World->GetSubsystem<UNotorietySubsystem>();
+			UHoardSubsystem* Hoard = World->GetSubsystem<UHoardSubsystem>();
+			UWaveSubsystem* Waves = World->GetSubsystem<UWaveSubsystem>();
+			UTreasureSubsystem* TreasureSub = World->GetSubsystem<UTreasureSubsystem>();
+			if (Notoriety && Hoard && Waves && TreasureSub && TreasureSub->Registry())
+			{
+				GEngine->AddOnScreenDebugMessage(
+					11012, 0.25f, FColor::Cyan,
+					FString::Printf(TEXT("Notoriety %d star (%d pts) | Hoard %lld/%lld | Wave %d state %d"),
+									Notoriety->GetStars(), Notoriety->GetPoints(),
+									Hoard->GetCurrentHoard(TreasureSub->Registry()->TotalGold()),
+									Hoard->GetStartingHoard(), Waves->GetCurrentWave(),
+									static_cast<int32>(Waves->GetWaveState())));
+			}
+		}
+	}
 	if (GEngine && (IsFlying() || GetCharacterMovement()->MovementMode == MOVE_Falling))
 	{
 		const FVector ShownVelocity = GetVelocity();
