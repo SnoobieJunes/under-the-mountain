@@ -10,6 +10,12 @@ import unreal
 MAP_PATH = "/Game/Maps/Lair/Lair"
 eal = unreal.EditorAssetLibrary
 
+# [2026-11-01 T-050] Same commandlet warm-up as create_treasures.py:
+# in -run=pythonscript the Asset Registry is cold at script start and
+# load_asset lies about on-disk assets until a synchronous scan.
+unreal.AssetRegistryHelpers.get_asset_registry().scan_paths_synchronous(
+    ["/Game/Maps", "/Game/Meshy"], True, True)
+
 
 def require(value, action):
     if not value:
@@ -76,7 +82,13 @@ def place_mesh(label, asset_name, x, y, ground_z, target_h, yaw=0.0):
     a.static_mesh_component.set_static_mesh(mesh)
     a.set_actor_scale3d(unreal.Vector(scale, scale, scale))
     if yaw:
-        a.set_actor_rotation(unreal.Rotator(0.0, yaw, 0.0), False)
+        # [2026-11-01 T-050] Keyword args are load-bearing: this
+        # Python build assigns Rotator positionally as
+        # (roll, pitch, yaw), so Rotator(0.0, yaw, 0.0) PITCHED
+        # every yawed building by its yaw angle - the valley
+        # village has stood tilted since T-046 (proven by actor
+        # dumps: House0 pitch=40 yaw=0). Keywords cannot drift.
+        a.set_actor_rotation(unreal.Rotator(pitch=0.0, yaw=yaw, roll=0.0), False)
     return a
 
 
@@ -103,6 +115,92 @@ place_mesh("Exterior_Crates", "des-crates-intact", VX + 850, 650, 0, 130)
 place_mesh("Exterior_Barrels", "des-barrels-intact", VX + 1000, 780, 0, 130)
 place_mesh("Exterior_FenceA", "vil-fences", VX - 1800, 1800, 0, 160, yaw=90)
 place_mesh("Exterior_FenceB", "vil-fences", VX - 1800, -200, 0, 160, yaw=90)
+
+# --- settlements across the T-049 terrain (T-050, 2026-11-01) ---
+# Distances are flight-visible: sites sit 1.5-4 km apart over the
+# 5 km landscape, each with a different mix/layout (ring village,
+# road village, courtyard castles, lone farmsteads) - no copy-paste
+# rows. Grounding replicates the terrain commandlet's closed-form
+# height function (TerrainCommandlet.cpp TerrainHeightCm - keep the
+# constants in sync; the landscape is a bilinear surface over the
+# same samples, so buildings sink 60 cm to absorb interpolation).
+import math
+
+
+def terrain_height(x, y):
+    fields = 350.0 * math.sin(x * 2.1e-5 + 1.7) * math.cos(y * 1.7e-5) \
+        + 250.0 * math.sin((x + y) * 1.3e-5)
+    dist = math.hypot(x - 10000.0, y)
+    t = max(0.0, min(1.0, (dist - 70000.0) / 80000.0))
+    range_mask = t * t * (3.0 - 2.0 * t)
+    ridge = (1.0 - abs(math.sin(x * 4.5e-5 + 2.0 * math.sin(y * 3.0e-5)))) ** 3
+    ranges = range_mask * (900.0 + 3400.0 * ridge)
+    massif = 4600.0 * math.exp(-((x - 19000.0) ** 2 + (y + 10000.0) ** 2)
+                               / (2.0 * 20000.0 ** 2))
+    h = fields + ranges + massif
+    cx = 1.0 - (lambda u: u * u * (3 - 2 * u))(max(0.0, min(1.0, (x - 21000.0) / 5000.0)))
+    cy = 1.0 - (lambda u: u * u * (3 - 2 * u))(max(0.0, min(1.0, (abs(y) - 7000.0) / 3000.0)))
+    h = h * (1.0 - cx * cy) + (-250.0) * (cx * cy)
+    return max(-800.0, min(5200.0, h))
+
+
+def settle(label, asset, x, y, target_h, yaw=0.0):
+    return place_mesh(label, asset, x, y, terrain_height(x, y) - 60.0, target_h, yaw)
+
+
+# Castle A (north-west): courtyard square - keep at the back, two
+# towers on the front corners, wall runs between, gate front-centre.
+AX, AY = -120000.0, -120000.0
+settle("Exterior_CastleA_Keep", "cas-keep", AX, AY - 1500, 2400)
+settle("Exterior_CastleA_TowerW", "cas-tower", AX - 2200, AY + 1200, 1500)
+settle("Exterior_CastleA_TowerE", "cas-tower", AX + 2200, AY + 1200, 1500)
+settle("Exterior_CastleA_WallW", "cas-wall", AX - 1100, AY + 1200, 700, yaw=90)
+settle("Exterior_CastleA_WallE", "cas-wall", AX + 1100, AY + 1200, 700, yaw=90)
+settle("Exterior_CastleA_Gate", "cas-gate", AX, AY + 1200, 900)
+settle("Exterior_CastleA_WallBack", "cas-wall", AX, AY - 2800, 700)
+
+# Castle B (south-east): linear ridge fort - keep centre, towers at
+# both ends, walls stepping down the ridge, no gate (cliff approach).
+BX, BY = 150000.0, 135000.0
+settle("Exterior_CastleB_Keep", "cas-keep", BX, BY, 2600)
+settle("Exterior_CastleB_TowerW", "cas-tower", BX - 3000, BY + 600, 1500, yaw=20)
+settle("Exterior_CastleB_TowerE", "cas-tower", BX + 3000, BY - 600, 1500, yaw=-15)
+settle("Exterior_CastleB_WallW", "cas-wall", BX - 1500, BY + 300, 700, yaw=80)
+settle("Exterior_CastleB_WallE", "cas-wall", BX + 1500, BY - 300, 700, yaw=80)
+
+# Village 2 (north): a ring of houses around the well - different
+# mix (B/C-led) and geometry from the valley village's road layout.
+NX, NY = -150000.0, 85000.0
+settle("Exterior_VillageN_Well", "vil-well", NX, NY, 170)
+for i, (dx, dy, asset, yaw) in enumerate((
+        (-1600, -600, "vil-house-b", 40), (1500, -900, "vil-house-c", -30),
+        (-700, 1500, "vil-house-c", 160), (1200, 1300, "vil-house-b", -140),
+        (0, -1900, "vil-house-a", 10), (-2100, 700, "vil-house-a", 80))):
+    settle("Exterior_VillageN_House%d" % i, asset, NX + dx, NY + dy, 640, yaw=yaw)
+settle("Exterior_VillageN_Stall", "vil-market-stall", NX + 500, NY + 300, 320, yaw=55)
+
+# Village 3 (east): an inn-led road bend - inn at the corner, houses
+# trailing east, tower watching the road.
+EX, EY = 185000.0, -65000.0
+settle("Exterior_VillageE_Inn", "vil-inn", EX, EY, 880, yaw=35)
+settle("Exterior_VillageE_House0", "vil-house-c", EX + 1800, EY + 700, 700, yaw=60)
+settle("Exterior_VillageE_House1", "vil-house-a", EX + 3200, EY + 1500, 600, yaw=75)
+settle("Exterior_VillageE_House2", "vil-house-b", EX - 400, EY + 2000, 660, yaw=-20)
+settle("Exterior_VillageE_Tower", "cas-tower", EX - 1700, EY - 800, 1200)
+settle("Exterior_VillageE_Cart", "vil-cart", EX + 900, EY + 200, 200, yaw=110)
+
+# Farmsteads (4): one house + working clutter each, every one a
+# different pairing - fences/crates/cart/deadtrees in rotation.
+for i, (fx, fy, asset, extra) in enumerate((
+        (80000.0, 155000.0, "vil-house-a", "vil-fences"),
+        (-65000.0, -185000.0, "vil-house-b", "vil-cart"),
+        (125000.0, -145000.0, "vil-house-c", "des-crates-intact"),
+        (-185000.0, -45000.0, "vil-house-b", "vil-fences"))):
+    settle("Exterior_Farm%d_House" % i, asset, fx, fy, 600, yaw=i * 35)
+    settle("Exterior_Farm%d_Extra" % i, extra, fx + 1100, fy + 500, 220, yaw=20 + i * 15)
+    settle("Exterior_Farm%d_Tree" % i, "nat-deadtree-a", fx - 900, fy - 700, 700)
+    settle("Exterior_Farm%d_Fence" % i, "vil-fences", fx + 300, fy - 1100, 160, yaw=90)
+print("SETTLEMENTS_DONE")
 
 # --- goats in the pasture west of the village ---
 goat_cls = require(unreal.load_class(None, "/Script/UnderTheMountain.GoatActor"), "load GoatActor class")
