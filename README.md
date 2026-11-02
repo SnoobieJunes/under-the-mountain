@@ -39,6 +39,7 @@ reference machine). Everything runs from the repo root:
 Scripts/setup.sh       # verify engine + toolchain (UE 5.8.4, Xcode 27.1)
 Scripts/build.sh       # build the editor target (compiles the game module)
 Scripts/run-editor.sh  # open the editor; pass /Game/Maps/Lair/Lair to open the lair
+Scripts/play.sh        # quick test: build the game target + standalone -game window (no editor)
 Scripts/test-fast.sh   # build + automation tests (inner loop)
 Scripts/gate.sh        # full pre-commit gate: setup, editor+game builds,
                        # clang-format check, tests, coverage-floor check
@@ -48,6 +49,13 @@ Scripts/coverage.sh    # real llvm-cov line coverage (floor: AGENTS.md, 29%)
 To play: open the editor, load `/Game/Maps/Lair/Lair`, press **Play**. The
 dragon spawns at `DragonStart` in the entry chamber; the treasure rooms, the
 peak shaft, and the village are all reachable from there.
+
+**Quick test (no editor): `Scripts/play.sh`** — builds the game target and
+launches a standalone game window on the Lair running exactly the code you
+just built. Use this to test current code; use the editor when you need to
+inspect or change the level/assets, or drive it over MCP. A packaged `.app`
+arrives in T-020; launching `Binaries/Mac/UnderTheMountain.app` directly is
+the known-broken path owned by T-057.
 
 Notes:
 
