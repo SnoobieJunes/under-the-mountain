@@ -55,6 +55,18 @@ class UNDERTHEMOUNTAIN_API AThiefCharacter : public ACharacter
 
 	UThiefBrain* GetBrain() const;
 
+#if WITH_DEV_AUTOMATION_TESTS
+	// [2026-11-03 T-104] Test seam (dev builds only): attach a
+	// headless-built brain (NewObject + Init, driven to whatever state
+	// the scenario needs) so wave-resolution tests can cover live
+	// thieves without spawning a world. Production always builds the
+	// brain in BeginPlay; nothing outside tests calls this.
+	void SetBrainForTesting(UThiefBrain* InBrain)
+	{
+		Brain = InBrain;
+	}
+#endif
+
 	// [2026-10-28 T-014] Dragon-roar hook for combat code: forwards to
 	// the brain, which owns the drop/scare rules. No-op (with the
 	// BeginPlay warnings as evidence) before the brain exists.

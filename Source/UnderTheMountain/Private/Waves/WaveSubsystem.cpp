@@ -132,6 +132,10 @@ void UWaveSubsystem::BeginWave(int32 Wave)
 	CurrentWave = Wave;
 	CompositionForWave(Wave, PendingBurglars, PendingDwarfParties, PendingAdventurers);
 	WaveThieves.Reset();
+	// [2026-11-03 T-104] Fresh wave, fresh missing-thief ledger: a slot
+	// that goes missing in this wave must report again even if the same
+	// index went missing in an earlier wave.
+	ReportedMissingSlots.Reset();
 	State = EWaveState::Spawning;
 	StateTimer = SpawnGroupIntervalSeconds; // first group immediately
 	UE_LOG(LogUnderTheMountain, Log, TEXT("Wave %d incoming (%d actors)"), Wave,
@@ -215,25 +219,48 @@ void UWaveSubsystem::SpawnNextGroup()
 
 bool UWaveSubsystem::AreWaveThievesResolved() const
 {
-	// [2026-11-01 T-016] Resolved = every spawned thief is dead,
+	// [2026-11-03 T-104] Resolved = every spawned thief is dead,
 	// escaped, or gone. An empty wave (data failed to load) counts
-	// as resolved so the machine can never deadlock a session.
+	// as resolved so the machine can never deadlock a session — and a
+	// missing individual (null slot where a spawn was recorded, or a
+	// live thief with no brain) also counts as resolved for the same
+	// reason, but LOUDLY: an Error naming the wave and the slot, once
+	// per slot per wave, so a failed spawn or unaccounted despawn can
+	// never end a wave silently again.
+	int32 Slot = 0;
 	for (const TWeakObjectPtr<AThiefCharacter>& Weak : WaveThieves)
 	{
 		AThiefCharacter* Thief = Weak.Get();
 		if (Thief == nullptr)
 		{
+			if (!ReportedMissingSlots.Contains(Slot))
+			{
+				UE_LOG(LogUnderTheMountain, Error,
+					   TEXT("Wave %d: thief slot %d missing (spawn recorded, actor gone) - counting resolved"),
+					   CurrentWave, Slot);
+				ReportedMissingSlots.Add(Slot);
+			}
+			++Slot;
 			continue;
 		}
 		UThiefBrain* Brain = Thief->GetBrain();
 		if (Brain == nullptr)
 		{
+			if (!ReportedMissingSlots.Contains(Slot))
+			{
+				UE_LOG(LogUnderTheMountain, Error,
+					   TEXT("Wave %d: thief %s has no brain - counting resolved"), CurrentWave,
+					   *Thief->GetName());
+				ReportedMissingSlots.Add(Slot);
+			}
+			++Slot;
 			continue;
 		}
 		if (Brain->State() != EThiefState::Dead && !Brain->ReachedExit())
 		{
 			return false;
 		}
+		++Slot;
 	}
 	return true;
 }

@@ -77,6 +77,31 @@ class UNDERTHEMOUNTAIN_API UWaveSubsystem : public UWorldSubsystem
 	UPROPERTY()
 	TArray<TWeakObjectPtr<AThiefCharacter>> WaveThieves;
 
+	// [2026-11-03 T-104] Once-per-slot ledger for the loud missing-thief
+	// report in AreWaveThievesResolved. Mutable because resolution is a
+	// const query and the ledger is only a reporting cache — it never
+	// changes the verdict, and BeginWave clears it for the next wave.
+	mutable TSet<int32> ReportedMissingSlots;
+
+#if WITH_DEV_AUTOMATION_TESTS
+  public:
+	// [2026-11-03 T-104] Test seams (dev builds only; production spawns
+	// through SpawnThief, which is why a null slot means a spawn whose
+	// actor is gone). A null entry models exactly that: the spawn was
+	// recorded, the actor is not there anymore. The parameter is a weak
+	// pointer (not a raw pointer) deliberately: converting a raw pointer
+	// needs the complete type, and this header only forward-declares the
+	// character — callers (which include the full header) convert.
+	void TestRecordWaveThief(TWeakObjectPtr<AThiefCharacter> Thief)
+	{
+		WaveThieves.Add(Thief);
+	}
+	bool TestAreWaveThievesResolved() const
+	{
+		return AreWaveThievesResolved();
+	}
+#endif
+
 	UPROPERTY()
 	TObjectPtr<UThiefDataAsset> BurglarData;
 	UPROPERTY()
