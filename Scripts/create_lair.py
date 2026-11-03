@@ -15,14 +15,24 @@
 # measured); the chamber holds 6+ turns; height 50m = 40m dive column +
 # flare. Touchdown disc: 12m radius, provably furniture-free (T-075: the
 # course wedged twice on centre furniture).
+import os as _os
 import random
+import sys as _sys
+
 import unreal
+
+_sys.path.insert(0, _os.path.join(unreal.Paths.project_dir(), "Scripts"))
+import map_guard
 
 MAP_PATH = "/Game/Maps/Lair/Lair"
 MAT_DIR = "/Game/Maps/Lair"
 
 les = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
 eas = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+# [2026-11-03 T-106] Re-run guard: backup + census + uniqueness assert
+# (shared map_guard module). Backup first: the file on disk is the
+# pre-run state until this process saves.
+map_guard.backup_level("lair")
 ues = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
 eal = unreal.EditorAssetLibrary
 mel = unreal.MaterialEditingLibrary
@@ -99,6 +109,7 @@ try:
 except Exception:
     _LOADED = False
 if _LOADED:
+    map_guard.log_census(eas, _LAID_OUT_PREFIXES)
     for _a in list(eas.get_all_level_actors()):
         _cls = _a.get_class().get_name()
         if _cls in ("PointLight", "DirectionalLight", "SkyLight"):
@@ -370,6 +381,7 @@ sun.get_component_by_class(unreal.DirectionalLightComponent).set_intensity(3.0)
 sky = require(eas.spawn_actor_from_class(unreal.SkyLight, unreal.Vector(CX, 0, 6200)), "spawn sky light")
 sky.set_actor_label("PeakSkyLight")
 
+map_guard.assert_unique_labels(eas, _LAID_OUT_PREFIXES)
 require(les.save_current_level(), "save level %s" % MAP_PATH)
 require(eal.save_directory(MAT_DIR), "save materials in %s" % MAT_DIR)
 print("LAIR_CREATED", MAP_PATH, "static_mesh_actors=", COUNTER[0])

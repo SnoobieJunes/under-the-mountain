@@ -5,7 +5,13 @@
 # [2026-10-28 T-046] Village/rocks/pines are the owner's Meshy world
 # meshes, placed at the T-017 layout positions and scaled per asset
 # from their ~1m normalized imports. Terraces/plateau stay rock boxes.
+import os as _os
+import sys as _sys
+
 import unreal
+
+_sys.path.insert(0, _os.path.join(unreal.Paths.project_dir(), "Scripts"))
+import map_guard
 
 MAP_PATH = "/Game/Maps/Lair/Lair"
 eal = unreal.EditorAssetLibrary
@@ -25,11 +31,13 @@ def require(value, action):
 
 les = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
 eas = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+map_guard.backup_level("exterior")
 require(les.load_level(MAP_PATH), "load level %s" % MAP_PATH)
 ues = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
 world = require(ues.get_editor_world(), "get editor world")
 require(world.get_path_name().startswith(MAP_PATH + "."), "verify editor world is %s" % MAP_PATH)
 
+map_guard.log_census(eas, ("Exterior_", "Goat_"))
 for a in list(eas.get_all_level_actors()):
     if a.get_actor_label().startswith("Exterior_"):
         require(eas.destroy_actor(a), "destroy prior exterior actor %s" % a.get_actor_label())
@@ -208,5 +216,6 @@ for i, (gx, gy) in enumerate(((VX - 3200, -1800), (VX - 2600, 900), (VX - 3800, 
     g.set_actor_label("Goat_%d" % i)
     print("GOAT_PLACED", i, gx, gy)
 
+map_guard.assert_unique_labels(eas, ("Exterior_", "Goat_"))
 require(les.save_current_level(), "save level %s" % MAP_PATH)
 print("EXTERIOR_DONE")

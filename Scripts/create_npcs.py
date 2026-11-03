@@ -8,7 +8,13 @@
 # respawned at the same deterministic spots (offsets are fixed
 # tables, never RNG, so evidence counts are stable).
 import math
+import os as _os
+import sys as _sys
+
 import unreal
+
+_sys.path.insert(0, _os.path.join(unreal.Paths.project_dir(), "Scripts"))
+import map_guard
 
 MAP_PATH = "/Game/Maps/Lair/Lair"
 eal = unreal.EditorAssetLibrary
@@ -26,12 +32,14 @@ unreal.AssetRegistryHelpers.get_asset_registry().scan_paths_synchronous(
 
 les = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
 eas = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+map_guard.backup_level("npcs")
 require(les.load_level(MAP_PATH), "load level %s" % MAP_PATH)
 ues = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
 world = require(ues.get_editor_world(), "get editor world")
 require(world.get_path_name().startswith(MAP_PATH + "."),
         "verify editor world is %s" % MAP_PATH)
 
+map_guard.log_census(eas, ("Villager_", "FarmGoat_"))
 for a in list(eas.get_all_level_actors()):
     label = a.get_actor_label()
     if label.startswith("Villager_") or label.startswith("FarmGoat_"):
@@ -98,5 +106,6 @@ for i, (fx, fy) in enumerate(FARMS):
         goats += 1
 print("FARM_GOATS_PLACED", goats)
 
+map_guard.assert_unique_labels(eas, ("Villager_", "FarmGoat_"))
 require(les.save_current_level(), "save level %s" % MAP_PATH)
 print("NPCS_DONE")

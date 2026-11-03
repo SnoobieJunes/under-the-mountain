@@ -3,7 +3,13 @@
 # [2026-10-28 T-041] Scent colour is not a material here any more: it
 # lives in NS_ScentRibbon (see the make_material calls below).
 # Values are docs/GAMEPLAY.md section 3/6 examples; brackets do the rest.
+import os as _os
+import sys as _sys
+
 import unreal
+
+_sys.path.insert(0, _os.path.join(unreal.Paths.project_dir(), "Scripts"))
+import map_guard
 
 DIR = "/Game/Gameplay/Treasures"
 eal = unreal.EditorAssetLibrary
@@ -92,6 +98,7 @@ for name, display, value, stone in TREASURES:
 les = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
 eas = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
 MAP_PATH = "/Game/Maps/Lair/Lair"
+map_guard.backup_level("treasures")
 require(les.load_level(MAP_PATH), "load level %s" % MAP_PATH)
 # [2026-10-28 T-037] Also verify the editor world's identity: a
 # successful load call followed by actor edits in some other current
@@ -101,6 +108,7 @@ world = require(ues.get_editor_world(), "get editor world after loading %s" % MA
 require(world.get_path_name().startswith(MAP_PATH + "."), "verify editor world is %s (got %s)" % (MAP_PATH, world.get_path_name()))
 cls = require(unreal.load_class(None, "/Script/UnderTheMountain.TreasureActor"), "load TreasureActor class")
 # remove prior placements so re-runs stay deterministic
+map_guard.log_census(eas, ("Treasure_",))
 for a in list(eas.get_all_level_actors()):
     if a.get_actor_label().startswith("Treasure_"):
         require(eas.destroy_actor(a), "destroy prior placement %s" % a.get_actor_label())
@@ -181,5 +189,6 @@ for label, asset, loc in PLACEMENTS:
     treasure_data = require(eal.load_asset(DIR + "/" + asset), "load treasure asset %s" % asset)
     a.set_editor_property("treasure_data", treasure_data)
     print("TREASURE_PLACED", label, loc)
+map_guard.assert_unique_labels(eas, ("Treasure_",))
 require(les.save_current_level(), "save level %s" % MAP_PATH)
 print("TREASURES_DONE")

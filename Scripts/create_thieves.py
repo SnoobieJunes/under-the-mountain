@@ -4,7 +4,13 @@
 # [2026-10-28 T-037, applied on the T-014 resume] Every Unreal helper
 # result is checked through require(): a failed delete/create/load/
 # spawn/save raises before any success text prints.
+import os as _os
+import sys as _sys
+
 import unreal
+
+_sys.path.insert(0, _os.path.join(unreal.Paths.project_dir(), "Scripts"))
+import map_guard
 
 DIR = "/Game/Gameplay/Thieves"
 MAP_PATH = "/Game/Maps/Lair/Lair"
@@ -67,6 +73,7 @@ for name, display, hp, sneak, flee, grab, cap, drops, traps, scale in THIEVES:
 
 les = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
 eas = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+map_guard.backup_level("thieves")
 require(les.load_level(MAP_PATH), "load level %s" % MAP_PATH)
 ues = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
 world = require(ues.get_editor_world(), "get editor world after loading %s" % MAP_PATH)
@@ -75,6 +82,7 @@ require(
     "verify editor world is %s (got %s)" % (MAP_PATH, world.get_path_name()),
 )
 cls = require(unreal.load_class(None, "/Script/UnderTheMountain.ThiefCharacter"), "load ThiefCharacter class")
+map_guard.log_census(eas, ("Thief_",))
 for a in list(eas.get_all_level_actors()):
     if a.get_actor_label().startswith("Thief_"):
         require(eas.destroy_actor(a), "destroy prior placement %s" % a.get_actor_label())
@@ -92,5 +100,6 @@ for label, asset, loc, exit_loc in PLACEMENTS:
     a.set_editor_property("thief_data", _load(DIR + "/" + asset, "thief asset %s" % asset))
     a.set_editor_property("exit_location", unreal.Vector(*exit_loc))
     print("THIEF_PLACED", label, loc, "exit", exit_loc)
+map_guard.assert_unique_labels(eas, ("Thief_",))
 require(les.save_current_level(), "save level %s" % MAP_PATH)
 print("THIEVES_DONE")

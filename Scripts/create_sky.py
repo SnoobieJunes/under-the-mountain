@@ -7,7 +7,13 @@
 # configures the actors it reads.
 # Re-runnable: Sky_* actors are destroyed and rebuilt; PeakSun and
 # PeakSkyLight (create_lair.py) are reconfigured in place.
+import os as _os
+import sys as _sys
+
 import unreal
+
+_sys.path.insert(0, _os.path.join(unreal.Paths.project_dir(), "Scripts"))
+import map_guard
 
 MAP_PATH = "/Game/Maps/Lair/Lair"
 eal = unreal.EditorAssetLibrary
@@ -25,12 +31,14 @@ unreal.AssetRegistryHelpers.get_asset_registry().scan_paths_synchronous(
 
 les = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
 eas = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+map_guard.backup_level("sky")
 require(les.load_level(MAP_PATH), "load level %s" % MAP_PATH)
 ues = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
 world = require(ues.get_editor_world(), "get editor world")
 require(world.get_path_name().startswith(MAP_PATH + "."),
         "verify editor world is %s" % MAP_PATH)
 
+map_guard.log_census(eas, ("Sky_",))
 for a in list(eas.get_all_level_actors()):
     if a.get_actor_label().startswith("Sky_"):
         require(eas.destroy_actor(a), "destroy prior sky actor %s" % a.get_actor_label())
@@ -99,5 +107,6 @@ sky_comp = skylight.get_component_by_class(unreal.SkyLightComponent)
 try_set(sky_comp, "intensity", 1.0)
 try_set(sky_comp, "real_time_capture", True)
 
+map_guard.assert_unique_labels(eas, ("Sky_",))
 require(les.save_current_level(), "save level %s" % MAP_PATH)
 print("SKY_DONE")
