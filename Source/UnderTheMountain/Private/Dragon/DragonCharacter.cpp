@@ -567,6 +567,17 @@ void ADragonCharacter::BeginPlay()
 			   TEXT("SK_Dragon_v4_FlyAnim not found; flight will use bind pose"));
 	}
 	UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon pawn spawned at %s"), *GetActorLocation().ToString());
+	// [2026-11-03 T-105] The landing curve lives in Stats alone: push its
+	// threshold into the movement params cache (the integrator's
+	// floor-contact routing reads the cache; LandingSeverity reads Stats
+	// directly). Tune Stats, never the cache.
+	if (Stats != nullptr)
+	{
+		if (UDragonMovementComponent* Proto = Cast<UDragonMovementComponent>(GetCharacterMovement()))
+		{
+			Proto->FlightParams.CachedLandingSpeedThreshold = Stats->LandingSpeedThreshold;
+		}
+	}
 	// [2026-11-01 T-052] Initial weather from the cvar (0 Clear
 	// unless a capture/console asked for Rain before spawn).
 	ApplyWeather(FMath::Clamp(CVarWeatherState.GetValueOnGameThread(), 0, 1));

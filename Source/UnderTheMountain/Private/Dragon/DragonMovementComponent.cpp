@@ -8,6 +8,7 @@
 // is unchanged while the course has a flyable chassis.
 
 #include "Dragon/DragonMovementComponent.h"
+#include "Dragon/DragonStatsComponent.h"
 #include "Dragon/DragonCharacter.h"
 #include "GameFramework/Character.h"
 #include "HAL/PlatformFilemanager.h"
@@ -159,23 +160,24 @@ float UDragonMovementComponent::BrakeStep(float Speed, float DeltaSeconds, const
 }
 
 float UDragonMovementComponent::LandingSeverity(float Speed, float ImpactAngleDeg,
-												const FDragonFlightParams& Params)
+												const UDragonStatsComponent& Stats)
 {
-	// [2026-11-03 T-075] Severity prices the surface-normal component only:
+	// [2026-11-03 T-105] Severity prices the surface-normal component only:
 	// Speed * sin(angle). A fast shallow flare (small normal) is cheap; a
-	// head-on lawn-dart pays full price. Same curve family as the shipped
-	// landing damage (Stats) so T-079 prices wall impacts on one scale.
+	// head-on lawn-dart pays full price. The curve is Stats' shipped
+	// landing curve, read here directly (single source of truth) so T-079
+	// prices wall impacts on exactly the scale landing damage uses.
 	const float ClampedAngle = FMath::Clamp(ImpactAngleDeg, 0.0f, 90.0f);
 	const float NormalSpeed = FMath::Max(0.0f, Speed) * FMath::Sin(FMath::DegreesToRadians(ClampedAngle));
-	if (NormalSpeed <= Params.LandingSpeedThreshold)
+	if (NormalSpeed <= Stats.LandingSpeedThreshold)
 	{
 		return 0.0f;
 	}
-	if (NormalSpeed >= Params.LandingSpeedMaxDamage)
+	if (NormalSpeed >= Stats.LandingSpeedMaxDamage)
 	{
 		return 1.0f;
 	}
-	return (NormalSpeed - Params.LandingSpeedThreshold) / (Params.LandingSpeedMaxDamage - Params.LandingSpeedThreshold);
+	return (NormalSpeed - Stats.LandingSpeedThreshold) / (Stats.LandingSpeedMaxDamage - Stats.LandingSpeedThreshold);
 }
 
 float UDragonMovementComponent::ClampSpeedToCeilings(float Speed, float PitchDeg) const
@@ -342,7 +344,7 @@ void UDragonMovementComponent::PhysCustom(float deltaTime, int32 Iterations)
 		// [2026-11-03 T-075] v0 ground contact: fast floor hits fall out so
 		// shipped Landed() prices the impact on the shared curve; slow
 		// contact settles to walk. Wall hits keep sliding (T-079's case).
-		if (FloorIntoSpeed > FlightParams.LandingSpeedThreshold)
+		if (FloorIntoSpeed > FlightParams.CachedLandingSpeedThreshold)
 		{
 			SetMovementMode(MOVE_Falling);
 		}

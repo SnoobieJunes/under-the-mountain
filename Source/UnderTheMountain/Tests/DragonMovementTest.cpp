@@ -8,6 +8,7 @@
 
 #include "Misc/AutomationTest.h"
 #include "Dragon/DragonMovementComponent.h"
+#include "Dragon/DragonStatsComponent.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -128,18 +129,35 @@ bool FDragonMovementTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("brake never goes negative"),
 			  UDragonMovementComponent::BrakeStep(100.0f, 1.0f, Params), 0.0f);
 
-	// [2026-11-03 T-075] Severity prices the normal component: below the
-	// 800 curve it is free, at 2200 head-on it is full, and the same speed
-	// at a shallow angle is cheaper than steep (flare != lawn-dart).
+	// [2026-11-03 T-105] Severity reads the Stats curve (single source of
+	// truth): below the 800 curve it is free, at 2200 head-on it is full,
+	// and the same speed at a shallow angle is cheaper than steep
+	// (flare != lawn-dart). T-079's pawn wiring passes Stats straight in.
+	UDragonStatsComponent* Stats = NewObject<UDragonStatsComponent>();
 	TestEqual(TEXT("sub-threshold impact is free"),
-			  UDragonMovementComponent::LandingSeverity(700.0f, 90.0f, Params), 0.0f);
+			  UDragonMovementComponent::LandingSeverity(700.0f, 90.0f, *Stats), 0.0f);
 	TestEqual(TEXT("max-curve head-on impact is full"),
-			  UDragonMovementComponent::LandingSeverity(2200.0f, 90.0f, Params), 1.0f);
-	const float Steep = UDragonMovementComponent::LandingSeverity(2000.0f, 90.0f, Params);
-	const float Shallow = UDragonMovementComponent::LandingSeverity(2000.0f, 20.0f, Params);
+			  UDragonMovementComponent::LandingSeverity(2200.0f, 90.0f, *Stats), 1.0f);
+	const float Steep = UDragonMovementComponent::LandingSeverity(2000.0f, 90.0f, *Stats);
+	const float Shallow = UDragonMovementComponent::LandingSeverity(2000.0f, 20.0f, *Stats);
 	TestTrue(TEXT("shallow flare is cheaper than head-on at the same speed"), Shallow < Steep);
 	TestEqual(TEXT("grazing contact is free"),
-			  UDragonMovementComponent::LandingSeverity(4000.0f, 5.0f, Params), 0.0f);
+			  UDragonMovementComponent::LandingSeverity(4000.0f, 5.0f, *Stats), 0.0f);
+
+	// [2026-11-03 T-105] The pins: the params cache defaults to Stats'
+	// threshold (what the pawn pushes at BeginPlay), and severity
+	// follows a retuned Stats — proving no private copy survives. The
+	// retune uses a separate instance so the T-064 cases below keep
+	// proving default-curve behavior.
+	TestEqual(TEXT("params cache defaults to the Stats threshold"),
+			  Params.CachedLandingSpeedThreshold, Stats->LandingSpeedThreshold);
+	UDragonStatsComponent* Retuned = NewObject<UDragonStatsComponent>();
+	Retuned->LandingSpeedThreshold = 1000.0f;
+	Retuned->LandingSpeedMaxDamage = 3000.0f;
+	TestEqual(TEXT("severity follows a retuned Stats curve (no private copy)"),
+			  UDragonMovementComponent::LandingSeverity(900.0f, 90.0f, *Retuned), 0.0f);
+	TestEqual(TEXT("severity reaches full at the retuned max"),
+			  UDragonMovementComponent::LandingSeverity(3000.0f, 90.0f, *Retuned), 1.0f);
 
 	// [2026-11-03 T-064] Dive is a posture: committed nose-down past 30 deg
 	// while above the precision band. Level, climbing, shallow, slow, and
@@ -169,13 +187,13 @@ bool FDragonMovementTest::RunTest(const FString& Parameters)
 	// head-on lawn-dart pays full, and a fast shallow dive flare stays
 	// cheap — the flare is never priced like the lawn-dart.
 	TestEqual(TEXT("dive-terminal head-on impact is full"),
-			  UDragonMovementComponent::LandingSeverity(4000.0f, 90.0f, Params), 1.0f);
-	const float DiveSteep = UDragonMovementComponent::LandingSeverity(4000.0f, 90.0f, Params);
-	const float DiveShallow = UDragonMovementComponent::LandingSeverity(4000.0f, 20.0f, Params);
+			  UDragonMovementComponent::LandingSeverity(4000.0f, 90.0f, *Stats), 1.0f);
+	const float DiveSteep = UDragonMovementComponent::LandingSeverity(4000.0f, 90.0f, *Stats);
+	const float DiveShallow = UDragonMovementComponent::LandingSeverity(4000.0f, 20.0f, *Stats);
 	TestTrue(TEXT("fast shallow dive flare is cheaper than head-on at dive speed"),
 			 DiveShallow < DiveSteep);
 	TestEqual(TEXT("grazing dive entry is free"),
-			  UDragonMovementComponent::LandingSeverity(3200.0f, 10.0f, Params), 0.0f);
+			  UDragonMovementComponent::LandingSeverity(3200.0f, 10.0f, *Stats), 0.0f);
 
 	return true;
 }

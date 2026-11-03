@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-03 — T-105 — The landing-damage curve lives in Stats alone now: wall-impact severity and the integrator's floor-contact routing read the same numbers instead of a mirrored copy (no user-visible change)
+
 2026-11-03 — T-104 — A wave with a missing thief now fails loudly: an error names the wave and the missing slot instead of silently clearing it (no user-visible change)
 
 2026-11-03 — T-066 — The lair is a mountain now: a 100 m great chamber with a 25 m open crown, dragon-passable east portal and west cave, two thief-only cracks the dragon cannot fit through, and the hoard on its own mound clear of the landing disc

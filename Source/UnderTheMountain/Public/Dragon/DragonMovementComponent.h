@@ -15,6 +15,8 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "DragonMovementComponent.generated.h"
 
+class UDragonStatsComponent;
+
 // [2026-11-03 T-062] Shipped flight scheme selector, mirrored by the
 // utm.flight.scheme console var (2 = Scheme C hybrid, shipped default).
 UENUM(BlueprintType)
@@ -89,15 +91,13 @@ struct FDragonFlightParams
 	UPROPERTY(EditAnywhere, Category = "Dragon|Flight")
 	float BrakeDecel = 2400.0f;
 
-	// [2026-11-03 T-075] Landing-severity curve family, shared with the
-	// shipped landing curve (Stats LandingSpeedThreshold/MaxDamage) so wall
-	// impacts (T-079) price on the same scale. T-079 owns pawn wiring.
-	UPROPERTY(EditAnywhere, Category = "Dragon|Flight")
-	float LandingSpeedThreshold = 800.0f;
-
-	// [2026-11-03 T-075] See LandingSpeedThreshold.
-	UPROPERTY(EditAnywhere, Category = "Dragon|Flight")
-	float LandingSpeedMaxDamage = 2200.0f;
+	// [2026-11-03 T-105] Single source of truth for the landing curve is
+	// Stats (LandingSpeedThreshold/MaxDamage, GAMEPLAY.md section 2).
+	// This is a runtime cache, pushed from Stats by the pawn at BeginPlay
+	// — deliberately NOT a UPROPERTY, so no second editor knob can
+	// diverge it. The integrator's floor-contact routing (:345) reads the
+	// cache; LandingSeverity below reads Stats directly.
+	float CachedLandingSpeedThreshold = 800.0f;
 
 	// [2026-11-03 T-075] Nose-follow responsiveness (1/s): how fast velocity
 	// steers onto the nose-directed desired vector. B doubles it.
@@ -197,7 +197,7 @@ class UNDERTHEMOUNTAIN_API UDragonMovementComponent : public UCharacterMovementC
 	// angle: only the surface-normal component (Speed * sin(angle)) prices
 	// on the landing curve, so a fast shallow flare is cheap and a head-on
 	// lawn-dart pays full price. AngleDeg is clamped to [0,90].
-	static float LandingSeverity(float Speed, float ImpactAngleDeg, const FDragonFlightParams& Params);
+	static float LandingSeverity(float Speed, float ImpactAngleDeg, const UDragonStatsComponent& Stats);
 
 	// [2026-11-03 T-064] Dive is a posture, not a button (adopted T-062
 	// decision): nose pitched down past 30 degrees while above the
