@@ -162,3 +162,9 @@ with the reserve intact (top up ~+50), or **725 available credits** for the
 quality-safe path (~625 spend + ~100 reserve; top up ~+225). Do not buy a
 larger tier until the live balance is confirmed; if it already shows ≥725, no
 upgrade is needed for this forecast.
+
+## Sprint landings — 2026-11-03 (T-100)
+
+- Dragon v6 (parallel flight-overhaul work): Content/Meshy/Dragon/dragon_v6_experiment.blend (39-bone rig: 7 wing bones/side with finger fan) + dragon-wings-v6/exports/Dragon_v6.fbx + 6 4K textures (Body/Wing x BaseColor/Normal/ORM) + 13 review renders; Scripts/create_dragon_anims.py retargeted (v6 default, v5 fallback). UE import + material hookup NOT yet run — owned by T-068 remainder. Render review noted two membrane defects (glide wingtip edge, hover down-beat spike) to clear in the UE pass.
+- Foliage: nat-broadleaf, nat-bush, nat-grass (FBX+GLB+basecolor+previews each) in Content/Meshy/World/; placement owned by the T-049/T-050 world chain.
+- Goat: no updated files landed this sprint (all goat sources predate 2026-11-02) — re-supply or confirm before the livestock pass.

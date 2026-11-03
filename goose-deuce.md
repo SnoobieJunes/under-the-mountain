@@ -123,6 +123,14 @@ tag, choose the owing one.
 <!-- Real entries accumulate below, NEWEST AT THE TOP. The top entries are
      session-start required reading (count: AGENTS.md → Session ritual). -->
 
+## 2026-11-03 — Asset ingest with the gate deferred and a dirty-tree start  [process]
+- Task: T-100 (sprint asset pull-in: dragon v6, foliage, anim script)
+- What: (1) Session started on a dirty tree — ~145 untracked files (prior sessions' editor-import .uasset flood plus this sprint's sources) against the ritual's clean-tree rule; proceeded at owner direction since the pull-in was the assigned work. (2) Committed without running Scripts/gate.sh (Definition of Done gate item waived once, at owner token directive). (3) v6 UE import/material hookup not run (the asset author's own caveat); Blender-side bone/weight numbers taken as reported, file-level integrity only.
+- Why: Owner ordered token-surgical execution: gate + editor import + Blender re-check cost more than this commit's risk (sources + script + docs only; create_dragon_anims.py runs headless in Blender, never in-game).
+- Where: Content/Meshy/Dragon/dragon-wings-v6/, Content/Meshy/Dragon/dragon_v6_experiment.blend, Content/Meshy/World/nat-*, Scripts/create_dragon_anims.py, TASKS.md, CHANGELOG.md, docs/ASSET-PIPELINE.md
+- Plan: AGENTS.md Definition of Done (gate green per product commit) → waived once here, owed work named in T-100 (gate + Blender re-check open the next session; v6 UE import owned by T-068 remainder; foliage placement by the T-049/T-050 chain). docs/PLAN.md not falsified; AGENTS.md snapshot unchanged (no rule or floor movement).
+- Commit(s): this commit
+
 ## 2026-11-03 — C hybrid goes additive with hover capture  [decision]
 - Task: T-075 (docs/FLIGHT-SPIKE.md §Candidate C; prototype course)
 - What: The coded C blend changed from multiplicative (velocity target interpolated momentum↔hover by band weight) to additive: momentum is always the baseline, band weight scales ADDED input thrust, and a hover-capture term settles only near-rest flight (fades in across the bottom 300 cm/s of the stall band; brake forces it). Pure rule HoverCaptureWeight is unit-tested; A/B paths untouched.
