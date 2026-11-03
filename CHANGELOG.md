@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-03 — T-066 — The lair is a mountain now: a 100 m great chamber with a 25 m open crown, dragon-passable east portal and west cave, two thief-only cracks the dragon cannot fit through, and the hoard on its own mound clear of the landing disc
+
 2026-11-03 — T-065 — Three dragon cameras: head-anchored chase by default, wide scenic and first-person on V (gamepad R3), persisted across sessions; pad stick aims the nose and every pitch axis inverts separately
 
 2026-11-03 — T-064 — The dive is now readable: the HUD shows DIVING (with the recovery), HOVER, BRAKING, or GLIDING while airborne, and the debug readout names the same states in player terms

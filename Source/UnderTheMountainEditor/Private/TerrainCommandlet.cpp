@@ -176,8 +176,11 @@ int32 UTerrainCommandlet::Main(const FString& Params)
 					  nullptr, LayerInfos,
 					  ELandscapeImportAlphamapType::Additive, TArrayView<const FLandscapeLayer>());
 
+	// [2026-11-03 T-066] Mountain material (renamed from the T-012
+	// M_RockDark set: fresh names dodge stale headless-registry cache
+	// collisions — see create_lair.py).
 	UMaterialInterface* RockMaterial = LoadObject<UMaterialInterface>(
-		nullptr, TEXT("/Game/Maps/Lair/M_RockDark.M_RockDark"));
+		nullptr, TEXT("/Game/Maps/Lair/M_MountainRock.M_MountainRock"));
 	if (RockMaterial)
 	{
 		// [2026-11-01 T-049] Property write plus an explicit
@@ -202,7 +205,7 @@ int32 UTerrainCommandlet::Main(const FString& Params)
 	else
 	{
 		UE_LOG(LogTemp, Warning,
-			   TEXT("TerrainCommandlet: M_RockDark not found; landscape keeps default material"));
+			   TEXT("TerrainCommandlet: M_MountainRock not found; landscape keeps default material"));
 	}
 	Landscape->RegisterAllComponents();
 

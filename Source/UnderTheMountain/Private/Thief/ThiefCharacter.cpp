@@ -27,6 +27,12 @@ AThiefCharacter::AThiefCharacter()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
+	// [2026-11-03 T-066] Burglar-built capsule (r=30/hh=88, 60 cm wide):
+	// thieves squeeze through the 80 cm mountain cracks that block the
+	// dragon (capsule r=42). Dwarf/adventurer visuals fit inside
+	// approximately; collision, not the mesh, is what the cracks test.
+	GetCapsuleComponent()->InitCapsuleSize(30.0f, 88.0f);
+
 	// [2026-10-28 T-044] Skeletal mesh starts hidden and the engine
 	// sphere is the constructed body; BeginPlay swaps which one is
 	// visible once ThiefData says whether this type has a Meshy mesh.
@@ -305,62 +311,98 @@ void AThiefCharacter::Tick(float DeltaSeconds)
 		}
 	}
 
-	// [2026-10-28 T-014] Ground-plane steering with chamber waypoints:
-	// the lair's doors all sit on the y=0 corridor between chamber
-	// centres (Scripts/create_lair.py), so a thief heading to another
-	// chamber first makes for its own centre, then the next centre —
-	// straight-line steering to a cross-chamber target wedges on the
-	// chamber walls (proven in the first -game run: no thief ever
-	// arrived). Within a chamber, steering is direct.
-	static const float ChamberCentersX[] = {0.0f, 6000.0f, 12000.0f, 19000.0f};
-	auto ChamberIndex = [](float X)
+	// [2026-11-03 T-066] Portal routing for the mountain topology (replaces
+	// the T-012 chamber-centre scheme, which died with the chain). The
+	// great chamber is convex and every cave/crack is a straight run, so
+	// routing is: same region -> steer direct; in a portal -> steer to
+	// its mouth; chamber -> portal destination -> steer to its mouth;
+	// chamber <-> open plain -> steer via the mouth nearest the goal.
+	// Regions: chamber disc (r=5000 around (9500,0)) vs the four portal
+	// boxes below vs the open plain. T-089 replaces all of this with real
+	// pathfinding and kills every map constant here.
+	static const FVector PortalMouths[4] = {
+		FVector(14500.0f, 0.0f, 150.0f),	 // east: grand portal
+		FVector(4500.0f, 0.0f, 150.0f),		 // west: dragon cave
+		FVector(7500.0f, 5000.0f, 150.0f),	 // north: thief crack
+		FVector(11500.0f, -5000.0f, 150.0f), // south: thief crack
+	};
+	static const FVector PortalExits[4] = {
+		FVector(18700.0f, 0.0f, 150.0f),
+		FVector(500.0f, 0.0f, 150.0f),
+		FVector(7500.0f, 7000.0f, 150.0f),
+		FVector(11500.0f, -7000.0f, 150.0f),
+	};
+	auto PortalIndexAt = [](const FVector& P) -> int32
 	{
-		if (X < 3000.0f)
+		if (P.X >= 14500.0f && P.X <= 18500.0f && FMath::Abs(P.Y) <= 350.0f)
 		{
 			return 0;
 		}
-		if (X < 9000.0f)
+		if (P.X >= 500.0f && P.X <= 4500.0f && FMath::Abs(P.Y) <= 200.0f)
 		{
 			return 1;
 		}
-		if (X < 15500.0f)
+		if (P.Y >= 5000.0f && P.Y <= 7000.0f && FMath::Abs(P.X - 7500.0f) <= 30.0f)
 		{
 			return 2;
 		}
-		return 3;
+		if (P.Y >= -7000.0f && P.Y <= -5000.0f && FMath::Abs(P.X - 11500.0f) <= 30.0f)
+		{
+			return 3;
+		}
+		if (FMath::Abs(P.X - 9500.0f) <= 5000.0f && FMath::Abs(P.Y) <= 5000.0f)
+		{
+			return -1;
+		}
+		return -2;
+	};
+	auto NearestExit = [&](const FVector& P) -> int32
+	{
+		int32 Best = 0;
+		float BestD = FVector::Dist2D(P, PortalExits[0]);
+		for (int32 i = 1; i < 4; ++i)
+		{
+			const float D = FVector::Dist2D(P, PortalExits[i]);
+			if (D < BestD)
+			{
+				BestD = D;
+				Best = i;
+			}
+		}
+		return Best;
 	};
 	const FVector MyLocation = GetActorLocation();
 	const FVector BrainDestination = Brain->CurrentDestination();
 	FVector SteerTarget = BrainDestination;
-	const int32 MyChamber = ChamberIndex(MyLocation.X);
-	const int32 DestChamber = ChamberIndex(BrainDestination.X);
-	// [2026-10-28 T-014] Monotonic waypoint progress: entering a new
-	// chamber restarts the two-stage crossing at stage one (own
-	// centre). Without this latch the old distance-only test flipped
-	// the target back once the thief passed 200cm beyond its centre.
-	if (MyChamber != LastChamber)
+	const int32 FromRegion = PortalIndexAt(MyLocation);
+	const int32 DestRegion = PortalIndexAt(BrainDestination);
+	if (FromRegion == DestRegion)
 	{
-		LastChamber = MyChamber;
-		bHeadingToNextCenter = false;
+		SteerTarget = BrainDestination;
 	}
-	if (MyChamber != DestChamber)
+	else if (FromRegion >= 0)
 	{
-		const FVector OwnCenter(ChamberCentersX[MyChamber], 0.0f, MyLocation.Z);
-		if (!bHeadingToNextCenter && FVector::Dist2D(MyLocation, OwnCenter) <= 200.0f)
-		{
-			bHeadingToNextCenter = true;
-		}
-		const int32 Next = MyChamber + (DestChamber > MyChamber ? 1 : -1);
-		SteerTarget = bHeadingToNextCenter
-						  ? FVector(ChamberCentersX[Next], 0.0f, MyLocation.Z)
-						  : OwnCenter;
+		const FVector& Mouth = PortalMouths[FromRegion];
+		SteerTarget = FVector(Mouth.X, Mouth.Y, MyLocation.Z);
+	}
+	else if (DestRegion >= 0)
+	{
+		const FVector& Mouth = PortalMouths[DestRegion];
+		SteerTarget = FVector(Mouth.X, Mouth.Y, MyLocation.Z);
+	}
+	else if (FromRegion == -1)
+	{
+		const FVector& Mouth = PortalMouths[NearestExit(BrainDestination)];
+		SteerTarget = FVector(Mouth.X, Mouth.Y, MyLocation.Z);
+	}
+	else if (DestRegion == -1)
+	{
+		const FVector& Mouth = PortalMouths[NearestExit(MyLocation)];
+		SteerTarget = FVector(Mouth.X, Mouth.Y, MyLocation.Z);
 	}
 	else
 	{
-		// [2026-10-28 T-014] Same chamber: steer directly at the
-		// brain destination (SteerTarget already holds it) and reset
-		// the latch so the next crossing starts at stage one.
-		bHeadingToNextCenter = false;
+		SteerTarget = BrainDestination;
 	}
 	const FVector ToDestination = SteerTarget - MyLocation;
 	if (ToDestination.Size() > 10.0f)

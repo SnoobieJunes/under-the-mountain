@@ -7,11 +7,13 @@
 
 bool UNotorietySubsystem::IsInsideLair(const FVector& Location)
 {
-	// [2026-11-01 T-016] Chamber chain C1..hoard at x 0..19000
-	// with 3000-wide chambers, plus margin; the shaft (z up to
-	// 5200 at the hoard) is inside until the peak exit.
-	return Location.X >= -2500.0f && Location.X <= 21500.0f && FMath::Abs(Location.Y) <= 2500.0f &&
-		   Location.Z <= 5200.0f;
+	// [2026-11-03 T-066] Mountain bounds (was the T-012 chamber chain
+	// x -2500..21500): the great chamber + slopes + portal runs live in
+	// x [-500, 20000], |y| <= 10000, z <= 5400. Above the crown opening
+	// (z > 5400) and past the apron (x > 20000) is outside — kills there
+	// are witnessed, exactly like the old peak exit above z 5200 was.
+	return Location.X >= -500.0f && Location.X <= 20000.0f && FMath::Abs(Location.Y) <= 10000.0f &&
+		   Location.Z <= 5400.0f;
 }
 
 int32 UNotorietySubsystem::StarsForPoints(int32 InPoints)

@@ -14,10 +14,10 @@
 
 namespace
 {
-// [2026-11-01 T-016] Lair entry: west edge of the entry chamber,
-// at floor height. Exit is the same point - thieves leave the
-// way they came in (the chamber chain doors are on the y=0 line).
-const FVector EntryPoint(-1300.0f, 0.0f, 160.0f);
+// [2026-11-03 T-066] Lair entry: the grand east portal of the mountain
+// (was the west edge of the T-012 entry chamber). Exit is the same point
+// - thieves leave the way they came in, through the portal.
+const FVector EntryPoint(18700.0f, 0.0f, 160.0f);
 } // namespace
 
 void UWaveSubsystem::CompositionForWave(int32 Wave, int32& OutBurglars, int32& OutDwarfParties,

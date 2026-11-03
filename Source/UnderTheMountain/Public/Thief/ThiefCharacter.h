@@ -91,16 +91,6 @@ class UNDERTHEMOUNTAIN_API AThiefCharacter : public ACharacter
 	// the task was parked (the stash would not compile without it).
 	float DebugLogTimer = 0.0f;
 
-	// [2026-10-28 T-014] Last chamber the steering latched onto; a
-	// change resets the two-stage waypoint so progress is monotonic.
-	int32 LastChamber = -1;
-
-	// [2026-10-28 T-014] Stage latch: false = steering to own centre,
-	// true = steering to the next centre. Once true it stays true
-	// until the chamber changes, so passing the centre cannot
-	// flip the target back (the pre-fix oscillation).
-	bool bHeadingToNextCenter = false;
-
 	// [2026-10-28 T-044] Last single-node anim handed to PlayAnimation,
 	// so Tick only (re)starts playback on a walk/run/still change and
 	// never restarts the same clip every tick. A raw pointer is safe

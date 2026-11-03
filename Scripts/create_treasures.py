@@ -112,39 +112,50 @@ for a in list(eas.get_all_level_actors()):
 # in every room, with the hoard richest. The script asserts its own
 # sum and bracket spread before placing anything - a retune that
 # breaks the section 8 total fails here, not in a hand count.
-# Coordinates are chamber-centre offsets in the CURRENT lair chain
-# (C1 0, C2 6000, C3 12000, hoard 19000); T-066's topology rebuild
-# re-runs this script with new centres, the denominations and the
-# 1800 total carry over unchanged.
+# Coordinates are zone centres in the CURRENT mountain topology
+# (chamber 9500, hoard mound 12500, west cave 2500, east portal 16800);
+# T-066's topology rebuild re-ran this script with new centres (was the
+# T-012 chain C1 0, C2 6000, C3 12000, hoard 19000). The denominations
+# and the 1800 total carry over unchanged.
 VALUES = {name: value for name, _display, value, _stone in TREASURES}
-CHAMBERS = [("C1", 0), ("C2", 6000), ("C3", 12000), ("Hoard", 19000)]
-SLOTS = [(-1000, -900), (1000, -800), (-800, 900), (900, 700), (-1200, 200),
-         (1200, -200), (0, -1100), (0, 1100), (-500, -500), (500, 500)]
+ZONE_SLOTS = {
+    # Hoard ring: on/around the mound (centre 12500,0), all 1900+ out.
+    "Hoard": [(1800, -1200), (2200, 800), (-2000, 1500), (2000, -1600),
+              (-1800, -1400), (1500, 1800)],
+    # Chamber ring: clear of the 12 m touchdown disc AND the hoard mound.
+    "Chamber": [(-3000, 2000), (3000, -2000), (-2500, -2500), (2500, 2500),
+                (0, 3000), (0, -3000), (-3500, 0)],
+    # Caves: along the axis, inside the 500-wide west cave / 800 tunnel.
+    "WestCave": [(-800, 0), (800, 0)],
+    "EastPortal": [(-1000, 200), (1000, -200)],
+}
+CHAMBERS = [("Hoard", 12500), ("Chamber", 9500), ("WestCave", 2500), ("EastPortal", 16800)]
 PLAN = [
-    # (chamber, asset, extra placements beyond the four originals below)
-    ("C1", "DA_Treasure_Goblet", 2), ("C1", "DA_Treasure_Coins", 2),
-    ("C1", "DA_Treasure_JewelledCup", 1),
-    ("C2", "DA_Treasure_Goblet", 2), ("C2", "DA_Treasure_Coins", 2),
-    ("C2", "DA_Treasure_JewelledCup", 2), ("C2", "DA_Treasure_GildedWeapon", 1),
-    ("C3", "DA_Treasure_Goblet", 2), ("C3", "DA_Treasure_Coins", 2),
-    ("C3", "DA_Treasure_JewelledCup", 2), ("C3", "DA_Treasure_GildedWeapon", 1),
+    # (zone, asset, extra placements beyond the four originals below)
     ("Hoard", "DA_Treasure_Goblet", 1), ("Hoard", "DA_Treasure_Coins", 2),
     ("Hoard", "DA_Treasure_JewelledCup", 3), ("Hoard", "DA_Treasure_GildedWeapon", 2),
     ("Hoard", "DA_Treasure_Chest", 1), ("Hoard", "DA_Treasure_PrizeChest", 1),
+    ("Chamber", "DA_Treasure_Goblet", 3), ("Chamber", "DA_Treasure_Coins", 3),
+    ("Chamber", "DA_Treasure_JewelledCup", 3), ("Chamber", "DA_Treasure_GildedWeapon", 1),
+    ("WestCave", "DA_Treasure_Goblet", 2), ("WestCave", "DA_Treasure_Coins", 2),
+    ("WestCave", "DA_Treasure_JewelledCup", 1),
+    ("EastPortal", "DA_Treasure_Goblet", 1), ("EastPortal", "DA_Treasure_Coins", 1),
+    ("EastPortal", "DA_Treasure_JewelledCup", 1), ("EastPortal", "DA_Treasure_GildedWeapon", 1),
 ]
 PLACEMENTS = [
-    ("Treasure_Goblet", "DA_Treasure_Goblet", (0, 900, 160)),
-    ("Treasure_JewelledCup", "DA_Treasure_JewelledCup", (6000, -1000, 160)),
-    ("Treasure_Chest", "DA_Treasure_Chest", (12000, 1000, 160)),
-    ("Treasure_SeeingStone", "DA_Artifact_SeeingStone", (19000, 0, 300)),
+    ("Treasure_Goblet", "DA_Treasure_Goblet", (7000, 2500, 160)),
+    ("Treasure_JewelledCup", "DA_Treasure_JewelledCup", (11500, 2500, 160)),
+    ("Treasure_Chest", "DA_Treasure_Chest", (12500, 500, 280)),
+    ("Treasure_SeeingStone", "DA_Artifact_SeeingStone", (12900, -100, 300)),
 ]
 _centres = dict(CHAMBERS)
 _slot_use = {name: 0 for name, _cx in CHAMBERS}
 _counters = {}
 for chamber, asset, count in PLAN:
     cx = _centres[chamber]
+    slots = ZONE_SLOTS[chamber]
     for _ in range(count):
-        dx, dy = SLOTS[_slot_use[chamber] % len(SLOTS)]
+        dx, dy = slots[_slot_use[chamber] % len(slots)]
         _slot_use[chamber] += 1
         _counters[asset] = _counters.get(asset, 0) + 1
         label = "Treasure_%s_%02d" % (asset.replace("DA_Treasure_", "").replace("DA_Artifact_", ""),

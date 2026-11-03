@@ -18,6 +18,14 @@ def require(value, action):
     return value
 
 
+# [2026-11-03 T-066] unreal.load_asset, not eal.load_asset: the latter
+# is registry-backed and returns None headless even for on-disk assets
+# (proven this session), while the former loads by package path directly
+# (the T-046 dashed-name precedent in create_exterior.py).
+def _load(path, what):
+    return require(unreal.load_asset(path), "load %s %s" % (what, path))
+
+
 # name, display, hp, sneak, flee, grab_s, cap, drops_all_on_roar, can_trap, scale
 THIEVES = [
     ("DA_Thief_Burglar", "Burglar", 20, 220, 520, 1.5, 1, True, False, (0.8, 0.8, 0.8)),
@@ -37,13 +45,9 @@ for name, display, hp, sneak, flee, grab, cap, drops, traps, scale in THIEVES:
     # exists: delete+recreate fails in-session for registry-loaded
     # DataAssets (delete reports success but the loaded package
     # still occupies the path, so create returns None — proven).
-    if eal.does_asset_exist(path):
-        da = require(eal.load_asset(path), "load existing thief asset %s" % path)
-    else:
-        da = require(
-            asset_tools.create_asset(name, DIR, unreal.ThiefDataAsset, unreal.DataAssetFactory()),
-            "create thief asset %s" % path,
-        )
+    # [2026-11-03 T-066] Load-first via unreal.load_asset (package path,
+    # not the blind registry): existing assets update in place.
+    da = _load(path, "thief asset")
     da.set_editor_property("display_name", display)
     da.set_editor_property("max_hp", float(hp))
     da.set_editor_property("sneak_speed", float(sneak))
@@ -55,9 +59,9 @@ for name, display, hp, sneak, flee, grab, cap, drops, traps, scale in THIEVES:
     da.set_editor_property("body_scale", unreal.Vector(*scale))
     slug = VISUALS[name]
     mesh_dir = "/Game/Meshy/Thieves/"
-    da.set_editor_property("mesh_asset", require(eal.load_asset(mesh_dir + slug + "_rigged"), "load mesh %s" % slug))
-    da.set_editor_property("walk_anim", require(eal.load_asset(mesh_dir + slug + "_walking_Anim"), "load walk anim %s" % slug))
-    da.set_editor_property("run_anim", require(eal.load_asset(mesh_dir + slug + "_running_Anim"), "load run anim %s" % slug))
+    da.set_editor_property("mesh_asset", _load(mesh_dir + slug + "_rigged", "mesh %s" % slug))
+    da.set_editor_property("walk_anim", _load(mesh_dir + slug + "_walking_Anim", "walk anim %s" % slug))
+    da.set_editor_property("run_anim", _load(mesh_dir + slug + "_running_Anim", "run anim %s" % slug))
     require(eal.save_asset(path), "save thief asset %s" % path)
     print("THIEF_ASSET", path, display)
 
@@ -75,16 +79,17 @@ for a in list(eas.get_all_level_actors()):
     if a.get_actor_label().startswith("Thief_"):
         require(eas.destroy_actor(a), "destroy prior placement %s" % a.get_actor_label())
 
-# label, asset, spawn, exit (reachable points on the y=0 corridor network)
+# label, asset, spawn, exit (spawn inside the mountain, exit at the
+# nearest outside point: north crack / west cave / grand portal)
 PLACEMENTS = [
-    ("Thief_Burglar", "DA_Thief_Burglar", (1300, -800, 150), (-1400, 0, 150)),
-    ("Thief_Dwarf", "DA_Thief_DwarfParty", (4500, 800, 150), (19000, 0, 150)),
-    ("Thief_Adventurer", "DA_Thief_Adventurer", (13500, -800, 150), (19000, 0, 150)),
+    ("Thief_Burglar", "DA_Thief_Burglar", (7500, 3000, 150), (7500, 7200, 150)),
+    ("Thief_Dwarf", "DA_Thief_DwarfParty", (6000, -2000, 150), (500, 0, 150)),
+    ("Thief_Adventurer", "DA_Thief_Adventurer", (14000, 1500, 150), (18700, 0, 150)),
 ]
 for label, asset, loc, exit_loc in PLACEMENTS:
     a = require(eas.spawn_actor_from_class(cls, unreal.Vector(*loc)), "spawn %s" % label)
     a.set_actor_label(label)
-    a.set_editor_property("thief_data", require(eal.load_asset(DIR + "/" + asset), "load thief asset %s" % asset))
+    a.set_editor_property("thief_data", _load(DIR + "/" + asset, "thief asset %s" % asset))
     a.set_editor_property("exit_location", unreal.Vector(*exit_loc))
     print("THIEF_PLACED", label, loc, "exit", exit_loc)
 require(les.save_current_level(), "save level %s" % MAP_PATH)

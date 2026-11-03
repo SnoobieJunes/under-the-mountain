@@ -1307,18 +1307,17 @@ void ADragonCharacter::TickIntro(float DeltaSeconds)
 			bIntroGnomeSpawned = true;
 			UThiefDataAsset* BurglarData = LoadObject<UThiefDataAsset>(
 				nullptr, TEXT("/Game/Gameplay/Thieves/DA_Thief_Burglar.DA_Thief_Burglar"));
-			// [2026-11-01 T-018] Spawned beside the hoard's prize
-			// chest (18500,-500): the brain makes for the richest
-			// treasure in reach, so the steal lands in seconds,
-			// not after a cross-lair trek (first version spawned
-			// at the chamber edge and the gnome walked to C3).
-			const FVector SpawnPoint(18300.0f, -200.0f, 300.0f);
+			// [2026-11-03 T-066] Spawned beside the hoard prize chest (12500, 500):
+			// the brain makes for the richest treasure in reach, so the steal
+			// lands in seconds, not after a cross-lair trek (first version
+			// spawned at the chamber edge and the gnome walked to C3).
+			const FVector SpawnPoint(12200.0f, 100.0f, 300.0f);
 			AThiefCharacter* Gnome = World->SpawnActorDeferred<AThiefCharacter>(
 				AThiefCharacter::StaticClass(), FTransform(FRotator::ZeroRotator, SpawnPoint));
 			if (Gnome != nullptr)
 			{
 				Gnome->ThiefData = BurglarData;
-				Gnome->ExitLocation = FVector(-1300.0f, 0.0f, 160.0f);
+				Gnome->ExitLocation = FVector(18700.0f, 0.0f, 160.0f);
 				Gnome->FinishSpawning(FTransform(FRotator::ZeroRotator, SpawnPoint));
 				IntroGnome = Gnome;
 				Intro->SetGnomeName(Gnome->GetFName());

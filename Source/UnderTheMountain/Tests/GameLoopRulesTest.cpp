@@ -28,13 +28,15 @@ bool FGameLoopRulesTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("150 points is 5 stars"), UNotorietySubsystem::StarsForPoints(150), 5);
 	TestEqual(TEXT("huge points stays 5 stars"), UNotorietySubsystem::StarsForPoints(9999), 5);
 
-	// --- Inside-lair zero-gain invariant ---
-	TestTrue(TEXT("hoard room is inside"),
-			 UNotorietySubsystem::IsInsideLair(FVector(19000.0f, 0.0f, 300.0f)));
-	TestTrue(TEXT("entry chamber is inside"),
-			 UNotorietySubsystem::IsInsideLair(FVector(0.0f, 0.0f, 150.0f)));
+	// --- Inside-lair zero-gain invariant (T-066 mountain bounds) ---
+	TestTrue(TEXT("hoard mound is inside"),
+			 UNotorietySubsystem::IsInsideLair(FVector(12500.0f, 0.0f, 300.0f)));
+	TestTrue(TEXT("grand portal is inside"),
+			 UNotorietySubsystem::IsInsideLair(FVector(17000.0f, 0.0f, 150.0f)));
 	TestFalse(TEXT("valley village is outside"),
 			  UNotorietySubsystem::IsInsideLair(FVector(38000.0f, 0.0f, 100.0f)));
+	TestTrue(TEXT("above the crown is outside"),
+			 !UNotorietySubsystem::IsInsideLair(FVector(9500.0f, 0.0f, 6000.0f)));
 	TestEqual(TEXT("inside kill gains 0"),
 			  UNotorietySubsystem::PointsForKillAt(FVector(6000.0f, 0.0f, 150.0f)), 0);
 	TestEqual(TEXT("outside kill gains 10"),

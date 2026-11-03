@@ -14,11 +14,12 @@ Hackathon 2026, Indie track (due 2026-11-04).
 ## Status (2026-10-31)
 
 Playable in the editor: a textured, rigged dragon with flight animation in a
-dressed mountain lair (3 chambers + hoard room + peak shaft), the signature
+dressed mountain lair (100 m great chamber + open crown, dragon-passable east
+portal and west cave, two thief-only cracks), the signature
 scent system (Niagara ribbons, value-only), a scale-colour picker, and live
 combat (fire breath, roar, eat). Three Meshy-modelled thief types (burglar,
 dwarf party, adventurer) run a data-driven AI state machine in the lair, and
-the peak shaft flies out onto a real Meshy village with goats in the valley —
+the grand portal flies out onto a real Meshy village with goats in the valley —
 all one map, no loading, measured at ~60 fps on the M1 Max.
 
 Still owed (see `TASKS.md`): the full scoped board now runs through T-092 —
@@ -47,8 +48,8 @@ Scripts/coverage.sh    # real llvm-cov line coverage (floor: AGENTS.md, 29%)
 ```
 
 To play: open the editor, load `/Game/Maps/Lair/Lair`, press **Play**. The
-dragon spawns at `DragonStart` in the entry chamber; the treasure rooms, the
-peak shaft, and the village are all reachable from there.
+dragon spawns at `DragonStart` in the great chamber; the hoard mound, the
+crown opening, the caves, and the village are all reachable from there.
 
 **Quick test (no editor): `Scripts/play.sh`** — builds the game target and
 launches a standalone game window on the Lair running exactly the code you
@@ -108,12 +109,14 @@ Notes:
 
 ### The world (one map, no load screens)
 
-- **Lair:** entry chamber → chamber 2 → chamber 3 → hoard room (40 m × 40 m)
-  with a 7 m × 7 m peak shaft rising 40 m to the summit. Built headless —
-  203 actors at creation (190 static meshes, gold/rock/wood materials, 10
-  point lights, a cool-glow light up the shaft, a sun + sky outside), with the
-  exterior village set added afterwards.
-- **Exterior:** the shaft exits onto a rock plateau, terraces step down east
+- **Lair:** a 100 m great chamber under a 25 m open crown, with a hoard mound
+  (+30 m X) clear of the 12 m touchdown disc; a dragon-passable grand east
+  portal (800×800) and west cave (500×600), plus two 80×220 thief-only cracks
+  the dragon cannot fit. Built headless —
+  293 actors at creation (chamber shell, slopes, crown ring, gold/rock/wood
+  materials, 13 point lights, a cool-glow light at the crown, a sun + sky
+  outside), with the exterior village set added afterwards.
+- **Exterior:** the grand portal exits onto a rock plateau, terraces step down east
   into a valley holding a real Meshy village — 5 houses (3 distinct house
   types), inn, castle tower, well, market stall, cart, crates, barrels, fence
   runs, 4 vista rocks and 4 pines — with **5 goats** wandering the pasture.

@@ -39,12 +39,11 @@ for a in list(eas.get_all_level_actors()):
 CUBE = require(unreal.load_asset("/Engine/BasicShapes/Cube"), "load Cube")
 CONE = require(unreal.load_asset("/Engine/BasicShapes/Cone"), "load Cone")
 SPHERE = require(unreal.load_asset("/Engine/BasicShapes/Sphere"), "load Sphere")
-M_ROCK = require(eal.load_asset("/Game/Maps/Lair/M_RockDark"), "load M_RockDark")
-M_WOOD = require(eal.load_asset("/Game/Maps/Lair/M_WoodDark"), "load M_WoodDark")
-M_GOLD = require(eal.load_asset("/Game/Maps/Lair/M_GoldWarm"), "load M_GoldWarm")
+M_ROCK = require(eal.load_asset("/Game/Maps/Lair/M_MountainRock"), "load M_MountainRock")
+M_WOOD = require(eal.load_asset("/Game/Maps/Lair/M_MountainWood"), "load M_MountainWood")
+M_GOLD = require(eal.load_asset("/Game/Maps/Lair/M_MountainGold"), "load M_MountainGold")
 
-HOARD_X = 19000.0
-TOP = 5200.0  # shaft exit height from create_lair.py
+HOARD_X = 19000.0  # terrace/village/massif anchor (unchanged T-017/T-050 geography)
 
 
 def box(label, mesh, center, size, mat, yaw=0.0, pitch=0.0):
@@ -60,10 +59,10 @@ def box(label, mesh, center, size, mat, yaw=0.0, pitch=0.0):
     return a
 
 
-# Peak plateau around the shaft mouth, then terraces stepping east
-# down to the valley (each 1300 lower, overlapping so flight and
-# walking both read as one mountainside).
-box("Exterior_Plateau", CUBE, (HOARD_X, 0, TOP - 100), (14000, 14000, 200), M_ROCK)
+# Peak shelf around the new crown (clear of the 25 m hole AND the touchdown
+# disc): from x=11000 (hole edge 10750 + margin) to Terrace1 (x 23000).
+# Terraces/village keep their T-017/T-050 positions downstream.
+box("Exterior_Plateau", CUBE, (17525, 0, 5050), (13050, 14000, 200), M_ROCK)
 for i, (cx, top_z) in enumerate(((HOARD_X + 9000, 3900), (HOARD_X + 15000, 2600), (HOARD_X + 21000, 1300))):
     box("Exterior_Terrace%d" % (i + 1), CUBE, (cx, 0, top_z - 150), (10000, 16000, 300), M_ROCK)
 # Valley floor: village + pasture ground (top at z=0).
