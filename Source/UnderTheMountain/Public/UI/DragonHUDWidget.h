@@ -28,7 +28,8 @@ class UNDERTHEMOUNTAIN_API UDragonHUDWidget : public UUserWidget
 	// fractions, star pips, gold and wave. WaveStateText is the
 	// caller's word so this widget stays presentation-only.
 	void Refresh(float HP, float MaxHP, float Stamina, float MaxStamina, int32 Stars, int32 Points,
-				 int64 Hoard, int64 StartingHoard, int32 Wave, const FString& WaveStateText);
+				 int64 Hoard, int64 StartingHoard, int32 Wave, const FString& WaveStateText,
+				 const FString& FlightStateLabel);
 
 	// [2026-11-01 T-019] Pure formatting, tested verbatim:
 	// star pips (filled/empty of 5) with the point total, the
@@ -38,6 +39,13 @@ class UNDERTHEMOUNTAIN_API UDragonHUDWidget : public UUserWidget
 	static FString FormatHoard(int64 Hoard, int64 StartingHoard, int32 Wave,
 							   const FString& WaveStateText);
 	static float BarFraction(float Value, float Max);
+
+	// [2026-11-03 T-064] Pure flight-state naming, tested verbatim: the
+	// player-terms line the HUD shows while airborne (dive names its
+	// recovery, glide names how to enter a dive). Dive wins ties — it is
+	// the urgent state. All false is level cruise (glide); the pawn
+	// passes empty while grounded so the line collapses.
+	static FString FormatFlightState(bool bDiving, bool bBraking, bool bHovering);
 
   protected:
 	virtual void NativeOnInitialized() override;
@@ -63,4 +71,9 @@ class UNDERTHEMOUNTAIN_API UDragonHUDWidget : public UUserWidget
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> WaveText;
+
+	// [2026-11-03 T-064] Flight-state line (Dive/Hover/Brake/Glide in
+	// player terms); hidden while grounded (empty text collapses it).
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> FlightStateText;
 };

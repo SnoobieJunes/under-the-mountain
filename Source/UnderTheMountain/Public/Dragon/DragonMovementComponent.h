@@ -199,6 +199,12 @@ class UNDERTHEMOUNTAIN_API UDragonMovementComponent : public UCharacterMovementC
 	// lawn-dart pays full price. AngleDeg is clamped to [0,90].
 	static float LandingSeverity(float Speed, float ImpactAngleDeg, const FDragonFlightParams& Params);
 
+	// [2026-11-03 T-064] Dive is a posture, not a button (adopted T-062
+	// decision): nose pitched down past 30 degrees while above the
+	// precision band. Pure so the integrator, the HUD naming, and the
+	// tests all read one definition. PitchDeg > 0 is nose-up.
+	static bool IsDivePosture(float PitchDeg, float Airspeed, const FDragonFlightParams& Params);
+
 	// [2026-11-03 T-075] Custom-mode integrator (Scheme A core / C high band /
 	// B forced-precision): nose-directed energy flight per the pure statics
 	// above, with steer lag, stall sink and brake. Collision slides; no floor

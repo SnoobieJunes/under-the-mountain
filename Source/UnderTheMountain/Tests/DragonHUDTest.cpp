@@ -35,6 +35,29 @@ bool FDragonHUDTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("bar fraction with broken max is empty"),
 			  UDragonHUDWidget::BarFraction(50.0f, 0.0f), 0.0f);
 
+	// [2026-11-03 T-064] Flight-state line, tested verbatim: the dive names
+	// its recovery, glide names how to enter a dive, and dive wins every
+	// tie — it is the urgent state. All false is level cruise; the pawn
+	// passes empty while grounded so the line collapses.
+	TestEqual(TEXT("dive names its recovery"),
+			  UDragonHUDWidget::FormatFlightState(true, false, false),
+			  FString(TEXT("DIVING - pull up or Brake")));
+	TestEqual(TEXT("dive wins over brake and hover"),
+			  UDragonHUDWidget::FormatFlightState(true, true, true),
+			  FString(TEXT("DIVING - pull up or Brake")));
+	TestEqual(TEXT("brake wins over hover"),
+			  UDragonHUDWidget::FormatFlightState(false, true, true),
+			  FString(TEXT("BRAKING")));
+	TestEqual(TEXT("brake alone"),
+			  UDragonHUDWidget::FormatFlightState(false, true, false),
+			  FString(TEXT("BRAKING")));
+	TestEqual(TEXT("hover names precision hold"),
+			  UDragonHUDWidget::FormatFlightState(false, false, true),
+			  FString(TEXT("HOVER - precision hold")));
+	TestEqual(TEXT("glide names how to enter a dive"),
+			  UDragonHUDWidget::FormatFlightState(false, false, false),
+			  FString(TEXT("GLIDING - nose down to dive")));
+
 	return true;
 }
 

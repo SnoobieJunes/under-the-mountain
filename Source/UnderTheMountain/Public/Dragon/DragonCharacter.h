@@ -172,7 +172,14 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// thrust factor exactly when the clock runs out.
 	void TickTrapSlow(float DeltaSeconds);
 
-	// [2026-10-28 T-033] Input contract: true only when every
+	// [2026-11-03 T-064] Flight-state classification shared by the HUD feed
+	// and the debug readout: dive is the shared posture rule, brake reads
+	// the brake input, hover is the precision band. Grounded (or legacy
+	// ground modes) leave all three false. Const: reads movement + input
+	// state only, never writes pools.
+	void FlightStateFlags(bool& bOutDiving, bool& bOutBraking, bool& bOutHovering) const;
+
+	// [2026-10-28 T-033] Input contract: true when every
 	// code-created action and the mapping context exist.
 	// EnsureInputActions() guarantees this before SetupPlayerInput
 	// Component binds anything (bindings store the action pointer,

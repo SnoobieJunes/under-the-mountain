@@ -141,6 +141,42 @@ bool FDragonMovementTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("grazing contact is free"),
 			  UDragonMovementComponent::LandingSeverity(4000.0f, 5.0f, Params), 0.0f);
 
+	// [2026-11-03 T-064] Dive is a posture: committed nose-down past 30 deg
+	// while above the precision band. Level, climbing, shallow, slow, and
+	// boundary flight are never a dive — however steep the camera looks.
+	TestTrue(TEXT("steep fast descent is a dive"),
+			 UDragonMovementComponent::IsDivePosture(-45.0f, 2000.0f, Params));
+	TestTrue(TEXT("vertical dive at terminal is a dive"),
+			 UDragonMovementComponent::IsDivePosture(-90.0f, 4000.0f, Params));
+	TestTrue(TEXT("just past the pitch line is a dive"),
+			 UDragonMovementComponent::IsDivePosture(-31.0f, 2000.0f, Params));
+	TestTrue(TEXT("just above the band is a dive"),
+			 UDragonMovementComponent::IsDivePosture(-45.0f, 1601.0f, Params));
+	TestFalse(TEXT("on the pitch line is not a dive"),
+			  UDragonMovementComponent::IsDivePosture(-30.0f, 2000.0f, Params));
+	TestFalse(TEXT("at the band edge is not a dive"),
+			  UDragonMovementComponent::IsDivePosture(-45.0f, 1600.0f, Params));
+	TestFalse(TEXT("shallow fast descent is not a dive"),
+			  UDragonMovementComponent::IsDivePosture(-10.0f, 3000.0f, Params));
+	TestFalse(TEXT("level cruise is not a dive"),
+			  UDragonMovementComponent::IsDivePosture(0.0f, 2000.0f, Params));
+	TestFalse(TEXT("climbing is not a dive"),
+			  UDragonMovementComponent::IsDivePosture(30.0f, 3000.0f, Params));
+	TestFalse(TEXT("slow steep looks are not a dive"),
+			  UDragonMovementComponent::IsDivePosture(-45.0f, 400.0f, Params));
+
+	// [2026-11-03 T-064] Speed+angle interplay at dive speeds: a terminal
+	// head-on lawn-dart pays full, and a fast shallow dive flare stays
+	// cheap — the flare is never priced like the lawn-dart.
+	TestEqual(TEXT("dive-terminal head-on impact is full"),
+			  UDragonMovementComponent::LandingSeverity(4000.0f, 90.0f, Params), 1.0f);
+	const float DiveSteep = UDragonMovementComponent::LandingSeverity(4000.0f, 90.0f, Params);
+	const float DiveShallow = UDragonMovementComponent::LandingSeverity(4000.0f, 20.0f, Params);
+	TestTrue(TEXT("fast shallow dive flare is cheaper than head-on at dive speed"),
+			 DiveShallow < DiveSteep);
+	TestEqual(TEXT("grazing dive entry is free"),
+			  UDragonMovementComponent::LandingSeverity(3200.0f, 10.0f, Params), 0.0f);
+
 	return true;
 }
 

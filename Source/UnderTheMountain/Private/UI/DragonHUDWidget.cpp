@@ -87,6 +87,10 @@ void UDragonHUDWidget::NativeOnInitialized()
 	StaminaText =
 		MakeLabel(WidgetTree, TEXT("HUDStaminaText"), TEXT("STAMINA"), 13, FLinearColor(0.8f, 1, 0.85f));
 	StaminaBar = MakeBar(WidgetTree, TEXT("HUDStaminaBar"), FLinearColor(0.25f, 0.8f, 0.35f));
+	// [2026-11-03 T-064] Flight-state line under the stamina bar (Dive /
+	// Hover / Brake / Glide in player terms); collapsed while grounded.
+	FlightStateText = MakeLabel(WidgetTree, TEXT("HUDFlightStateText"), TEXT(""), 13,
+								FLinearColor(1.0f, 0.9f, 0.55f));
 	if (VitalsPanel && VitalsBox && HPText && HPBar && StaminaText && StaminaBar)
 	{
 		VitalsBox->AddChildToVerticalBox(HPText);
@@ -97,6 +101,10 @@ void UDragonHUDWidget::NativeOnInitialized()
 		}
 		VitalsBox->AddChildToVerticalBox(StaminaText);
 		VitalsBox->AddChildToVerticalBox(StaminaBar);
+		if (FlightStateText != nullptr)
+		{
+			VitalsBox->AddChildToVerticalBox(FlightStateText);
+		}
 		VitalsPanel->SetContent(VitalsBox);
 		if (UCanvasPanelSlot* Slot = Canvas->AddChildToCanvas(VitalsPanel))
 		{
@@ -147,6 +155,27 @@ FString UDragonHUDWidget::FormatStars(int32 Stars, int32 Points)
 	return FString::Printf(TEXT("%s  %d pts"), *Pips, Points);
 }
 
+FString UDragonHUDWidget::FormatFlightState(bool bDiving, bool bBraking, bool bHovering)
+{
+	// [2026-11-03 T-064] Player-terms flight line. A dive always wins:
+	// speed into terrain is the urgent state, and its line carries the
+	// recovery ("pull up or Brake"). Glide names its own entry ("nose
+	// down to dive") so the verb is taught, not just labelled.
+	if (bDiving)
+	{
+		return TEXT("DIVING - pull up or Brake");
+	}
+	if (bBraking)
+	{
+		return TEXT("BRAKING");
+	}
+	if (bHovering)
+	{
+		return TEXT("HOVER - precision hold");
+	}
+	return TEXT("GLIDING - nose down to dive");
+}
+
 FString UDragonHUDWidget::FormatHoard(int64 Hoard, int64 StartingHoard, int32 Wave,
 									  const FString& WaveStateText)
 {
@@ -168,7 +197,7 @@ float UDragonHUDWidget::BarFraction(float Value, float Max)
 
 void UDragonHUDWidget::Refresh(float HP, float MaxHP, float Stamina, float MaxStamina, int32 Stars,
 							   int32 Points, int64 Hoard, int64 StartingHoard, int32 Wave,
-							   const FString& WaveStateText)
+							   const FString& WaveStateText, const FString& FlightStateLabel)
 {
 	if (HPBar)
 	{
@@ -200,5 +229,13 @@ void UDragonHUDWidget::Refresh(float HP, float MaxHP, float Stamina, float MaxSt
 	{
 		WaveText->SetText(FText::FromString(
 			FString::Printf(TEXT("Wave %d - %s"), Wave, *WaveStateText)));
+	}
+	if (FlightStateText)
+	{
+		// [2026-11-03 T-064] Empty (grounded) collapses the line; airborne
+		// always shows exactly one state.
+		FlightStateText->SetText(FText::FromString(FlightStateLabel));
+		FlightStateText->SetVisibility(FlightStateLabel.IsEmpty() ? ESlateVisibility::Collapsed
+																  : ESlateVisibility::Visible);
 	}
 }

@@ -316,6 +316,37 @@ void ADragonCharacter::TickTrapSlow(float DeltaSeconds)
 	UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon trap slow expired; speeds restored"));
 }
 
+void ADragonCharacter::FlightStateFlags(bool& bOutDiving, bool& bOutBraking, bool& bOutHovering) const
+{
+	// [2026-11-03 T-064] One classification for every reader (HUD feed,
+	// debug readout, and the FormatFlightState test contract): dive is
+	// the shared posture rule, brake is the held brake input that is not
+	// already a dive, hover is the precision band. Grounded leaves all
+	// three false so callers show nothing.
+	bOutDiving = false;
+	bOutBraking = false;
+	bOutHovering = false;
+	if (IsPrototypeFlying())
+	{
+		if (const UDragonMovementComponent* Proto = Cast<UDragonMovementComponent>(GetCharacterMovement()))
+		{
+			const float Airspeed = Proto->Velocity.Size();
+			bOutDiving = UDragonMovementComponent::IsDivePosture(
+				GetControlRotation().Pitch, Airspeed, Proto->FlightParams);
+			bOutBraking = bDiving && !bOutDiving;
+			bOutHovering = !bOutDiving && !bOutBraking &&
+						   UDragonMovementComponent::PrecisionAuthorityWeight(Airspeed, Proto->FlightParams) > 0.5f;
+		}
+	}
+	else if (IsFlying())
+	{
+		// Legacy scheme 0: the held Shift input IS the dive (camera-forward
+		// rocket, preserved as the baseline); hover is the slow band.
+		bOutDiving = bDiving;
+		bOutHovering = !bDiving && GetCharacterMovement()->Velocity.Size2D() < Stats->HoverSpeedThreshold;
+	}
+}
+
 bool ADragonCharacter::HasInputActions() const
 {
 	// [2026-10-28 T-033] Non-null check for the full code-created
@@ -1726,7 +1757,10 @@ void ADragonCharacter::UpdatePrototypeFlight(float DeltaSeconds)
 			const float Airspeed = Move->Velocity.Size();
 			const float AuthorityW = UDragonMovementComponent::PrecisionAuthorityWeight(
 				Airspeed, Proto->FlightParams);
-			const bool bDivePosture = GetControlRotation().Pitch < -30.0f && Airspeed > Proto->FlightParams.MomentumAuthorityMinSpeed;
+			// [2026-11-03 T-064] Dive is the shared posture rule now (one
+			// definition for drain, naming, and tests).
+			const bool bDivePosture = UDragonMovementComponent::IsDivePosture(
+				GetControlRotation().Pitch, Airspeed, Proto->FlightParams);
 			const bool bHoverBand = AuthorityW > 0.5f || Move->Velocity.Size2D() < Stats->HoverSpeedThreshold;
 			const float ProtoDrainRate = bDivePosture ? 0.0f
 													  : (bHoverBand ? Stats->HoverDrainPerSecond : Stats->GlideDrainPerSecond);
@@ -2162,11 +2196,22 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 													   TEXT("Active"), TEXT("Session over")};
 					const int32 WaveIndex =
 						FMath::Clamp(static_cast<int32>(Waves->GetWaveState()), 0, 3);
+					// [2026-11-03 T-064] Flight-state line: one classification,
+					// caller-worded like WaveStateText. Only flight modes show
+					// a line — grounded (and falling) pass empty and the
+					// widget collapses it.
+					bool bFlightDive = false;
+					bool bFlightBrake = false;
+					bool bFlightHover = false;
+					FlightStateFlags(bFlightDive, bFlightBrake, bFlightHover);
+					const FString FlightStateText = (IsPrototypeFlying() || IsFlying())
+														? UDragonHUDWidget::FormatFlightState(bFlightDive, bFlightBrake, bFlightHover)
+														: FString();
 					HUDWidget->Refresh(Stats->HP, Stats->MaxHP, Stats->Stamina, Stats->MaxStamina,
 									   Notoriety->GetStars(), Notoriety->GetPoints(),
 									   Hoard->GetCurrentHoard(TreasureSub->Registry()->TotalGold()),
 									   Hoard->GetStartingHoard(), Waves->GetCurrentWave(),
-									   WaveWords[WaveIndex]);
+									   WaveWords[WaveIndex], FlightStateText);
 				}
 			}
 		}
@@ -2417,6 +2462,20 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 			// control: force walking mode so landing logic takes over.
 			GetCharacterMovement()->SetMovementMode(MOVE_Falling);
 		}
+	}
+	else if (IsPrototypeFlying())
+	{
+		// [2026-11-03 T-064] Hybrid naming for the readout only — drain ran
+		// in UpdatePrototypeFlight above, so this branch never spends.
+		// Player terms, matching the HUD line: a dive names its recovery,
+		// level cruise names how to enter one.
+		bool bNameDive = false;
+		bool bNameBrake = false;
+		bool bNameHover = false;
+		FlightStateFlags(bNameDive, bNameBrake, bNameHover);
+		FlightModeName = bNameDive ? TEXT("Dive - pull up or Brake")
+								   : (bNameBrake ? TEXT("Braking")
+												 : (bNameHover ? TEXT("Hover - precision hold") : TEXT("Glide - nose down to dive")));
 	}
 	else if (GetCharacterMovement()->MovementMode == MOVE_Falling)
 	{

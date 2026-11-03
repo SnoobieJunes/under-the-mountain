@@ -138,6 +138,15 @@ float UDragonMovementComponent::HoverCaptureWeight(float Airspeed, bool bBraking
 	return FMath::Clamp((Params.StallSpeed - Airspeed) / 300.0f, 0.0f, 1.0f);
 }
 
+bool UDragonMovementComponent::IsDivePosture(float PitchDeg, float Airspeed, const FDragonFlightParams& Params)
+{
+	// [2026-11-03 T-064] Committed nose-down (past -30 deg) while too fast
+	// for precision thrust: gravity owns the flight path there, so speed
+	// is being bought with altitude. Level, climbing, and slow flight —
+	// however steep the camera looks — are never a dive.
+	return PitchDeg < -30.0f && Airspeed > Params.MomentumAuthorityMinSpeed;
+}
+
 float UDragonMovementComponent::BrakeStep(float Speed, float DeltaSeconds, const FDragonFlightParams& Params)
 {
 	// [2026-11-03 T-075] Linear aerodynamic brake toward a controllable stop;
