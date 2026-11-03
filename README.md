@@ -118,7 +118,8 @@ Notes:
 - **Lair:** a 100 m great chamber under a 25 m open crown, with a hoard mound
   (+30 m X) clear of the 12 m touchdown disc; a dragon-passable grand east
   portal (800×800) and west cave (500×600), plus two 80×220 thief-only cracks
-  the dragon cannot fit. Built headless —
+  the dragon cannot fit. The mound visibly shrinks in 3 steps as the hoard
+  is stolen (75/50/20% of start). Built headless —
   293 actors at creation (chamber shell, slopes, crown ring, gold/rock/wood
   materials, 13 point lights, a cool-glow light at the crown, a sun + sky
   outside), with the exterior village set added afterwards.

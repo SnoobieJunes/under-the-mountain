@@ -546,6 +546,13 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	TSet<FName> CountedPropBurns;
 	float LoopAuditTimer = 0.0f;
 	bool bOutcomeLogged = false;
+	// [2026-11-03 T-086] Hoard-mound visual: cached actor + base scale
+	// (captured on first sight — box() bakes size into actor scale),
+	// last applied step (-1 forces the first apply + log).
+	UPROPERTY()
+	TObjectPtr<class AStaticMeshActor> HoardMoundActor;
+	FVector HoardMoundBaseScale = FVector::OneVector;
+	int32 HoardMoundStep = -1;
 	// [2026-11-03 T-083] Wave-gold XP bookkeeping: the wave whose
 	// hoard window is open, and the hoard total when it opened. When
 	// the wave number advances, the finished wave's net gold is

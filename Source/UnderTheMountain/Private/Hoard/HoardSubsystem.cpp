@@ -82,3 +82,47 @@ const UHoardThresholdsAsset* UHoardSubsystem::Thresholds() const
 {
 	return ThresholdsAsset;
 }
+
+int32 UHoardSubsystem::HoardMoundStep(int64 CurrentHoard, int64 StartingHoard, float WarnFraction,
+									  float WinFraction, float LoseFraction)
+{
+	// [2026-11-03 T-086] Same boundary contract as ClassifyOutcome:
+	// double-precision fraction with the 1e-6 epsilon, inclusive —
+	// sitting exactly on a line reads the fuller mound, never the
+	// emptier one by float dust.
+	if (StartingHoard <= 0)
+	{
+		return 0;
+	}
+	const double Fraction = static_cast<double>(CurrentHoard) / static_cast<double>(StartingHoard);
+	if (Fraction + 1e-6 >= WarnFraction)
+	{
+		return 0;
+	}
+	if (Fraction + 1e-6 >= WinFraction)
+	{
+		return 1;
+	}
+	if (Fraction + 1e-6 >= LoseFraction)
+	{
+		return 2;
+	}
+	return 3;
+}
+
+float UHoardSubsystem::HoardMoundScaleForStep(int32 Step)
+{
+	// [2026-11-03 T-086] Fixed presentation sizes: the boundaries are
+	// data (see above), these multipliers are just what reads.
+	switch (FMath::Clamp(Step, 0, 3))
+	{
+	case 0:
+		return 1.0f;
+	case 1:
+		return 0.8f;
+	case 2:
+		return 0.6f;
+	default:
+		return 0.4f;
+	}
+}

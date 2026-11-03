@@ -74,6 +74,27 @@ bool FGameLoopRulesTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("dragon down loses mid-session too"),
 			 Classify(8500, false, true) == EHoardOutcome::LoseDrivenOut);
 
+	// --- T-086 mound steps: step down at 75/50/20% of start, inclusive
+	// boundaries (same epsilon contract as ClassifyOutcome), 0 start
+	// reads full. Fractions ride as parameters like the classifier's.
+	auto MoundStep = [](int64 Current, int64 Start)
+	{
+		return UHoardSubsystem::HoardMoundStep(Current, Start, 0.75f, 0.5f, 0.2f);
+	};
+	TestEqual(TEXT("full hoard reads step 0"), MoundStep(8500, 8500), 0);
+	TestEqual(TEXT("above warning reads step 0"), MoundStep(7000, 8500), 0);
+	TestEqual(TEXT("exactly on warning reads step 0"), MoundStep(6375, 8500), 0);
+	TestEqual(TEXT("below warning reads step 1"), MoundStep(6374, 8500), 1);
+	TestEqual(TEXT("exactly on win reads step 1"), MoundStep(4250, 8500), 1);
+	TestEqual(TEXT("below win reads step 2"), MoundStep(4249, 8500), 2);
+	TestEqual(TEXT("exactly on lose reads step 2"), MoundStep(1700, 8500), 2);
+	TestEqual(TEXT("below lose reads step 3"), MoundStep(1699, 8500), 3);
+	TestEqual(TEXT("empty hoard reads step 3"), MoundStep(0, 8500), 3);
+	TestEqual(TEXT("zero start reads full, never negative"), MoundStep(0, 0), 0);
+	TestEqual(TEXT("step 0 is full size"), UHoardSubsystem::HoardMoundScaleForStep(0), 1.0f);
+	TestEqual(TEXT("step 3 is the smallest"), UHoardSubsystem::HoardMoundScaleForStep(3), 0.4f);
+	TestEqual(TEXT("out-of-range step clamps"), UHoardSubsystem::HoardMoundScaleForStep(99), 0.4f);
+
 	// --- Hoard ledger: session start latches, thefts reduce ---
 	UHoardSubsystem* Hoard = NewObject<UHoardSubsystem>();
 	Hoard->RecordSessionStart(3000);

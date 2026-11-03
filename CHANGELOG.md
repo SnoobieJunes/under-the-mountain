@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-03 — T-086 — Hoard mound visibly shrinks in 3 steps as thieves steal (75/50/20% of start)
+
 2026-11-03 — T-083 — XP pool: inside kills +10, lootless scares +5, wave gold +1/25, shown on the HUD, no levels yet
 
 2026-11-03 — T-079 — Flying into walls now costs HP on the shared landing curve and kills momentum by severity; brushes stay free

@@ -46,6 +46,13 @@ class UNDERTHEMOUNTAIN_API UHoardThresholdsAsset : public UDataAsset
 	UPROPERTY(EditAnywhere, Category = "Hoard")
 	int32 FinalWave = 6;
 
+	// [2026-11-03 T-086] First mound-shrink step (GAMEPLAY.md section
+	// 8: 75%). Win/LoseFraction double as the 50%/20% steps, so the
+	// world shows the approach to the scoring lines on the same
+	// numbers that trigger them.
+	UPROPERTY(EditAnywhere, Category = "Hoard")
+	float MoundWarningFraction = 0.75f;
+
 	// [2026-11-03 T-083] Level curve, RESERVED EMPTY in M1 per
 	// GAMEPLAY.md section 8 (levels + stat growth arrive in M2).
 	// Present so the data slot exists; no code reads it yet.
@@ -73,6 +80,20 @@ class UNDERTHEMOUNTAIN_API UHoardSubsystem : public UWorldSubsystem
 	// registry total. First call wins; later calls are no-ops so
 	// a mid-session registry change cannot move the goalposts.
 	void RecordSessionStart(int64 RegistryTotalGold);
+
+	// [2026-11-03 T-086] Hoard-mound visual step from the session
+	// totals: 0 = full mound, 1/2/3 = shrunk at the warning/win/lose
+	// fractions. Pure and headless-tested; the fractions ride as
+	// parameters (runtime reads the DA, tests pass the spec values —
+	// the T-016 AT-HoardThresholds precedent). Never negative: a zero
+	// start (uninitialised session) reads full, not empty.
+	static int32 HoardMoundStep(int64 CurrentHoard, int64 StartingHoard, float WarnFraction,
+								float WinFraction, float LoseFraction);
+
+	// [2026-11-03 T-086] Mound scale for a step: full, then three
+	// shrinking presentation sizes. Fixed presentation curve (not
+	// balance tuning): only the boundaries come from data.
+	static float HoardMoundScaleForStep(int32 Step);
 
 	// [2026-11-01 T-016] A thief got out with loot: reduce the
 	// hoard by what it carried (registry values, read by the

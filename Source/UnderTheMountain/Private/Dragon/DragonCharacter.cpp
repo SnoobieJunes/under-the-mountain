@@ -45,6 +45,7 @@
 #include "Engine/DirectionalLight.h"
 #include "Engine/ExponentialHeightFog.h"
 #include "Engine/SkyLight.h"
+#include "Engine/StaticMeshActor.h"
 #include "EngineUtils.h"
 #include "HAL/IConsoleManager.h"
 #include "HAL/PlatformMisc.h"
@@ -1700,6 +1701,48 @@ void ADragonCharacter::AuditGameLoop(float DeltaSeconds)
 		}
 		XPWaveTracked = Waves->GetCurrentWave();
 		XPWaveHoardStart = CurrentHoardNow;
+	}
+
+	// [2026-11-03 T-086] Hoard-mound visual: find by name-or-label
+	// prefix (box() suffixes placed labels prefix_NNN, so exact match
+	// is wrong; GetActorNameOrLabel also survives cooking, where
+	// editor labels are stripped but object names persist). Base scale
+	// is captured on first sight (box() bakes size into actor scale);
+	// applies + logs only on step change.
+	if (!IsValid(HoardMoundActor.Get()))
+	{
+		TArray<AActor*> MeshActors;
+		UGameplayStatics::GetAllActorsOfClass(World, AStaticMeshActor::StaticClass(), MeshActors);
+		for (AActor* Actor : MeshActors)
+		{
+			if (Actor != nullptr && Actor->GetActorNameOrLabel().StartsWith(TEXT("HoardMound")))
+			{
+				HoardMoundActor = Cast<AStaticMeshActor>(Actor);
+				if (HoardMoundActor != nullptr)
+				{
+					HoardMoundBaseScale = HoardMoundActor->GetActorScale3D();
+				}
+				break;
+			}
+		}
+	}
+	if (HoardMoundActor != nullptr)
+	{
+		const UHoardThresholdsAsset* HT = Hoard->Thresholds();
+		const float WarnF = HT != nullptr ? HT->MoundWarningFraction : 0.75f;
+		const float WinF = HT != nullptr ? HT->WinFraction : 0.5f;
+		const float LoseF = HT != nullptr ? HT->LoseFraction : 0.2f;
+		const int32 Step = UHoardSubsystem::HoardMoundStep(CurrentHoardNow, Hoard->GetStartingHoard(),
+														   WarnF, WinF, LoseF);
+		if (Step != HoardMoundStep)
+		{
+			HoardMoundStep = Step;
+			const float StepScale = UHoardSubsystem::HoardMoundScaleForStep(Step);
+			HoardMoundActor->SetActorScale3D(HoardMoundBaseScale * StepScale);
+			UE_LOG(LogUnderTheMountain, Log,
+				   TEXT("Hoard mound step %d/3 (%lld of %lld gold, scale %.1f)"), Step,
+				   CurrentHoardNow, Hoard->GetStartingHoard(), StepScale);
+		}
 	}
 
 	LoopAuditTimer += DeltaSeconds;
