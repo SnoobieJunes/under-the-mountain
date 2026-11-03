@@ -39,9 +39,12 @@ bool FDragonInputTest::RunTest(const FString& Parameters)
 	// reflected UPROPERTY, or the GC can collect objects the pawn
 	// still points at (T-004 sweep finding).
 	UClass* PawnClass = ADragonCharacter::StaticClass();
+	// [2026-11-03 T-075] Prototype actions join the GC contract with the rest:
+	// an unreflected action is collectable mid-flight (same T-004 lesson).
 	for (const TCHAR* Member :
 		 {TEXT("MoveAction"), TEXT("LookAction"), TEXT("FlapAction"), TEXT("ToggleFlightAction"),
 		  TEXT("DiveAction"), TEXT("TrueSightAction"), TEXT("TintAction"), TEXT("TintWidget"),
+		  TEXT("FreeLookAction"), TEXT("SinkAction"), TEXT("SteerLatchAction"),
 		  TEXT("MappingContext")})
 	{
 		TestNotNull(FString::Printf(TEXT("%s is a reflected UPROPERTY"), Member),

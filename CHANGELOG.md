@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-03 — T-075 — Flight-controls spike measured all three schemes on a scripted live-world course and provisionally picks Scheme C (hybrid) for the T-062 overhaul: real climbs, controlled turns, hover-hold and clean assisted landings, all behind a default-off console toggle (no user-visible change)
+
 2026-11-02 — T-058 — Exhausted dragons no longer walk in mid-air: falling uses flight poses (wings out, legs tucked) instead of the ground Walk clip; wingtips extended further (span ~1.8) on the perpendicular line
 
 2026-11-02 — T-058 — Wing membrane cut to the arm: the sail no longer webs back to the hips (chord pulled to the wing bones), and hind legs trail streamlined along the tail instead of splaying

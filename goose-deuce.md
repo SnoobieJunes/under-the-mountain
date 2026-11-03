@@ -123,6 +123,22 @@ tag, choose the owing one.
 <!-- Real entries accumulate below, NEWEST AT THE TOP. The top entries are
      session-start required reading (count: AGENTS.md → Session ritual). -->
 
+## 2026-11-03 — C hybrid goes additive with hover capture  [decision]
+- Task: T-075 (docs/FLIGHT-SPIKE.md §Candidate C; prototype course)
+- What: The coded C blend changed from multiplicative (velocity target interpolated momentum↔hover by band weight) to additive: momentum is always the baseline, band weight scales ADDED input thrust, and a hover-capture term settles only near-rest flight (fades in across the bottom 300 cm/s of the stall band; brake forces it). Pure rule HoverCaptureWeight is unit-tested; A/B paths untouched.
+- Why: Measured on the course: the multiplicative blend dragged every sub-1600 coast to hover with no input (C cruise decayed, turn entry died at ~0), so C could never coast, turn, or dive-recover — the pillar fantasy (glide survives stick release) failed by construction. Additive C turns a controlled 14 m, holds hover to 39 cm, lands clean.
+- Where: Source/UnderTheMountain/Private/Dragon/DragonMovementComponent.cpp (PhysCustom Desired), Public/Dragon/DragonMovementComponent.h (HoverCaptureWeight), Source/UnderTheMountain/Tests/DragonMovementTest.cpp, docs/FLIGHT-SPIKE.md (amended below), docs/course-evidence/scheme2.csv
+- Plan: docs/FLIGHT-SPIKE.md §Candidate C described the blend as authority-by-airspeed without fixing the no-input baseline → amended in this commit to the additive semantics; T-062 implements C as amended. Blend width/terminals unchanged (still course-falsifiable).
+- Commit(s): this commit
+
+## 2026-11-03 — Impulse authority latch for takeoffs  [decision]
+- Task: T-075 (docs/FLIGHT-SPIKE.md adopted inputs; prototype course)
+- What: Surge/Ascent set ImpulseAuthorityTime (1.5 s window, tested default) forcing momentum authority; the C blend reads it before the airspeed smoothstep. Pure rule BlendAuthorityWeight is unit-tested at all four corners.
+- Why: Measured on the course: an Ascent from standstill read ~85% precision weight, so the hover-hold killed every launch within a second (C liftoff 81 cm vs A's 1021 cm). Takeoffs must fly, not snap back to hover; 1.5 s covers launch-to-cruise and is course-falsifiable.
+- Where: Source/UnderTheMountain/{Public,Private}/Dragon/DragonMovementComponent.{h,cpp} (latch field, window param, both impulses), Source/UnderTheMountain/Tests/DragonMovementTest.cpp, docs/FLIGHT-SPIKE.md (amended below)
+- Plan: docs/FLIGHT-SPIKE.md named Ascent/Surge impulses without a blend interaction → amended in this commit; T-062 inherits the latch. No stamina numbers move (20-point reserves stand).
+- Commit(s): this commit
+
 ## 2026-11-02 — Falling played Walk in mid-air (the screenshot bug)  [decision]
 - Task: T-058 follow-up (owner top-down screenshot 2026-11-02 post-merge)
 - What: Root cause of the swept/dangling screenshot was runtime state, not clips: exhaustion sets MOVE_Falling (T-003/T-036), and the T-068 anim driver selected ground states unless MOVE_Flying — so every zero-stamina descent (constant in playtests: stamina 5.1 in the shot) played Walk in the air: folded swept wings, stepping legs. Driver now treats Falling as airborne for state + tilt. Also: outer wing segments lengthened again (chain 0.85 -> 0.95, span ~1.8-2.0 with membrane), chord cut deepened 0.45 -> 0.35, and FlyAnimPose now asserts perpendicularity (forward/lateral < 0.30) on Glide AND Fly mid-stroke in UE data.

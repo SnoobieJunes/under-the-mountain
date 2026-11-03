@@ -21,6 +21,7 @@
 
 class UDragonStatsComponent;
 class UDragonCombatComponent;
+class UDragonMovementComponent;
 class UThiefBrain;
 class UScentComponent;
 class UDragonAppearanceComponent;
@@ -42,7 +43,7 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	GENERATED_BODY()
 
   public:
-	ADragonCharacter();
+	ADragonCharacter(const FObjectInitializer& ObjectInitializer);
 
 	UPROPERTY(VisibleAnywhere, Category = "Dragon")
 	TObjectPtr<UDragonStatsComponent> Stats;
@@ -138,6 +139,22 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	float DiveAcceleration = 2400.0f;
 
 	bool IsFlying() const;
+
+	// [2026-11-03 T-075] Prototype flight (T-075): true while the pawn flies the
+	// custom movement chassis (MOVE_Custom + non-zero utm.flight.scheme).
+	bool IsPrototypeFlying() const;
+
+	// [2026-11-03 T-075] Nose direction the prototype integrator steers onto
+	// (free-look freezes it, steer-latch turns it at the yaw limit).
+	FRotator GetProtoNose() const;
+
+	// [2026-11-03 T-075] Per-tick prototype housekeeping: enter/exit the custom
+	// mode, feed brake state, capture CSV rows. No-op when scheme is shipped (0).
+	void UpdatePrototypeFlight(float DeltaSeconds);
+
+	// [2026-11-03 T-075] Dev/capture: dump captured prototype CSV rows to the log.
+	UFUNCTION(Exec)
+	void FlightCsv();
 
 	// [2026-10-28 T-014] Dwarf trap effect (GAMEPLAY.md section 5.2):
 	// multiplies walk/fly speed by Factor for Seconds, then restores.
@@ -247,6 +264,15 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	TObjectPtr<UInputAction> ToggleFlightAction;
 	UPROPERTY()
 	TObjectPtr<UInputAction> DiveAction;
+	// [2026-11-03 T-075] Prototype-only actions (T-075/T-063): RMB free-look,
+	// Ctrl sink, D-pad Up steer latch. Shipped leaves them unbound-equivalent
+	// (handlers gate on the scheme), so shipped behavior is unchanged.
+	UPROPERTY()
+	TObjectPtr<UInputAction> FreeLookAction;
+	UPROPERTY()
+	TObjectPtr<UInputAction> SinkAction;
+	UPROPERTY()
+	TObjectPtr<UInputAction> SteerLatchAction;
 	UPROPERTY()
 	TObjectPtr<UInputAction> TrueSightAction;
 	UPROPERTY()
@@ -289,6 +315,47 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// [2026-10-28 T-030] Dive release: Triggered alone never fires on key-up,
 	// so bDiving latched forever; Completed/Canceled clear it.
 	void HandleDiveEnd();
+
+	// [2026-11-03 T-075] Prototype inputs (T-075/T-063): W-tap Surge, Space-hold
+	// rise, RMB free-look + double-click steer latch, D-pad Up steer latch,
+	// Ctrl sink. All no-op unless a prototype scheme is selected.
+	void HandleMoveStarted(const struct FInputActionValue& Value);
+	void HandleRiseHeld(const struct FInputActionValue& Value);
+	void HandleRiseEnd();
+	void HandleFreeLook(const struct FInputActionValue& Value);
+	void HandleFreeLookEnd();
+	void HandleSteerLatch();
+	void HandleSink(const struct FInputActionValue& Value);
+	void HandleSinkEnd();
+
+	// [2026-11-03 T-075] Prototype nose + latch state (see UpdatePrototypeFlight:
+	// nose follows control rotation except while free-looking; the latch turns it
+	// toward the view at the airspeed-limited yaw rate).
+	FRotator ProtoNose = FRotator::ZeroRotator;
+	bool bFreeLook = false;
+	bool bSteerLatch = false;
+	bool bRiseHeld = false;
+	bool bSinkHeld = false;
+	float LastRMBReleaseTime = -10.0f;
+	float LastSurgeTime = -10.0f;
+
+	// [2026-11-03 T-075] Scripted course runner (utm.flight.course): the program
+	// owns nose/brake/assist while bCourseFlying; UpdatePrototypeFlight skips its
+	// feeds but keeps drain + CSV. Off by default; shipped never sees it.
+	bool bCourseFlying = false;
+	int32 CoursePhase = -1;
+	float CoursePhaseTime = 0.0f;
+	float CourseTotalTime = 0.0f;
+	float CourseTurnAccum = 0.0f;
+	float CourseBaseYaw = 0.0f;
+	FVector CourseMark = FVector::ZeroVector;
+	FVector CourseMinXY = FVector::ZeroVector;
+	FVector CourseMaxXY = FVector::ZeroVector;
+	float CourseTouchSpeed = 0.0f;
+	void TickFlightCourse(float DeltaSeconds);
+	void QuitCourseGame();
+	void RestoreCoursePool(const TCHAR* LegName);
+	void CourseLog(const TCHAR* Fmt, ...);
 	// [2026-10-28 T-013] Seeing Stone toggle (key T / gamepad left face).
 	void HandleTrueSight();
 	// [2026-10-28 T-027] Scale-colour picker toggle (key C / gamepad right face).

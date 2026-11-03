@@ -10,6 +10,7 @@
 #include "Dragon/DragonCharacter.h"
 #include "Dragon/DragonAppearanceComponent.h"
 #include "Dragon/DragonCombatComponent.h"
+#include "Dragon/DragonMovementComponent.h"
 #include "Dragon/DragonStatsComponent.h"
 #include "Livestock/GoatActor.h"
 #include "Scent/ScentComponent.h"
@@ -38,6 +39,10 @@
 #include "Engine/SkyLight.h"
 #include "EngineUtils.h"
 #include "HAL/IConsoleManager.h"
+#include "HAL/PlatformMisc.h"
+#include "Misc/Paths.h"
+#include "Misc/VarArgs.h"
+#include <cstdio>
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
 
@@ -84,9 +89,20 @@ TAutoConsoleVariable<int32> CVarWeatherState(
 TAutoConsoleVariable<int32> CVarIntroEnabled(
 	TEXT("utm.intro.enabled"), 1,
 	TEXT("1 = play the intro wake-up sequence on spawn; 0 = straight to free play."));
+
+// [2026-11-03 T-075] Scripted course runner: 1 = fly the T-075 legs and quit.
+// Requires a non-zero utm.flight.scheme; off by default (shipped never arms).
+TAutoConsoleVariable<int32> CVarFlightCourse(
+	TEXT("utm.flight.course"), 0,
+	TEXT("1 = fly the scripted T-075 course legs in the live world, dump CSV, quit."));
 } // namespace
 
-ADragonCharacter::ADragonCharacter()
+// [2026-11-03 T-075] Swap the movement component class for the prototype
+// chassis (spike: UDragonMovementComponent/PhysCustom). Shipped tuning lines
+// below address it through GetCharacterMovement(), unchanged.
+ADragonCharacter::ADragonCharacter(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<UDragonMovementComponent>(
+		  ACharacter::CharacterMovementComponentName))
 {
 	PrimaryActorTick.bCanEverTick = true;
 
@@ -269,6 +285,7 @@ bool ADragonCharacter::HasInputActions() const
 		   ToggleFlightAction != nullptr && DiveAction != nullptr && TrueSightAction != nullptr &&
 		   TintAction != nullptr && FireAction != nullptr && RoarAction != nullptr &&
 		   EatAction != nullptr && WingBuffetAction != nullptr && TailSlamAction != nullptr &&
+		   FreeLookAction != nullptr && SinkAction != nullptr && SteerLatchAction != nullptr &&
 		   MappingContext != nullptr;
 }
 
@@ -413,6 +430,12 @@ void ADragonCharacter::BuildInputActions()
 	FlapAction = MakeAction(TEXT("IA_Flap"), EInputActionValueType::Boolean);
 	ToggleFlightAction = MakeAction(TEXT("IA_ToggleFlight"), EInputActionValueType::Boolean);
 	DiveAction = MakeAction(TEXT("IA_Dive"), EInputActionValueType::Boolean);
+	// [2026-11-03 T-075] Prototype-only actions (T-075/T-063): RMB free-look,
+	// Ctrl sink, D-pad Up steer latch. Handlers gate on the scheme, so the
+	// shipped map gains bindings but no behavior.
+	FreeLookAction = MakeAction(TEXT("IA_FreeLook"), EInputActionValueType::Boolean);
+	SinkAction = MakeAction(TEXT("IA_Sink"), EInputActionValueType::Boolean);
+	SteerLatchAction = MakeAction(TEXT("IA_SteerLatch"), EInputActionValueType::Boolean);
 	TrueSightAction = MakeAction(TEXT("IA_TrueSight"), EInputActionValueType::Boolean);
 	TintAction = MakeAction(TEXT("IA_TintPicker"), EInputActionValueType::Boolean);
 	// [2026-10-28 T-015] Combat verbs: Boolean like Flap — Fire reads
@@ -446,6 +469,12 @@ void ADragonCharacter::BuildInputActions()
 	Map(FlapAction, EKeys::SpaceBar);
 	Map(ToggleFlightAction, EKeys::F);
 	Map(DiveAction, EKeys::LeftShift);
+	// [2026-11-03 T-075] Prototype keys: RMB free-look, Ctrl sink.
+	Map(FreeLookAction, EKeys::RightMouseButton);
+	Map(SinkAction, EKeys::LeftControl);
+	// [2026-11-03 T-075] D-pad Up was reserved for T-063 steer-to-camera —
+	// the prototype claims it; T-061 keeps D-pad Down.
+	Map(SteerLatchAction, EKeys::Gamepad_DPad_Up);
 	Map(TrueSightAction, EKeys::T);
 	Map(TintAction, EKeys::C);
 	// [2026-10-28 T-015] Combat keys: LMB hold = fire, R = roar, E = eat.
@@ -504,6 +533,32 @@ void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	if (FlapAction != nullptr)
 	{
 		EIC->BindAction(FlapAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleFlap);
+		// [2026-11-03 T-075] Hold edges feed prototype rise; shipped ignores holds.
+		EIC->BindAction(FlapAction, ETriggerEvent::Triggered, this, &ADragonCharacter::HandleRiseHeld);
+		EIC->BindAction(FlapAction, ETriggerEvent::Completed, this, &ADragonCharacter::HandleRiseEnd);
+		EIC->BindAction(FlapAction, ETriggerEvent::Canceled, this, &ADragonCharacter::HandleRiseEnd);
+	}
+	if (MoveAction != nullptr)
+	{
+		// [2026-11-03 T-075] Press edge feeds W-tap Surge; movement itself
+		// stays on the Triggered HandleMove binding above.
+		EIC->BindAction(MoveAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleMoveStarted);
+	}
+	if (FreeLookAction != nullptr)
+	{
+		EIC->BindAction(FreeLookAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleFreeLook);
+		EIC->BindAction(FreeLookAction, ETriggerEvent::Completed, this, &ADragonCharacter::HandleFreeLookEnd);
+		EIC->BindAction(FreeLookAction, ETriggerEvent::Canceled, this, &ADragonCharacter::HandleFreeLookEnd);
+	}
+	if (SinkAction != nullptr)
+	{
+		EIC->BindAction(SinkAction, ETriggerEvent::Triggered, this, &ADragonCharacter::HandleSink);
+		EIC->BindAction(SinkAction, ETriggerEvent::Completed, this, &ADragonCharacter::HandleSinkEnd);
+		EIC->BindAction(SinkAction, ETriggerEvent::Canceled, this, &ADragonCharacter::HandleSinkEnd);
+	}
+	if (SteerLatchAction != nullptr)
+	{
+		EIC->BindAction(SteerLatchAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleSteerLatch);
 	}
 	if (ToggleFlightAction != nullptr)
 	{
@@ -553,6 +608,13 @@ void ADragonCharacter::HandleMove(const FInputActionValue& Value)
 	{
 		return;
 	}
+	// [2026-11-03 T-075] Any movement input cancels latched steer-to-look
+	// immediately (owner clarification, T-063).
+	if (bSteerLatch)
+	{
+		bSteerLatch = false;
+		UE_LOG(LogUnderTheMountain, Log, TEXT("Steer-to-look canceled by movement input"));
+	}
 	const FRotator YawRot(0.0f, Controller->GetControlRotation().Yaw, 0.0f);
 	AddMovementInput(FRotationMatrix(YawRot).GetUnitAxis(EAxis::X), Axis.Y);
 	AddMovementInput(FRotationMatrix(YawRot).GetUnitAxis(EAxis::Y), Axis.X);
@@ -567,13 +629,50 @@ void ADragonCharacter::HandleLook(const FInputActionValue& Value)
 
 void ADragonCharacter::HandleFlap()
 {
+	// [2026-11-03 T-075] Course program owns its inputs; pilot flap would
+	// spend the legs' stamina out from under the measurements.
+	if (bCourseFlying)
+	{
+		return;
+	}
 	if (!Stats->CanFlap())
 	{
 		return;
 	}
-	if (!IsFlying())
+	if (!IsFlying() && !IsPrototypeFlying())
 	{
-		GetCharacterMovement()->SetMovementMode(MOVE_Flying);
+		// [2026-11-03 T-075] Prototype schemes take off into the custom
+		// chassis; shipped flight is untouched when the scheme is 0.
+		if (UDragonMovementComponent::GetFlightScheme() != 0)
+		{
+			GetCharacterMovement()->SetMovementMode(MOVE_Custom,
+													UDragonMovementComponent::DragonFlightCustomMode);
+			ProtoNose = GetControlRotation();
+		}
+		else
+		{
+			GetCharacterMovement()->SetMovementMode(MOVE_Flying);
+		}
+	}
+	// [2026-11-03 T-075] Prototype takeoff/ascent: one full 20-point reserve
+	// buys the 900 cm/s up-forward launch (spike economy, provisional for
+	// the course); shipped keeps the 3-cost hop below.
+	if (IsPrototypeFlying() || UDragonMovementComponent::GetFlightScheme() != 0)
+	{
+		if (Stats->Stamina < 20.0f)
+		{
+			UE_LOG(LogUnderTheMountain, Log,
+				   TEXT("Ascent refused: needs one 20-point reserve (stamina %.1f)"), Stats->Stamina);
+			return;
+		}
+		if (Stats->TryConsumeStamina(20.0f))
+		{
+			if (UDragonMovementComponent* Proto = Cast<UDragonMovementComponent>(GetCharacterMovement()))
+			{
+				Proto->ApplyAscent();
+			}
+		}
+		return;
 	}
 	if (Stats->TryConsumeStamina(Stats->FlapStaminaCost))
 	{
@@ -585,7 +684,26 @@ void ADragonCharacter::HandleFlap()
 
 void ADragonCharacter::HandleToggleFlight()
 {
-	const bool bWasFlying = IsFlying();
+	// [2026-11-03 T-075] Course program owns its inputs (assist is scripted).
+	if (bCourseFlying)
+	{
+		return;
+	}
+	// [2026-11-03 T-075] F is Landing Assist while prototype-flying (adopted
+	// map): forced precision + brake + descent cap; walk/fall clears it.
+	if (IsPrototypeFlying())
+	{
+		if (UDragonMovementComponent* Proto = Cast<UDragonMovementComponent>(GetCharacterMovement()))
+		{
+			Proto->bLandingAssist = !Proto->bLandingAssist;
+			UE_LOG(LogUnderTheMountain, Log, TEXT("Landing Assist %s"),
+				   Proto->bLandingAssist ? TEXT("ON") : TEXT("OFF"));
+		}
+		return;
+	}
+	const bool bWasFlying = IsFlying() || IsPrototypeFlying();
+	// [2026-11-03 T-075] Prototype chassis lands to walk like shipped flight;
+	// takeoff routing stays in HandleFlap (scheme-gated there).
 	GetCharacterMovement()->SetMovementMode(bWasFlying ? MOVE_Walking : MOVE_Flying);
 	// [2026-11-01 T-068] Leaving the ground plays the takeoff leap once;
 	// [2026-11-01 T-068] locomotion (Fly/Hover by speed) takes over after.
@@ -1435,6 +1553,465 @@ void ADragonCharacter::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other,
 	ApplyCrushVictim(Other, GroundSpeed, TEXT("run-over"));
 }
 
+bool ADragonCharacter::IsPrototypeFlying() const
+{
+	// [2026-11-03 T-075] Custom-mode flight counts only while a prototype
+	// scheme is selected; scheme 0 keeps shipped semantics everywhere.
+	const UCharacterMovementComponent* Move = GetCharacterMovement();
+	return Move != nullptr && Move->MovementMode == MOVE_Custom && UDragonMovementComponent::GetFlightScheme() != 0;
+}
+
+void ADragonCharacter::UpdatePrototypeFlight(float DeltaSeconds)
+{
+	// [2026-11-03 T-075] Slice 2b: mode enter/exit, brake feed, stamina
+	// classification, CSV rows. Input remap (Surge/Ascent/RMB/F-assist)
+	// lands in the next slice; Space still flaps (Ascent impulse) via
+	// HandleFlap and Shift still brakes via bDiving.
+	UCharacterMovementComponent* Move = GetCharacterMovement();
+	if (Move == nullptr)
+	{
+		return;
+	}
+	const int32 Scheme = UDragonMovementComponent::GetFlightScheme();
+	const bool bInCustom = Move->MovementMode == MOVE_Custom;
+	if (Scheme != 0 && IsFlying() && !bInCustom)
+	{
+		Move->SetMovementMode(MOVE_Custom, UDragonMovementComponent::DragonFlightCustomMode);
+		ProtoNose = GetControlRotation();
+		UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon prototype flight engaged (scheme %d)"), Scheme);
+	}
+	else if (Scheme == 0 && bInCustom)
+	{
+		Move->SetMovementMode(MOVE_Flying);
+	}
+	if (UDragonMovementComponent* Proto = Cast<UDragonMovementComponent>(Move))
+	{
+		// [2026-11-03 T-075] Course program owns the feeds while bCourseFlying
+		// (below keeps drain + CSV running for the legs).
+		if (!bCourseFlying)
+		{
+			Proto->bProtoBraking = bDiving;
+			Proto->bProtoRise = bRiseHeld;
+			Proto->bProtoSink = bSinkHeld;
+			if (!IsPrototypeFlying())
+			{
+				Proto->bLandingAssist = false;
+				Proto->bProtoAutoThrust = false;
+			}
+		}
+		if (IsPrototypeFlying())
+		{
+			// [2026-11-03 T-075] Nose follows control rotation except while
+			// free-looking (frozen); latched, it turns toward the view at
+			// the airspeed-limited yaw rate (T-063 steer-to-look). The course
+			// program owns the nose while bCourseFlying.
+			if (!bFreeLook && !bCourseFlying)
+			{
+				if (bSteerLatch)
+				{
+					const float MaxTurn = UDragonMovementComponent::YawRateForAirspeed(
+						Move->Velocity.Size(), Proto->FlightParams);
+					ProtoNose = FMath::RInterpConstantTo(ProtoNose, GetControlRotation(), DeltaSeconds, MaxTurn);
+				}
+				else
+				{
+					ProtoNose = GetControlRotation();
+				}
+			}
+			Proto->bProtoAutoThrust = bSteerLatch;
+			// [2026-11-03 T-075] Prototype stamina classification (spike
+			// economy: dive posture costs 0, precision/hover band 8/s, glide
+			// 1/s). Zero stamina keeps glide/brake/land (mercy rule) and
+			// burns HP only on draining actions — mirroring the shipped block.
+			const float Airspeed = Move->Velocity.Size();
+			const float AuthorityW = UDragonMovementComponent::PrecisionAuthorityWeight(
+				Airspeed, Proto->FlightParams);
+			const bool bDivePosture = GetControlRotation().Pitch < -30.0f && Airspeed > Proto->FlightParams.MomentumAuthorityMinSpeed;
+			const bool bHoverBand = AuthorityW > 0.5f || Move->Velocity.Size2D() < Stats->HoverSpeedThreshold;
+			const float ProtoDrainRate = bDivePosture ? 0.0f
+													  : (bHoverBand ? Stats->HoverDrainPerSecond : Stats->GlideDrainPerSecond);
+			Stats->DrainForFlight(DeltaSeconds, ProtoDrainRate);
+			if (Stats->Stamina <= 0.0f && Stats->ShouldForceFallAtZeroStamina(ProtoDrainRate))
+			{
+				Stats->DrainHPForExhaustion(DeltaSeconds);
+				Move->SetMovementMode(MOVE_Falling);
+			}
+			if (GetWorld() != nullptr)
+			{
+				Proto->CaptureFlightCsvRow(GetWorld()->GetTimeSeconds(), Stats->Stamina);
+			}
+		}
+	}
+}
+
+void ADragonCharacter::FlightCsv()
+{
+	// [2026-11-03 T-075] Dev/capture: dump the rows the course judges.
+	if (UDragonMovementComponent* Proto = Cast<UDragonMovementComponent>(GetCharacterMovement()))
+	{
+		Proto->DumpFlightCsvToLog();
+	}
+}
+
+FRotator ADragonCharacter::GetProtoNose() const
+{
+	return ProtoNose;
+}
+
+void ADragonCharacter::HandleMoveStarted(const FInputActionValue& Value)
+{
+	// [2026-11-03 T-075] W-tap Surge (adopted KB map): a fresh forward press
+	// in the momentum band buys +800 cm/s for one 20-point reserve (1/s
+	// precision-band W stays thrust; shipped has no tap.
+	if (!IsPrototypeFlying())
+	{
+		return;
+	}
+	if (bCourseFlying)
+	{
+		return;
+	}
+	if (Value.Get<FVector2D>().Y < 0.5f)
+	{
+		return;
+	}
+	UDragonMovementComponent* Proto = Cast<UDragonMovementComponent>(GetCharacterMovement());
+	if (Proto == nullptr || GetWorld() == nullptr)
+	{
+		return;
+	}
+	const float Airspeed = Proto->Velocity.Size();
+	if (UDragonMovementComponent::PrecisionAuthorityWeight(Airspeed, Proto->FlightParams) > 0.5f)
+	{
+		return;
+	}
+	const float Now = GetWorld()->GetTimeSeconds();
+	if (Now - LastSurgeTime < 1.0f || Stats->Stamina < 20.0f)
+	{
+		return;
+	}
+	if (Stats->TryConsumeStamina(20.0f))
+	{
+		LastSurgeTime = Now;
+		Proto->ApplySurge();
+		UE_LOG(LogUnderTheMountain, Log, TEXT("Surge: +%.0f cm/s (stamina %.1f)"),
+			   Proto->FlightParams.SurgeDeltaV, Stats->Stamina);
+	}
+}
+
+void ADragonCharacter::HandleRiseHeld(const FInputActionValue& Value)
+{
+	// [2026-11-03 T-075] Space-hold rise feed (blend band only; the press
+	// edge stays the Ascent impulse in HandleFlap). Shipped ignores holds.
+	(void)Value;
+	bRiseHeld = true;
+}
+
+void ADragonCharacter::HandleRiseEnd()
+{
+	bRiseHeld = false;
+}
+
+void ADragonCharacter::HandleFreeLook(const FInputActionValue& Value)
+{
+	// [2026-11-03 T-075] T-063: RMB hold = free look (nose frozen, camera
+	// roams); double-click toggles latched steer-to-look. No-op shipped.
+	(void)Value;
+	if (UDragonMovementComponent::GetFlightScheme() == 0)
+	{
+		return;
+	}
+	const float Now = GetWorld() != nullptr ? GetWorld()->GetTimeSeconds() : 0.0f;
+	if (Now - LastRMBReleaseTime < 0.35f)
+	{
+		bSteerLatch = !bSteerLatch;
+		bFreeLook = false;
+		UE_LOG(LogUnderTheMountain, Log, TEXT("Steer-to-look %s"),
+			   bSteerLatch ? TEXT("LATCHED") : TEXT("released"));
+	}
+	else
+	{
+		bFreeLook = true;
+	}
+}
+
+void ADragonCharacter::HandleFreeLookEnd()
+{
+	// [2026-11-03 T-075] Camera returns to the nose on release so the next
+	// tick's nose-follow has nothing to snap.
+	bFreeLook = false;
+	if (GetWorld() != nullptr)
+	{
+		LastRMBReleaseTime = GetWorld()->GetTimeSeconds();
+	}
+	if (!bSteerLatch && Controller != nullptr)
+	{
+		Controller->SetControlRotation(ProtoNose);
+	}
+}
+
+void ADragonCharacter::HandleSteerLatch()
+{
+	// [2026-11-03 T-075] Gamepad D-pad Up equivalent of double-click RMB.
+	if (IsPrototypeFlying())
+	{
+		bSteerLatch = true;
+		UE_LOG(LogUnderTheMountain, Log, TEXT("Steer-to-camera LATCHED (pad)"));
+	}
+}
+
+void ADragonCharacter::HandleSink(const FInputActionValue& Value)
+{
+	// [2026-11-03 T-075] Ctrl-hold sink feed (blend band only).
+	(void)Value;
+	bSinkHeld = true;
+}
+
+void ADragonCharacter::HandleSinkEnd()
+{
+	bSinkHeld = false;
+}
+
+void ADragonCharacter::TickFlightCourse(float DeltaSeconds)
+{
+	// [2026-11-03 T-075] Scripted T-075 legs in the LIVE world (real ticks,
+	// real Lair geometry): takeoff, climb, cruise, 360 turn, brake, hover,
+	// assisted landing. Arms only when the course cvar AND a prototype scheme
+	// are set — default-off, so shipped players never meet it. Each leg logs
+	// one CourseLeg summary line; per-tick rows ride the normal CSV capture;
+	// the run ends by quitting the game. Replaces the deleted bare-world
+	// CourseBot: manually-ticked worlds never forwarded actor ticks, so the
+	// lab measured nothing (see T-075 loop notes 2026-11-03).
+	if (CoursePhase < 0)
+	{
+		if (CVarFlightCourse.GetValueOnGameThread() != 0 && UDragonMovementComponent::GetFlightScheme() != 0 && Stats != nullptr)
+		{
+			Stats->Stamina = Stats->MaxStamina;
+			bCourseFlying = true;
+			CoursePhase = 0;
+			CoursePhaseTime = 0.0f;
+			CourseTotalTime = 0.0f;
+			CourseLog(TEXT("FlightCourse armed: full pool, scheme %d (legs: climb, turn, brake, hover, land)"),
+					  UDragonMovementComponent::GetFlightScheme());
+		}
+		else
+		{
+			return;
+		}
+	}
+	UCharacterMovementComponent* Move = GetCharacterMovement();
+	UDragonMovementComponent* Proto = Cast<UDragonMovementComponent>(Move);
+	if (Move == nullptr || Proto == nullptr)
+	{
+		return;
+	}
+	CoursePhaseTime += DeltaSeconds;
+	CourseTotalTime += DeltaSeconds;
+	if (CourseTotalTime > 150.0f)
+	{
+		CourseLog(TEXT("FlightCourse watchdog: quitting"));
+		CoursePhase = 99;
+		QuitCourseGame();
+		return;
+	}
+	const float BaseYaw = GetControlRotation().Yaw;
+	switch (CoursePhase)
+	{
+	case 0: // Takeoff: Ascent launch on the same 20-reserve gate as HandleFlap.
+		if (CoursePhaseTime <= DeltaSeconds * 1.5f && !IsPrototypeFlying())
+		{
+			Move->SetMovementMode(MOVE_Custom, UDragonMovementComponent::DragonFlightCustomMode);
+			ProtoNose = GetControlRotation();
+			if (Stats->Stamina >= 20.0f && Stats->TryConsumeStamina(20.0f))
+			{
+				Proto->ApplyAscent();
+			}
+			CourseMark = GetActorLocation();
+		}
+		ProtoNose = FRotator(60.0f, BaseYaw, 0.0f);
+		if (CoursePhaseTime >= 3.0f)
+		{
+			CourseLog(TEXT("CourseLeg liftoff: alt=%.0fcm"),
+					  GetActorLocation().Z - CourseMark.Z);
+			// [2026-11-03 T-075] Transit: the 30 m chambers cannot host the
+			// cruise/turn legs, so climb/cruise/turn/brake/hover fly in open
+			// sky above the peak (shaft top 5200 + margin). Teleports are
+			// logged, never silent; chimney/cave geometry stays owner-flown.
+			SetActorLocation(FVector(19000.0f, 0.0f, 8000.0f), false, nullptr, ETeleportType::TeleportPhysics);
+			Move->Velocity = FVector::ZeroVector;
+			CourseLog(TEXT("CourseLeg transit: open sky above peak"));
+			CoursePhase = 1;
+			CoursePhaseTime = 0.0f;
+			CourseMark = GetActorLocation();
+			// [2026-11-03 T-075] Climb entry needs energy: a second reserve
+			// buys a Surge the nose-up cruise then converts to altitude.
+			if (Stats->Stamina >= 20.0f && Stats->TryConsumeStamina(20.0f))
+			{
+				Proto->ApplySurge();
+				CourseLog(TEXT("CourseLeg climb: entry surge (stamina %.1f)"), Stats->Stamina);
+			}
+			RestoreCoursePool(TEXT("liftoff"));
+		}
+		break;
+	case 1: // Climb: sustained nose-up cruise (chimney proxy: climb rate).
+		ProtoNose = FRotator(30.0f, BaseYaw, 0.0f);
+		if (CoursePhaseTime >= 5.0f)
+		{
+			CourseLog(TEXT("CourseLeg climb: +%.0fcm in 5s (%.0fcm/s)"),
+					  GetActorLocation().Z - CourseMark.Z,
+					  (GetActorLocation().Z - CourseMark.Z) / 5.0f);
+			CoursePhase = 2;
+			CoursePhaseTime = 0.0f;
+			CourseMark = GetActorLocation();
+			RestoreCoursePool(TEXT("climb"));
+			if (Stats->Stamina >= 20.0f && Stats->TryConsumeStamina(20.0f))
+			{
+				Proto->ApplySurge();
+				CourseLog(TEXT("CourseLeg cruise: surged (stamina %.1f)"), Stats->Stamina);
+			}
+		}
+		break;
+	case 2: // Cruise: level nose, build speed for the turn.
+		ProtoNose = FRotator(0.0f, BaseYaw, 0.0f);
+		if (CoursePhaseTime >= 4.0f)
+		{
+			CoursePhase = 3;
+			CoursePhaseTime = 0.0f;
+			CourseTurnAccum = 0.0f;
+			RestoreCoursePool(TEXT("cruise"));
+			CourseBaseYaw = BaseYaw;
+			CourseMinXY = GetActorLocation();
+			CourseMaxXY = GetActorLocation();
+		}
+		break;
+	case 3: // Turn: full 360 at the airspeed-limited yaw rate; measure diameter.
+	{
+		const float TurnRate = UDragonMovementComponent::YawRateForAirspeed(
+			Move->Velocity.Size(), Proto->FlightParams);
+		CourseTurnAccum += TurnRate * DeltaSeconds;
+		ProtoNose = FRotator(0.0f, CourseBaseYaw + CourseTurnAccum, 0.0f);
+		const FVector P = GetActorLocation();
+		CourseMinXY.X = FMath::Min(CourseMinXY.X, P.X);
+		CourseMinXY.Y = FMath::Min(CourseMinXY.Y, P.Y);
+		CourseMaxXY.X = FMath::Max(CourseMaxXY.X, P.X);
+		CourseMaxXY.Y = FMath::Max(CourseMaxXY.Y, P.Y);
+		if (CourseTurnAccum >= 360.0f)
+		{
+			const float Diameter = FMath::Max(CourseMaxXY.X - CourseMinXY.X, CourseMaxXY.Y - CourseMinXY.Y);
+			CourseLog(TEXT("CourseLeg turn: diameter=%.0fcm in %.1fs at cruise (T-066 evidence)"),
+					  Diameter, CoursePhaseTime);
+			CoursePhase = 4;
+			CoursePhaseTime = 0.0f;
+			CourseMark = GetActorLocation();
+			RestoreCoursePool(TEXT("turn"));
+			Proto->bProtoBraking = true;
+		}
+		break;
+	}
+	case 4: // Brake: full brake to rest; measure stop distance.
+		ProtoNose = FRotator(0.0f, BaseYaw, 0.0f);
+		if (Move->Velocity.Size() < 60.0f || CoursePhaseTime >= 6.0f)
+		{
+			Proto->bProtoBraking = false;
+			CourseLog(TEXT("CourseLeg brake: stop in %.0fcm over %.1fs"),
+					  (GetActorLocation() - CourseMark).Size2D(), CoursePhaseTime);
+			CoursePhase = 5;
+			CoursePhaseTime = 0.0f;
+			CourseMark = GetActorLocation();
+			RestoreCoursePool(TEXT("brake"));
+		}
+		break;
+	case 5: // Hover: dead stick; measure drift (chimney/cave enabler).
+		if (CoursePhaseTime >= 5.0f)
+		{
+			CourseLog(TEXT("CourseLeg hover: drift=%.0fcm over 5s (stamina %.1f)"),
+					  (GetActorLocation() - CourseMark).Size(), Stats->Stamina);
+			// [2026-11-03 T-075] Transit: assisted landing flies onto the Entry
+			// floor by the PlayerStart disc (guaranteed clear spawn ground —
+			// the hoard center proved unwedgeable: SeeingStone + chests at
+			// (19000,0) wedged two land legs at z=438 with velocity running
+			// but position frozen). T-066 owes the hoard a clear touchdown
+			// disc for the same reason.
+			SetActorLocation(FVector(0.0f, 0.0f, 900.0f), false, nullptr, ETeleportType::TeleportPhysics);
+			Move->Velocity = FVector::ZeroVector;
+			CourseLog(TEXT("CourseLeg transit: entry approach (0,0,900)"));
+			RestoreCoursePool(TEXT("hover"));
+			CoursePhase = 6;
+			CoursePhaseTime = 0.0f;
+			Proto->bLandingAssist = true;
+			// [2026-11-03 T-075] Precision hover-hold ignores nose pitch, so
+			// the leg commands descent the same way Ctrl does.
+			Proto->bProtoSink = true;
+			CourseLog(TEXT("CourseLeg land: assist ON, descending"));
+		}
+		break;
+	case 6: // Assisted landing: slight nose-down until walk, or timeout.
+		ProtoNose = FRotator(-10.0f, BaseYaw, 0.0f);
+		CourseTouchSpeed = Move->Velocity.Size();
+		if (Move->MovementMode == MOVE_Walking || CoursePhaseTime >= 12.0f)
+		{
+			Proto->bLandingAssist = false;
+			Proto->bProtoSink = false;
+			CourseLog(TEXT("CourseLeg land: %s touchdown at %.0fcm/s, HP %.1f (assist %s)"),
+					  Move->MovementMode == MOVE_Walking ? TEXT("clean") : TEXT("TIMEOUT no"),
+					  CourseTouchSpeed, Stats->HP,
+					  Move->MovementMode == MOVE_Walking ? TEXT("held") : TEXT("beat by timeout"));
+			CoursePhase = 7;
+			CoursePhaseTime = 0.0f;
+		}
+		break;
+	case 7: // Done: dump CSV to file (headless runs keep no UE log), summarize, quit.
+		Proto->DumpFlightCsvToFile(FPaths::ProjectSavedDir() / TEXT("CourseFly") / FString::Printf(TEXT("scheme%d.csv"), UDragonMovementComponent::GetFlightScheme()));
+		CourseLog(TEXT("FlightCourse COMPLETE (%d rows in Saved/CourseFly)"), Proto->FlightCsvRows.Num());
+		CoursePhase = 99;
+		QuitCourseGame();
+		break;
+	default:
+		break;
+	}
+}
+
+void ADragonCharacter::QuitCourseGame()
+{
+	// [2026-11-03 T-075] Ends a scripted course run: player path first,
+	// hard exit when headless/controller-less.
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		PC->ConsoleCommand(TEXT("quit"));
+	}
+	else
+	{
+		FPlatformMisc::RequestExit(0);
+	}
+}
+
+void ADragonCharacter::RestoreCoursePool(const TCHAR* LegName)
+{
+	// [2026-11-03 T-075] Handling isolation: each leg starts on a full pool
+	// so exhaustion can never gate a handling measurement. Every restore is
+	// logged with the finished leg's spend, and per-tick stamina still rides
+	// the CSV — nothing about the economy is hidden, it is controlled.
+	if (Stats != nullptr)
+	{
+		CourseLog(TEXT("CourseLeg %s: spent %.1f stamina, pool restored"),
+				  LegName, Stats->MaxStamina - Stats->Stamina);
+		Stats->Stamina = Stats->MaxStamina;
+	}
+}
+
+void ADragonCharacter::CourseLog(const TCHAR* Fmt, ...)
+{
+	// [2026-11-03 T-075] Dual evidence channel: the UE log (normal runs) AND
+	// raw stdout (headless -game runs in this pipeline never materialise a
+	// log file — proven over four silent 35 s exits). fflush so a quit or
+	// crash cannot eat buffered lines.
+	TCHAR Buf[1024];
+	GET_TYPED_VARARGS(TCHAR, Buf, UE_ARRAY_COUNT(Buf), UE_ARRAY_COUNT(Buf) - 1, Fmt, Fmt);
+	UE_LOG(LogUnderTheMountain, Log, TEXT("%s"), Buf);
+	printf("COURSE %s\n", TCHAR_TO_UTF8(Buf));
+	fflush(stdout);
+}
+
 void ADragonCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
@@ -1489,6 +2066,10 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 	// accounting and outcome classification, driven from here
 	// (the pawn is the one actor that always ticks).
 	AuditGameLoop(DeltaSeconds);
+	// [2026-11-03 T-075] Prototype chassis housekeeping (no-op on scheme 0).
+	UpdatePrototypeFlight(DeltaSeconds);
+	// [2026-11-03 T-075] Scripted course legs (arms only on utm.flight.course).
+	TickFlightCourse(DeltaSeconds);
 	// [2026-10-28 T-014] Trap-slow expiry: restore the captured speeds
 	// in the same tick the clock runs out.
 	if (TrapSlowTimeRemaining > 0.0f)
@@ -1621,7 +2202,7 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 		// [2026-11-02 T-058] screenshots 2026-11-02, stamina ~5). A dragon in
 		// [2026-11-02 T-058] the air uses flight poses, full stop.
 		const bool bAirborne =
-			IsFlying() || GetCharacterMovement()->MovementMode == MOVE_Falling;
+			IsFlying() || IsPrototypeFlying() || GetCharacterMovement()->MovementMode == MOVE_Falling;
 		if (OneShotTimeRemaining > 0.0f)
 		{
 			OneShotTimeRemaining -= DeltaSeconds;
@@ -1768,7 +2349,7 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 			}
 		}
 	}
-	if (GEngine && (IsFlying() || GetCharacterMovement()->MovementMode == MOVE_Falling))
+	if (GEngine && (IsFlying() || IsPrototypeFlying() || GetCharacterMovement()->MovementMode == MOVE_Falling))
 	{
 		const FVector ShownVelocity = GetVelocity();
 		GEngine->AddOnScreenDebugMessage(

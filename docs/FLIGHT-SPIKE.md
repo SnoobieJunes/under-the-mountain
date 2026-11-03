@@ -1,10 +1,13 @@
 # [2026-10-31 T-075] Flight-controls spike
 
-Status: research complete and working decisions adopted on 2026-10-31.
-Explicit owner answers are preserved below; every "idk" or blank was decided
-by the agent under the owner's best-judgement instruction. The playable PIE
-prototype comparison and final production adoption remain. No flight-feel
-result is claimed from this document.
+Status: CLOSED 2026-11-03 (T-075): prototype flown and measured on all three
+schemes in the live Lair (scripted course, per-tick CSV at
+docs/course-evidence/scheme{1,2,3}.csv); PROVISIONAL production pick is
+Scheme C for T-062 (owner feel-check there may still veto). Decisions below
+stand as amended by the two 2026-11-03 goose-deuce entries (impulse latch,
+additive blend) and the course-results section at the end of this file.
+Explicit owner answers are preserved; every "idk" or blank was decided
+by the agent under the owner's best-judgement instruction.
 
 ## Working decision for the prototype
 
@@ -384,3 +387,41 @@ branch, using the adopted inputs and starting values above. Add the pure-math
 tests and CSV instrumentation with it. Do not productionise animation rates,
 final GAMEPLAY numbers, or T-079 collision damage until the owner has flown the
 course and the winning values are recorded on T-075.
+
+## Course results — T-075 close, 2026-11-03 (all provisional for T-062)
+
+Chassis: `UDragonMovementComponent`/`PhysCustom` behind `utm.flight.scheme`
+(0 shipped inert / 1 A / 2 C / 3 B). Runner: `Scripts/fly-course.sh [scheme]`
+(`utm.flight.course` scripted legs: liftoff, climb, cruise, 360 turn, brake,
+hover, assisted landing; per-tick CSV + `COURSE` stdout lines; raw evidence at
+`docs/course-evidence/scheme{1,2,3}.csv`). Integrator verified exact to
+0.44 cm/s by full-step simulation against flown CSV (an apparent energy leak
+was analyst error: single-tick deltas misread against the documented
+first-order steer lag).
+
+| Leg | A (momentum) | C (hybrid, amended) | B (forced precision) |
+|---|---|---|---|
+| Liftoff | 1021 cm | 1021 cm | 68 cm |
+| Climb / 5 s | +1602–1827 cm (320–365 cm/s) | +1533 cm (307 cm/s) | +64 cm |
+| Turn diameter | 8–16 m, entry-sensitive; max-rate spiral bounded by the 14° steer floor | 14 m controlled | 0 m |
+| Brake from cruise | 15–51 cm | 247 cm in 0.8 s | 0 (never moving) |
+| Hover drift / 5 s | sinks ~1000 cm (no hover by design) | 0–39 cm | 0 cm (perfect) |
+| Assisted landing | clean, HP 100 (assist is precision equipment — caveat) | clean, HP 100 | timeout (cannot reach landing states) |
+
+Amendments from measurement (goose-deuce.md 2026-11-03, both `[decision]`):
+impulse authority latch 1.5 s (takeoffs evaporated at W 0.83); additive C
+with hover capture (multiplicative blend dragged sub-1600 coasts to hover);
+steer floor bounding lag to ~14° (killed the 1268→80 turn spiral). Starting
+tuning values all held — no GAMEPLAY.md movement-number changes.
+
+Engineering case for the unflown geometry legs (owner flies them in T-062):
+307 cm/s climb vs the 40 m shaft ≈ 13 s; 39 cm hover fits the 7 m shaft;
+14–16 m turns fit the 100 m crown envelope with margin (use 20 m+ margins —
+turns are entry-sensitive). Zero-stamina mercy, dive-as-posture, and the
+stamina bands ran honestly on every leg (per-tick stamina in the CSVs).
+
+Known gaps T-062 inherits: pad path partial (D-pad Up latch only; RT-Surge /
+LT-Brake remap deferred); RMB free-look + latch implemented, feel-check
+pending; mild level-cruise decay ~33 cm/s unexplained but bounded; T-066 owes
+the hoard a clear touchdown disc (course wedged twice on center furniture —
+SeeingStone + chests — at z=438, velocity running, position frozen).
