@@ -58,6 +58,10 @@ bool FDragonInputTest::RunTest(const FString& Parameters)
 		  TEXT("TailSlamAction"),
 		  // [2026-11-03 T-072] Flow pause joins the GC contract (same lesson).
 		  TEXT("PauseAction"),
+		  // [2026-11-03 T-073] Help action + onboarding widget join the GC
+		  // contract (same lesson).
+		  TEXT("HelpAction"),
+		  TEXT("OnboardingWidget"),
 		  TEXT("MappingContext")})
 	{
 		TestNotNull(FString::Printf(TEXT("%s is a reflected UPROPERTY"), Member),
@@ -411,6 +415,63 @@ bool FDragonPauseBindingTest::RunTest(const FString& Parameters)
 	}
 	TestTrue(TEXT("Esc pauses the flow"), bEsc);
 	TestTrue(TEXT("gamepad menu pauses the flow"), bPadMenu);
+	return true;
+}
+
+// [2026-11-03 T-073] The help binding, proven headless like pause: the
+// action reflects, the pawn owns it, and the mapping table binds it to
+// exactly H + gamepad Back (Select). Same pattern rides the next PIE
+// session for the live keypress.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDragonHelpBindingTest,
+								 "UnderTheMountain.Dragon.HelpBinding",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDragonHelpBindingTest::RunTest(const FString& Parameters)
+{
+	ADragonCharacter* Pawn = NewObject<ADragonCharacter>();
+	TestNotNull(TEXT("pawn constructs for binding check"), Pawn);
+	if (Pawn == nullptr)
+	{
+		return false;
+	}
+	Pawn->EnsureInputActions();
+
+	UClass* PawnClass = ADragonCharacter::StaticClass();
+	const FObjectProperty* HelpProp =
+		FindFProperty<FObjectProperty>(PawnClass, TEXT("HelpAction"));
+	const FObjectProperty* ContextProp =
+		FindFProperty<FObjectProperty>(PawnClass, TEXT("MappingContext"));
+	TestNotNull(TEXT("HelpAction member reflects"), HelpProp);
+	TestNotNull(TEXT("MappingContext member reflects"), ContextProp);
+	if (HelpProp == nullptr || ContextProp == nullptr)
+	{
+		return false;
+	}
+	const UInputAction* Help =
+		Cast<UInputAction>(HelpProp->GetObjectPropertyValue_InContainer(Pawn));
+	const UInputMappingContext* Context =
+		Cast<UInputMappingContext>(ContextProp->GetObjectPropertyValue_InContainer(Pawn));
+	TestNotNull(TEXT("ensured pawn owns the help action"), Help);
+	TestNotNull(TEXT("ensured pawn owns the mapping context"), Context);
+	if (Help == nullptr || Context == nullptr)
+	{
+		return false;
+	}
+
+	TestTrue(TEXT("help action joins the input contract"), Pawn->HasInputActions());
+
+	bool bH = false;
+	bool bPadBack = false;
+	for (const FEnhancedActionKeyMapping& Mapping : Context->GetMappings())
+	{
+		if (Mapping.Action == Help)
+		{
+			bH = bH || Mapping.Key == EKeys::H;
+			bPadBack = bPadBack || Mapping.Key == EKeys::Gamepad_Special_Left;
+		}
+	}
+	TestTrue(TEXT("H toggles the help overlay"), bH);
+	TestTrue(TEXT("gamepad Back toggles the help overlay"), bPadBack);
 	return true;
 }
 

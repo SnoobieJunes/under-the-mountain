@@ -17,6 +17,7 @@
 #include "CoreMinimal.h"
 #include "Dragon/DragonAnimInstance.h" // [2026-11-01 T-068] EDragonAnimState owner
 #include "GameFramework/Character.h"
+#include "UI/OnboardingDefs.h" // [2026-11-03 T-073] EOnboardingVerb for the prompt flags
 #include "DragonCharacter.generated.h"
 
 class UDragonStatsComponent;
@@ -341,6 +342,10 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// through the game mode's machine, never pauses directly.
 	UPROPERTY()
 	TObjectPtr<UInputAction> PauseAction;
+	// [2026-11-03 T-073] Help overlay (H / gamepad Back): lists every
+	// shipped binding from the single onboarding table.
+	UPROPERTY()
+	TObjectPtr<UInputAction> HelpAction;
 	// Fire is held (Triggered/Completed), Roar and Eat are presses.
 	UPROPERTY()
 	TObjectPtr<UInputAction> FireAction;
@@ -356,6 +361,18 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	UPROPERTY()
 	TObjectPtr<UDragonTintWidget> TintWidget;
 	bool bTintPickerOpen = false;
+	// [2026-11-03 T-073] Onboarding: first-use prompts + help overlay.
+	// The widget is hit-test invisible / non-modal (teaches, never
+	// blocks); VerbDone persists per verb so prompts never repeat.
+	UPROPERTY()
+	TObjectPtr<class UOnboardingWidget> OnboardingWidget;
+	// [2026-11-03 T-073] Save slot for onboarding progress
+	// ("OnboardingProgressV1", fresh slot per format like the
+	// camera/tint saves). Plain data member: tests never write it.
+	FString OnboardingSaveSlotName = TEXT("OnboardingProgressV1");
+	bool OnboardingDone[static_cast<int32>(EOnboardingVerb::Count)] = {};
+	EOnboardingVerb CurrentPrompt = EOnboardingVerb::Count;
+	float OnboardingTimer = 0.0f;
 
 	// [2026-11-01 T-018] The intro choice widget, created when the
 	// gnome steals and dismissed at FreePlay.
@@ -398,6 +415,16 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// [2026-11-03 T-072] Pause routing by flow state: Playing pauses,
 	// Paused resumes, Won/Lost back out to title, Title ignores.
 	void HandlePause();
+	// [2026-11-03 T-073] Help overlay toggle (H / gamepad Back).
+	void HandleHelp();
+	// [2026-11-03 T-073] Marks a verb performed (prompt dismissed
+	// forever, progress saved). Attempt-based like the teaching
+	// itself: pressing the key with the verb available counts.
+	void MarkOnboardingDone(EOnboardingVerb Verb);
+	// [2026-11-03 T-073] 1 Hz prompt evaluation while a prompt can
+	// still show: run started, intro done, onboarding incomplete.
+	void TickOnboarding(float DeltaSeconds);
+	void LoadOnboardingProgress();
 	void HandleFreeLook(const struct FInputActionValue& Value);
 	void HandleFreeLookEnd();
 	void HandleSteerLatch();

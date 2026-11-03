@@ -12,6 +12,9 @@
 #include "Core/GameFlowMachine.h"
 #include "Core/UnderTheMountainGameMode.h"
 #include "Dragon/DragonAppearanceComponent.h"
+#include "Dragon/OnboardingSaveGame.h"
+#include "UI/OnboardingContent.h"
+#include "UI/OnboardingWidget.h"
 #include "Dragon/DragonCameraSaveGame.h"
 #include "Dragon/DragonCombatComponent.h"
 #include "Dragon/DragonMovementComponent.h"
@@ -426,11 +429,174 @@ void ADragonCharacter::HandlePause()
 	}
 }
 
+void ADragonCharacter::HandleHelp()
+{
+	// [2026-11-03 T-073] Non-modal by widget construction (hit-test
+	// invisible prompt line, scroll box the game runs behind): toggling
+	// never pauses, never steals input.
+	if (OnboardingWidget != nullptr)
+	{
+		OnboardingWidget->ToggleHelp();
+	}
+}
+
+void ADragonCharacter::LoadOnboardingProgress()
+{
+	for (int32 I = 0; I < static_cast<int32>(EOnboardingVerb::Count); ++I)
+	{
+		OnboardingDone[I] = false;
+	}
+	if (UGameplayStatics::DoesSaveGameExist(OnboardingSaveSlotName, 0))
+	{
+		if (UOnboardingSaveGame* Save = Cast<UOnboardingSaveGame>(
+				UGameplayStatics::LoadGameFromSlot(OnboardingSaveSlotName, 0)))
+		{
+			const int32 N = FMath::Min(static_cast<int32>(EOnboardingVerb::Count),
+									   Save->VerbDone.Num());
+			for (int32 I = 0; I < N; ++I)
+			{
+				OnboardingDone[I] = Save->VerbDone[I];
+			}
+		}
+	}
+}
+
+void ADragonCharacter::MarkOnboardingDone(EOnboardingVerb Verb)
+{
+	const int32 I = static_cast<int32>(Verb);
+	if (I < 0 || I >= static_cast<int32>(EOnboardingVerb::Count) || OnboardingDone[I])
+	{
+		return;
+	}
+	OnboardingDone[I] = true;
+	// [2026-11-03 T-073] Persist every first success (slot choice
+	// recorded on the member): prompts never reappear, across sessions.
+	if (UOnboardingSaveGame* Save = Cast<UOnboardingSaveGame>(
+			UGameplayStatics::CreateSaveGameObject(UOnboardingSaveGame::StaticClass())))
+	{
+		Save->VerbDone.SetNum(static_cast<int32>(EOnboardingVerb::Count));
+		for (int32 J = 0; J < static_cast<int32>(EOnboardingVerb::Count); ++J)
+		{
+			Save->VerbDone[J] = OnboardingDone[J];
+		}
+		UGameplayStatics::SaveGameToSlot(Save, OnboardingSaveSlotName, 0);
+	}
+}
+
+void ADragonCharacter::TickOnboarding(float DeltaSeconds)
+{
+	// [2026-11-03 T-073] 1 Hz evaluation, gated to real play: the run
+	// must have started (flow Playing — paused worlds never tick this
+	// far anyway) and the intro must be done, and there must be work
+	// left. The pure arbiter picks; this block only gathers context
+	// and applies the verdict to the widget.
+	bool bIncomplete = false;
+	for (int32 I = 0; I < static_cast<int32>(EOnboardingVerb::Count); ++I)
+	{
+		bIncomplete = bIncomplete || !OnboardingDone[I];
+	}
+	if (!bIncomplete)
+	{
+		if (CurrentPrompt != EOnboardingVerb::Count && OnboardingWidget != nullptr)
+		{
+			OnboardingWidget->ClearPrompt();
+			CurrentPrompt = EOnboardingVerb::Count;
+		}
+		return;
+	}
+	UWorld* World = GetWorld();
+	if (World == nullptr || OnboardingWidget == nullptr)
+	{
+		return;
+	}
+	const AUnderTheMountainGameMode* Mode =
+		World->GetAuthGameMode<AUnderTheMountainGameMode>();
+	if (Mode == nullptr || Mode->GetFlowState() != UGameFlowMachine::EState::Playing)
+	{
+		return;
+	}
+	const UIntroSubsystem* Intro = World->GetSubsystem<UIntroSubsystem>();
+	if (Intro != nullptr && Intro->GetState() != EIntroState::FreePlay)
+	{
+		return;
+	}
+	OnboardingTimer += DeltaSeconds;
+	if (OnboardingTimer < 1.0f)
+	{
+		return;
+	}
+	OnboardingTimer = 0.0f;
+
+	const FVector Origin = GetActorLocation();
+	const float FireRangeSq = Combat != nullptr ? Combat->FireRange * Combat->FireRange : 0.0f;
+	const float RoarRangeSq =
+		Combat != nullptr ? Combat->RoarRadius * Combat->RoarRadius : 0.0f;
+	const float EatRangeSq = Combat != nullptr ? Combat->EatRange * Combat->EatRange : 0.0f;
+	bool bFireTarget = false;
+	bool bThiefNear = false;
+	bool bGoatNear = false;
+	TArray<ABurnablePropActor*> Props;
+	TArray<FVector> PropLocations;
+	GatherBurnableTargets(Props, PropLocations);
+	for (int32 I = 0; I < PropLocations.Num() && !bFireTarget; ++I)
+	{
+		bFireTarget = FVector::DistSquared(Origin, PropLocations[I]) <= FireRangeSq;
+	}
+	TArray<AActor*> ThiefActors;
+	UGameplayStatics::GetAllActorsOfClass(World, AThiefCharacter::StaticClass(), ThiefActors);
+	for (AActor* Actor : ThiefActors)
+	{
+		if (Actor != nullptr &&
+			FVector::DistSquared(Origin, Actor->GetActorLocation()) <= RoarRangeSq)
+		{
+			bThiefNear = true;
+			break;
+		}
+	}
+	TArray<AGoatActor*> Goats;
+	TArray<FVector> GoatLocations;
+	GatherGoatTargets(Goats, GoatLocations);
+	for (int32 I = 0; I < GoatLocations.Num() && !bGoatNear; ++I)
+	{
+		bGoatNear = FVector::DistSquared(Origin, GoatLocations[I]) <= EatRangeSq;
+	}
+	bool bDivingNow = false;
+	bool bUnusedBrake = false;
+	bool bUnusedHover = false;
+	FlightStateFlags(bDivingNow, bUnusedBrake, bUnusedHover);
+	if (bDivingNow)
+	{
+		MarkOnboardingDone(EOnboardingVerb::Dive);
+	}
+	const EOnboardingVerb Next =
+		NextOnboardingPrompt(OnboardingDone, bFireTarget, bThiefNear, bGoatNear);
+	if (Next != CurrentPrompt)
+	{
+		CurrentPrompt = Next;
+		if (Next == EOnboardingVerb::Count)
+		{
+			OnboardingWidget->ClearPrompt();
+			return;
+		}
+		for (const FOnboardingPromptDef& Def : GetOnboardingPrompts())
+		{
+			if (Def.Verb == Next)
+			{
+				UE_LOG(LogUnderTheMountain, Log, TEXT("Onboarding prompt: %s"), *Def.KeyboardText);
+				OnboardingWidget->ShowPrompt(Def);
+				break;
+			}
+		}
+	}
+}
+
 void ADragonCharacter::CycleCamera()
 {
 	CameraMode = static_cast<EDragonCameraMode>((static_cast<int32>(CameraMode) + 1) % 3);
 	SaveCameraChoice();
 	UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon camera: %d"), static_cast<int32>(CameraMode));
+	// [2026-11-03 T-073] First cycle dismisses the camera prompt.
+	MarkOnboardingDone(EOnboardingVerb::Camera);
 }
 
 void ADragonCharacter::SaveCameraChoice() const
@@ -554,7 +720,7 @@ bool ADragonCharacter::HasInputActions() const
 		   FreeLookAction != nullptr && SinkAction != nullptr && SteerLatchAction != nullptr &&
 		   // [2026-11-03 T-065] Split look/move + camera cycle join the contract.
 		   PadLookAction != nullptr && PadMoveAction != nullptr && CameraCycleAction != nullptr &&
-		   PauseAction != nullptr &&
+		   PauseAction != nullptr && HelpAction != nullptr &&
 		   MappingContext != nullptr;
 }
 
@@ -598,6 +764,16 @@ void ADragonCharacter::BeginPlay()
 	{
 		UE_LOG(LogUnderTheMountain, Warning,
 			   TEXT("SK_Dragon_v4_FlyAnim not found; flight will use bind pose"));
+	}
+	// [2026-11-03 T-073] Onboarding: load persisted progress and build
+	// the (hidden) prompt + help widget before the first tick evaluates.
+	LoadOnboardingProgress();
+	OnboardingWidget =
+		CreateWidget<UOnboardingWidget>(GetWorld(), UOnboardingWidget::StaticClass());
+	if (OnboardingWidget != nullptr)
+	{
+		OnboardingWidget->AddToViewport(90);
+		OnboardingWidget->ClearPrompt();
 	}
 	UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon pawn spawned at %s"), *GetActorLocation().ToString());
 	// [2026-11-03 T-105] The landing curve lives in Stats alone: push its
@@ -812,6 +988,11 @@ void ADragonCharacter::BuildInputActions()
 	PauseAction = MakeAction(TEXT("IA_Pause"), EInputActionValueType::Boolean);
 	Map(PauseAction, EKeys::Escape);
 	Map(PauseAction, EKeys::Gamepad_Special_Right);
+	// [2026-11-03 T-073] Help overlay: H on keyboard, Back (Select) on
+	// gamepad. Non-modal by design (overlay never pauses the game).
+	HelpAction = MakeAction(TEXT("IA_Help"), EInputActionValueType::Boolean);
+	Map(HelpAction, EKeys::H);
+	Map(HelpAction, EKeys::Gamepad_Special_Left);
 }
 
 void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -859,6 +1040,10 @@ void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	if (PauseAction != nullptr)
 	{
 		EIC->BindAction(PauseAction, ETriggerEvent::Started, this, &ADragonCharacter::HandlePause);
+	}
+	if (HelpAction != nullptr)
+	{
+		EIC->BindAction(HelpAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleHelp);
 	}
 	if (FlapAction != nullptr)
 	{
@@ -1017,6 +1202,9 @@ void ADragonCharacter::HandleFlap()
 	{
 		return;
 	}
+	// [2026-11-03 T-073] First flap dismisses the flap prompt (attempt
+	// with stamina counts as performed — the teaching is the key).
+	MarkOnboardingDone(EOnboardingVerb::Flap);
 	if (!IsFlying() && !IsPrototypeFlying())
 	{
 		// [2026-11-03 T-075] Prototype schemes take off into the custom
@@ -1125,6 +1313,8 @@ void ADragonCharacter::HandleToggleScent()
 	const bool bVisible = Scent->ToggleScentVisible();
 	UE_LOG(LogUnderTheMountain, Log, TEXT("Scent ribbons toggled: %s"),
 		   bVisible ? TEXT("shown") : TEXT("HIDDEN (true-sight markers unaffected)"));
+	// [2026-11-03 T-073] First scent toggle dismisses the scent prompt.
+	MarkOnboardingDone(EOnboardingVerb::Scent);
 }
 
 void ADragonCharacter::GatherCombatTargets(TArray<UThiefBrain*>& OutBrains, TArray<FVector>& OutLocations)
@@ -1602,6 +1792,12 @@ void ADragonCharacter::HandleFire(const FInputActionValue& Value)
 	// [2026-10-28 T-015] Latch only — Tick owns starting/ticking the
 	// breath so stamina gating and target gathering happen once.
 	bWantsFire = Value.Get<bool>();
+	if (bWantsFire)
+	{
+		// [2026-11-03 T-073] First trigger pull dismisses the fire
+		// prompt (attempt counts — the teaching is the key).
+		MarkOnboardingDone(EOnboardingVerb::Fire);
+	}
 }
 
 void ADragonCharacter::HandleFireEnd()
@@ -1691,6 +1887,12 @@ void ADragonCharacter::HandleRoar()
 	GatherCombatTargets(Brains, Locations);
 	const float Now = GetWorld() != nullptr ? GetWorld()->GetTimeSeconds() : 0.0f;
 	const bool bRoared = Combat->TryRoar(Now, Stats, GetActorLocation(), Brains, Locations);
+	if (bRoared)
+	{
+		// [2026-11-03 T-073] First roar that actually fires dismisses
+		// the roar prompt (a cooldown-blocked press keeps teaching).
+		MarkOnboardingDone(EOnboardingVerb::Roar);
+	}
 	// [2026-11-01 T-068] A roar that actually fired is now visible, not
 	// [2026-11-01 T-068] just audible-in-the-log: mantle + head-throw clip.
 	if (bRoared)
@@ -1790,6 +1992,9 @@ void ADragonCharacter::HandleEat()
 	if (bStarted)
 	{
 		UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon eating..."));
+		// [2026-11-03 T-073] First real meal dismisses the eat prompt
+		// (a whiff that starts nothing keeps teaching).
+		MarkOnboardingDone(EOnboardingVerb::Eat);
 	}
 	else
 	{
@@ -1824,6 +2029,8 @@ void ADragonCharacter::HandleToggleTintPicker()
 		TintWidget->InitializeFromCurrent();
 		TintWidget->AddToViewport(10);
 		PC->SetShowMouseCursor(true);
+		// [2026-11-03 T-073] First picker open dismisses the tint prompt.
+		MarkOnboardingDone(EOnboardingVerb::Tint);
 	}
 	else
 	{
@@ -2554,6 +2761,9 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 	// accounting and outcome classification, driven from here
 	// (the pawn is the one actor that always ticks).
 	AuditGameLoop(DeltaSeconds);
+	// [2026-11-03 T-073] First-use prompts tick beside the intro (both
+	// gate on run-started + intro-done inside).
+	TickOnboarding(DeltaSeconds);
 	// [2026-11-03 T-075] Prototype chassis housekeeping (no-op on scheme 0).
 	UpdatePrototypeFlight(DeltaSeconds);
 	// [2026-11-03 T-075] Scripted course legs (arms only on utm.flight.course).

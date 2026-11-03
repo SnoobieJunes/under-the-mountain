@@ -106,6 +106,9 @@ Notes:
   start), roar (−10 stamina, 6 s cooldown; makes fleeing thieves drop loot),
   and eat (2 s channel; a dead thief restores +60 stamina/+15 HP, a goat
   +50/+10).
+- **Help:** press **H** (gamepad Back/Select) any time for the control
+  overlay — every binding, keyboard + pad columns, generated from the
+  shipped scheme.
 - **Scale-colour picker** (C): one draggable saturation/value pad plus a
   hue strip in a code-built widget; the tint is clamped, written to the
   material, and persisted to a SaveGame slot.

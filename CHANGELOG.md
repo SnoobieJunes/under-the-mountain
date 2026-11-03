@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-03 — T-073 — First-session contextual prompts teach each verb once, plus an H overlay listing every binding (generated from the shipped scheme)
+
 2026-11-03 — T-072 — Game-flow shell: title → playing → pause → won/lost screens, Esc pauses, restart reloads a clean run, quit works
 
 2026-11-03 — T-108 — Doc honesty pass: glide 0/s, shipped (not prototype) chassis, glide-free mercy note, GC test covers all 21 input members (no user-visible change)
