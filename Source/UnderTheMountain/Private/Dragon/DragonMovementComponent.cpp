@@ -180,6 +180,30 @@ float UDragonMovementComponent::LandingSeverity(float Speed, float ImpactAngleDe
 	return (NormalSpeed - Stats.LandingSpeedThreshold) / (Stats.LandingSpeedMaxDamage - Stats.LandingSpeedThreshold);
 }
 
+UDragonMovementComponent::FWallImpactResult UDragonMovementComponent::ResolveWallImpact(
+	float IntoSurfaceSpeed, const UDragonStatsComponent& Stats)
+{
+	// [2026-11-03 T-079] A wall hit prices like a head-on landing at
+	// the into-surface speed: the normal component IS the impact, so
+	// the angle is 90 by construction (no asin reconstruction needed).
+	// Damage is the shipped landing number at that speed; the keep
+	// fraction is one-minus-severity (graze untouched, lawn-dart
+	// crumple). Mapping, not tuning: the only numbers are Stats'
+	// own curve `[tuning: PT-STAM]`, which T-105 already owns.
+	FWallImpactResult Result;
+	Result.DamageHP = Stats.LandingDamageForImpactSpeed(FMath::Max(0.0f, IntoSurfaceSpeed));
+	const float Severity = LandingSeverity(FMath::Max(0.0f, IntoSurfaceSpeed), 90.0f, Stats);
+	Result.KeepFraction = FMath::Clamp(1.0f - Severity, 0.0f, 1.0f);
+	return Result;
+}
+
+UDragonMovementComponent::FWallImpact UDragonMovementComponent::ConsumeWallImpact()
+{
+	FWallImpact Hit = PendingWallImpact;
+	PendingWallImpact = FWallImpact();
+	return Hit;
+}
+
 float UDragonMovementComponent::ClampSpeedToCeilings(float Speed, float PitchDeg) const
 {
 	// [2026-11-03 T-075] Dive terminal is the absolute cap; the Surge ceiling
@@ -336,6 +360,33 @@ void UDragonMovementComponent::PhysCustom(float deltaTime, int32 Iterations)
 			if (IntoSurface < 0.0f)
 			{
 				Velocity -= MoveHit.Normal * IntoSurface;
+			}
+			if (!bFloorHit && FloorIntoSpeed > 0.0f)
+			{
+				// [2026-11-03 T-079] Wall hit (anything that is not
+				// floor): record the hardest substep for the pawn to
+				// price, and kill momentum by severity now, in the
+				// same step, so wall-slide farming pays every touch.
+				// Landing Assist never shields this path: assist caps
+				// descent speed, it does not reroute wall contacts.
+				if (!PendingWallImpact.bPending ||
+					FloorIntoSpeed > PendingWallImpact.IntoSpeed)
+				{
+					PendingWallImpact.IntoSpeed = FloorIntoSpeed;
+					PendingWallImpact.bPending = true;
+				}
+				if (CurveSource != nullptr)
+				{
+					const FWallImpactResult Wall =
+						ResolveWallImpact(FloorIntoSpeed, *CurveSource);
+					Velocity *= Wall.KeepFraction;
+				}
+				else if (!bWarnedMissingCurve)
+				{
+					bWarnedMissingCurve = true;
+					UE_LOG(LogUnderTheMountain, Warning,
+						   TEXT("Wall impact unpriced: no Stats curve pushed (BeginPlay) — sliding only."));
+				}
 			}
 		}
 	}

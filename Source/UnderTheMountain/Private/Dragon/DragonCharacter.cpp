@@ -785,6 +785,9 @@ void ADragonCharacter::BeginPlay()
 		if (UDragonMovementComponent* Proto = Cast<UDragonMovementComponent>(GetCharacterMovement()))
 		{
 			Proto->FlightParams.CachedLandingSpeedThreshold = Stats->LandingSpeedThreshold;
+			// [2026-11-03 T-079] Wall-impact pricing reads the same
+			// curve (movement reads Stats, never the reverse).
+			Proto->CurveSource = Stats;
 		}
 	}
 	// [2026-11-01 T-052] Initial weather from the cvar (0 Clear
@@ -2761,6 +2764,30 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 	// accounting and outcome classification, driven from here
 	// (the pawn is the one actor that always ticks).
 	AuditGameLoop(DeltaSeconds);
+	// [2026-11-03 T-079] Wall-impact pricing: the integrator records
+	// the hardest substep hit; the pawn prices it here on the shipped
+	// landing curve (same rule the pure test pins — source tagged
+	// collision in the log; T-074 owns the enemy-hit event and any
+	// future threshold divergence).
+	if (Stats != nullptr)
+	{
+		if (UDragonMovementComponent* Proto = Cast<UDragonMovementComponent>(GetCharacterMovement()))
+		{
+			const UDragonMovementComponent::FWallImpact Hit = Proto->ConsumeWallImpact();
+			if (Hit.bPending)
+			{
+				const UDragonMovementComponent::FWallImpactResult Wall =
+					UDragonMovementComponent::ResolveWallImpact(Hit.IntoSpeed, *Stats);
+				if (Wall.DamageHP > 0.0f)
+				{
+					Stats->ApplyHPDamage(Wall.DamageHP);
+					UE_LOG(LogUnderTheMountain, Log,
+						   TEXT("Wall impact: %.0f cm/s into the surface, %d HP (collision source)"),
+						   Hit.IntoSpeed, FMath::RoundToInt(Wall.DamageHP));
+				}
+			}
+		}
+	}
 	// [2026-11-03 T-073] First-use prompts tick beside the intro (both
 	// gate on run-started + intro-done inside).
 	TickOnboarding(DeltaSeconds);

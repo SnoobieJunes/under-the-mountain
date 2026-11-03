@@ -162,6 +162,7 @@ paid impulses `[derived: owner feedback + food-loop preservation, docs/FLIGHT-SP
 | Roar | −10 flat, 6 s cooldown | `[tuning: PT-THIEF]` |
 | Claw / tail swipe | −4 per swing | `[tuning: PT-THIEF]` |
 | Hard landing (impact speed **and descent angle** above envelope) | HP −5 to −25 scaled by impact severity | Landing damage exists `[derived: idea.md]`; scale `[tuning: PT-STAM]`; a fast shallow flare must not price like a vertical lawn-dart `[derived: T-075 momentum descents]`; curve stored in `DA_DragonStats.LandingDamageCurve`, not constants |
+| Wall impact (into-surface speed on the same 800→2200 curve) | HP −5 to −25 scaled by severity (T-079); momentum kept 1−severity (graze untouched, lawn-dart crumple, no wall-slide farming) | Same family as hard landing `[derived: T-079 audit gap]`; curve shared with Stats (single source, T-105); source tagged collision in the log for T-074's enemy-hit event to diverge on |
 
 ### Zero stamina
 

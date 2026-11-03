@@ -159,6 +159,46 @@ bool FDragonMovementTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("severity reaches full at the retuned max"),
 			  UDragonMovementComponent::LandingSeverity(3000.0f, 90.0f, *Retuned), 1.0f);
 
+	// [2026-11-03 T-079] Wall-impact rule: brushes are free and keep
+	// all momentum, lawn-darts pay full and crumple. Damage is the
+	// shipped landing number at the into-surface speed (pinned equal
+	// to the Stats path, not re-derived), keep is one-minus-severity.
+	{
+		const UDragonMovementComponent::FWallImpactResult Brush =
+			UDragonMovementComponent::ResolveWallImpact(700.0f, *Stats);
+		TestEqual(TEXT("sub-threshold wall brush is free"), Brush.DamageHP, 0.0f);
+		TestEqual(TEXT("sub-threshold wall brush keeps momentum"), Brush.KeepFraction, 1.0f);
+	}
+	{
+		const UDragonMovementComponent::FWallImpactResult Mid =
+			UDragonMovementComponent::ResolveWallImpact(1500.0f, *Stats);
+		TestEqual(TEXT("wall damage equals the shipped landing number at that speed"),
+				  Mid.DamageHP, Stats->LandingDamageForImpactSpeed(1500.0f));
+		TestTrue(TEXT("mid wall impact keeps partial momentum"),
+				 Mid.KeepFraction > 0.0f && Mid.KeepFraction < 1.0f);
+		TestTrue(TEXT("mid wall impact hurts"), Mid.DamageHP > 5.0f);
+	}
+	{
+		const UDragonMovementComponent::FWallImpactResult Slam =
+			UDragonMovementComponent::ResolveWallImpact(2200.0f, *Stats);
+		TestEqual(TEXT("max-curve wall impact pays full"), Slam.DamageHP, 25.0f);
+		TestEqual(TEXT("max-curve wall impact crumples"), Slam.KeepFraction, 0.0f);
+		const UDragonMovementComponent::FWallImpactResult Over =
+			UDragonMovementComponent::ResolveWallImpact(5000.0f, *Stats);
+		TestEqual(TEXT("past-max wall impact stays capped"), Over.DamageHP, 25.0f);
+		TestEqual(TEXT("past-max wall impact stays crumpled"), Over.KeepFraction, 0.0f);
+	}
+	{
+		// Retuned curve: the wall rule follows Stats (no private copy).
+		UDragonStatsComponent* RetunedWall = NewObject<UDragonStatsComponent>();
+		RetunedWall->LandingSpeedThreshold = 1000.0f;
+		RetunedWall->LandingSpeedMaxDamage = 3000.0f;
+		const UDragonMovementComponent::FWallImpactResult RetunedHit =
+			UDragonMovementComponent::ResolveWallImpact(900.0f, *RetunedWall);
+		TestEqual(TEXT("retuned wall curve frees 900 cm/s"), RetunedHit.DamageHP, 0.0f);
+		TestEqual(TEXT("retuned wall curve keeps momentum at 900 cm/s"), RetunedHit.KeepFraction, 1.0f);
+	}
+
 	// [2026-11-03 T-064] Dive is a posture: committed nose-down past 30 deg
 	// while above the precision band. Level, climbing, shallow, slow, and
 	// boundary flight are never a dive — however steep the camera looks.

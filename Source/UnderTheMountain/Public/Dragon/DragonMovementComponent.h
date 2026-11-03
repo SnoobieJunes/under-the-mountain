@@ -200,6 +200,29 @@ class UNDERTHEMOUNTAIN_API UDragonMovementComponent : public UCharacterMovementC
 	// lawn-dart pays full price. AngleDeg is clamped to [0,90].
 	static float LandingSeverity(float Speed, float ImpactAngleDeg, const UDragonStatsComponent& Stats);
 
+	// [2026-11-03 T-079] Wall-impact rule result: HP priced on the
+	// shipped landing curve at the into-surface speed, and the fraction
+	// of post-slide velocity the dragon keeps (1 = grazing brush
+	// untouched, 0 = lawn-dart crumple). Pure and headless-tested.
+	struct FWallImpactResult
+	{
+		float DamageHP = 0.0f;
+		float KeepFraction = 1.0f;
+	};
+	static FWallImpactResult ResolveWallImpact(float IntoSurfaceSpeed,
+											   const UDragonStatsComponent& Stats);
+
+	// [2026-11-03 T-079] Latest unpriced wall hit, recorded by the
+	// integrator (which owns the sweep data) and consumed by the pawn
+	// (which owns the HP pool — this component never writes either
+	// pool). Hardest substep wins; the pawn clears on read.
+	struct FWallImpact
+	{
+		float IntoSpeed = 0.0f;
+		bool bPending = false;
+	};
+	FWallImpact ConsumeWallImpact();
+
 	// [2026-11-03 T-064] Dive is a posture, not a button (adopted T-062
 	// decision): nose pitched down past 30 degrees while above the
 	// precision band. Pure so the integrator, the HUD naming, and the
@@ -268,4 +291,15 @@ class UNDERTHEMOUNTAIN_API UDragonMovementComponent : public UCharacterMovementC
 	// course moves data, not pawn code (same contract as Stats).
 	UPROPERTY(EditAnywhere, Category = "Dragon|Flight")
 	FDragonFlightParams FlightParams;
+
+	// [2026-11-03 T-079] Curve source for wall-impact pricing (pushed by
+	// the pawn at BeginPlay, T-105 pattern: movement reads Stats, never
+	// the reverse). UPROPERTY so the GC sees it.
+	UPROPERTY()
+	TObjectPtr<const UDragonStatsComponent> CurveSource = nullptr;
+
+	// [2026-11-03 T-079] Latest unpriced wall hit (hardest substep wins;
+	// the pawn consumes it). Not a UPROPERTY: plain floats, no GC.
+	FWallImpact PendingWallImpact;
+	bool bWarnedMissingCurve = false;
 };
