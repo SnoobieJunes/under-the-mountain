@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-03 — T-063 — Right-mouse hold looks around without turning the dragon and double-click latches steering to the view (any move input cancels); gamepad D-pad Up latches and unlatches the same way
+
 2026-11-03 — T-062 — Flight is the hybrid model now: the dragon flies by pitch and momentum at speed, translates and hover-holds at low speed, takes off with Space, brakes with Shift (S flares too), lands with F assist, and gliding costs no stamina
 
 2026-11-03 — T-061 — Scent ribbons can be hidden with N (gamepad D-pad Down) and shown again with a second press; the debug readout names the state, and true-sight markers stay on their own T-key layer either way

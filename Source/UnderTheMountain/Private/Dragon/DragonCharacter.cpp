@@ -1781,8 +1781,9 @@ void ADragonCharacter::HandleRiseEnd()
 
 void ADragonCharacter::HandleFreeLook(const FInputActionValue& Value)
 {
-	// [2026-11-03 T-075] T-063: RMB hold = free look (nose frozen, camera
-	// roams); double-click toggles latched steer-to-look. No-op shipped.
+	// [2026-11-03 T-063] RMB hold = free look (nose frozen, camera
+	// roams); double-click toggles latched steer-to-look. Shipped since
+	// T-062 (Scheme C default).
 	(void)Value;
 	if (UDragonMovementComponent::GetFlightScheme() == 0)
 	{
@@ -1819,11 +1820,14 @@ void ADragonCharacter::HandleFreeLookEnd()
 
 void ADragonCharacter::HandleSteerLatch()
 {
-	// [2026-11-03 T-075] Gamepad D-pad Up equivalent of double-click RMB.
+	// [2026-11-03 T-063] Gamepad D-pad Up equivalent of double-click RMB:
+	// toggles the latch (a second press releases, like the double-click).
+	// Shipped on the T-062 hybrid; IsPrototypeFlying is true in MOVE_Custom.
 	if (IsPrototypeFlying())
 	{
-		bSteerLatch = true;
-		UE_LOG(LogUnderTheMountain, Log, TEXT("Steer-to-camera LATCHED (pad)"));
+		bSteerLatch = !bSteerLatch;
+		UE_LOG(LogUnderTheMountain, Log, TEXT("Steer-to-camera %s (pad)"),
+			   bSteerLatch ? TEXT("LATCHED") : TEXT("released"));
 	}
 }
 

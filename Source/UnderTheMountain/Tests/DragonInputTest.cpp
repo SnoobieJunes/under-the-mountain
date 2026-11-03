@@ -115,4 +115,70 @@ bool FDragonScentToggleBindingTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// [2026-11-03 T-063] The RMB free-look / D-pad-Up steer-latch wiring,
+// proven headless: the mapping table must bind IA_FreeLook to the right
+// mouse button and IA_SteerLatch to gamepad D-pad Up (the adopted T-063
+// map). This plus the latch/cancel logic proves everything short of Slate
+// delivering a live button press, which rides with the next PIE session.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDragonFreeLookBindingTest,
+								 "UnderTheMountain.Dragon.FreeLookBinding",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDragonFreeLookBindingTest::RunTest(const FString& Parameters)
+{
+	ADragonCharacter* Pawn = NewObject<ADragonCharacter>();
+	TestNotNull(TEXT("pawn constructs for binding check"), Pawn);
+	if (Pawn == nullptr)
+	{
+		return false;
+	}
+	Pawn->EnsureInputActions();
+
+	UClass* PawnClass = ADragonCharacter::StaticClass();
+	const FObjectProperty* FreeLookProp =
+		FindFProperty<FObjectProperty>(PawnClass, TEXT("FreeLookAction"));
+	const FObjectProperty* LatchProp =
+		FindFProperty<FObjectProperty>(PawnClass, TEXT("SteerLatchAction"));
+	const FObjectProperty* ContextProp =
+		FindFProperty<FObjectProperty>(PawnClass, TEXT("MappingContext"));
+	TestNotNull(TEXT("FreeLookAction member reflects"), FreeLookProp);
+	TestNotNull(TEXT("SteerLatchAction member reflects"), LatchProp);
+	TestNotNull(TEXT("MappingContext member reflects"), ContextProp);
+	if (FreeLookProp == nullptr || LatchProp == nullptr || ContextProp == nullptr)
+	{
+		return false;
+	}
+
+	const UInputAction* FreeLookAction =
+		Cast<UInputAction>(FreeLookProp->GetObjectPropertyValue_InContainer(Pawn));
+	const UInputAction* LatchAction =
+		Cast<UInputAction>(LatchProp->GetObjectPropertyValue_InContainer(Pawn));
+	const UInputMappingContext* Context =
+		Cast<UInputMappingContext>(ContextProp->GetObjectPropertyValue_InContainer(Pawn));
+	TestNotNull(TEXT("ensured pawn owns the free-look action"), FreeLookAction);
+	TestNotNull(TEXT("ensured pawn owns the steer-latch action"), LatchAction);
+	TestNotNull(TEXT("ensured pawn owns the mapping context"), Context);
+	if (FreeLookAction == nullptr || LatchAction == nullptr || Context == nullptr)
+	{
+		return false;
+	}
+
+	bool bHasRMB = false;
+	bool bHasPadUp = false;
+	for (const FEnhancedActionKeyMapping& Mapping : Context->GetMappings())
+	{
+		if (Mapping.Action == FreeLookAction)
+		{
+			bHasRMB = bHasRMB || Mapping.Key == EKeys::RightMouseButton;
+		}
+		if (Mapping.Action == LatchAction)
+		{
+			bHasPadUp = bHasPadUp || Mapping.Key == EKeys::Gamepad_DPad_Up;
+		}
+	}
+	TestTrue(TEXT("right mouse button drives free look"), bHasRMB);
+	TestTrue(TEXT("gamepad D-pad Up drives the steer latch"), bHasPadUp);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
