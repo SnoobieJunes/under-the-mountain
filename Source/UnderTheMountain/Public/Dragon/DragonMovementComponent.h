@@ -1,13 +1,14 @@
 // Copyright Under the Mountain contributors.
-// Purpose: T-075 flight-spike movement chassis — Scheme A (momentum) / C
-// (hybrid) / B (forced precision) prototyped on one custom movement
-// component behind utm.flight.scheme. Created 2026-11-03 (T-075).
+// Purpose: the flight movement chassis — Scheme A (momentum) / C
+// (hybrid, shipped) / B (forced precision) on one custom movement
+// component behind utm.flight.scheme. Created 2026-11-03 (T-075);
+// T-062 shipped Scheme C, so scheme 0 is the legacy baseline now,
+// not an inert prototype.
 // Invariants: all flight math lives in pure statics over
 // FDragonFlightParams (no world, no clock, no stamina pools) so automation
 // tests prove the model headlessly; the pawn integrates, Stats spends
 // stamina — this component never writes either pool. Slice 2a adds the
-// PhysCustom integrator, impulses and CSV capture plus the pawn attach —
-// still inert on scheme 0, so shipped flight is unchanged by default.
+// PhysCustom integrator, impulses and CSV capture plus the pawn attach.
 
 #pragma once
 
@@ -22,7 +23,7 @@ class UDragonStatsComponent;
 UENUM(BlueprintType)
 enum class EDragonFlightScheme : uint8
 {
-	Shipped UMETA(DisplayName = "Shipped (prototype inert)"),
+	Shipped UMETA(DisplayName = "Shipped (Scheme C hybrid)"),
 	SchemeA UMETA(DisplayName = "Scheme A: pure pitch/momentum"),
 	SchemeC UMETA(DisplayName = "Scheme C: speed-blended hybrid"),
 	SchemeB UMETA(DisplayName = "Scheme B: forced precision"),

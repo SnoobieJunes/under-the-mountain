@@ -96,7 +96,7 @@ Notes:
   scaled 2×, with `M_DragonScales` — base × scale-tint, with the crimson
   membranes/spines protected in the material graph.
 - **Flight feel:** flap to climb, glide to travel, dive to convert altitude
-  into speed; stamina drains per action (flap 3/beat, glide 1/s, hover 8/s,
+  into speed; stamina drains per action (flap 3/beat, glide 0/s, hover 8/s,
   fire 5/s), zero stamina burns HP, and hard landings cost HP scaled by impact
   velocity (damage-free under ~800 cm/s).
 - **Combat:** fire breath (hold; 18 DPS cone, −5 stamina/s, needs 10 to

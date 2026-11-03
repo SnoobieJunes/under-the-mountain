@@ -113,7 +113,9 @@ bool UDragonStatsComponent::ShouldForceFallAtZeroStamina(float RatePerSecond) co
 	// [2026-10-28 T-036] A dive is deliberately free in GAMEPLAY.md
 	// section 2: altitude, not stamina, pays for it. Therefore zero
 	// stamina must not convert a dive into a fall or start the HP
-	// burn. Glide and hover have positive rates, so continuing either
-	// at zero stamina has both consequences.
+	// burn. [2026-11-03 T-108] Same for glide (0/s since T-062):
+	// only hover still drains (8/s), so only continuing to hover at
+	// zero stamina has both consequences. (Corrects the T-036 note,
+	// which gave glide a positive rate.)
 	return RatePerSecond > 0.0f;
 }

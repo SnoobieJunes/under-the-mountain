@@ -50,8 +50,11 @@ bool FDragonInputTest::RunTest(const FString& Parameters)
 		 {TEXT("MoveAction"), TEXT("LookAction"), TEXT("FlapAction"), TEXT("ToggleFlightAction"),
 		  TEXT("DiveAction"), TEXT("TrueSightAction"), TEXT("TintAction"), TEXT("TintWidget"),
 		  TEXT("FreeLookAction"), TEXT("SinkAction"), TEXT("SteerLatchAction"),
-		  TEXT("ScentToggleAction"),											   // [2026-11-03 T-061] N-key scent toggle joins the GC contract.
-		  TEXT("PadLookAction"), TEXT("PadMoveAction"), TEXT("CameraCycleAction"), // [2026-11-03 T-065] split sticks + cycle.
+		  TEXT("ScentToggleAction"),
+		  TEXT("PadLookAction"), TEXT("PadMoveAction"), TEXT("CameraCycleAction"),
+		  TEXT("FireAction"), TEXT("RoarAction"), TEXT("EatAction"), TEXT("WingBuffetAction"),
+		  TEXT("TailSlamAction"), // [2026-11-03 T-108] combat verbs join the GC contract: an
+								  // unreflected action is collectable mid-fight (same T-004 lesson).
 		  TEXT("MappingContext")})
 	{
 		TestNotNull(FString::Printf(TEXT("%s is a reflected UPROPERTY"), Member),
