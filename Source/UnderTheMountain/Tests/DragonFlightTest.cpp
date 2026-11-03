@@ -11,6 +11,7 @@
 #include "Animation/AnimSingleNodeInstance.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Dragon/DragonCharacter.h"
+#include "Dragon/DragonMovementComponent.h"
 #include "Dragon/DragonStatsComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "Animation/Skeleton.h"
@@ -137,6 +138,60 @@ bool FDragonFlightTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("five impulses exactly empty a full pool"), Stats->Stamina, 0.0f);
 	TestFalse(TEXT("no sixth impulse on an empty pool"), Stats->TryConsumeStamina(20.0f));
+	return true;
+}
+
+// [2026-11-03 T-103] Trap slow on the hybrid path: ApplyTrapSlow scales the
+// integrator feed (not just MaxFlySpeed, which PhysCustom ignores) and
+// TickTrapSlow restores everything exactly at expiry. No world needed: the
+// seam is world-free by construction, so the test drives slow/restore
+// directly (the integrator's read of the feed is one line per use, covered
+// by build + review, not by a physics tick).
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDragonTrapSlowHybridTest, "UnderTheMountain.Dragon.TrapSlow",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDragonTrapSlowHybridTest::RunTest(const FString& Parameters)
+{
+	ADragonCharacter* Pawn = NewObject<ADragonCharacter>();
+	TestNotNull(TEXT("pawn constructs for trap check"), Pawn);
+	if (Pawn == nullptr)
+	{
+		return false;
+	}
+	UDragonMovementComponent* Proto = Cast<UDragonMovementComponent>(Pawn->GetCharacterMovement());
+	TestNotNull(TEXT("pawn flies the hybrid movement component"), Proto);
+	if (Proto == nullptr)
+	{
+		return false;
+	}
+
+	const float Walk0 = Pawn->GetCharacterMovement()->MaxWalkSpeed;
+	const float Fly0 = Pawn->GetCharacterMovement()->MaxFlySpeed;
+	TestEqual(TEXT("hybrid thrust factor starts unslowed"), Proto->TrapSlowFactor, 1.0f);
+
+	Pawn->ApplyTrapSlow(0.5f, 5.0f);
+	TestTrue(TEXT("trap registers while the clock runs"), Pawn->IsTrapSlowed());
+	TestEqual(TEXT("hybrid thrust factor halves"), Proto->TrapSlowFactor, 0.5f);
+	TestEqual(TEXT("walk speed halves (legacy path kept)"),
+			  Pawn->GetCharacterMovement()->MaxWalkSpeed, Walk0 * 0.5f);
+	TestEqual(TEXT("fly speed halves (legacy path kept)"),
+			  Pawn->GetCharacterMovement()->MaxFlySpeed, Fly0 * 0.5f);
+
+	// Re-trigger refreshes the clock but never re-scales (first-application rule).
+	Pawn->ApplyTrapSlow(0.25f, 5.0f);
+	TestEqual(TEXT("re-trigger keeps the first factor"), Proto->TrapSlowFactor, 0.5f);
+
+	// Partial tick: still slowed.
+	Pawn->TickTrapSlow(2.0f);
+	TestTrue(TEXT("trap still active mid-clock"), Pawn->IsTrapSlowed());
+	TestEqual(TEXT("factor still slowed mid-clock"), Proto->TrapSlowFactor, 0.5f);
+
+	// Expiry: exact restore of every slowed value.
+	Pawn->TickTrapSlow(10.0f);
+	TestFalse(TEXT("trap clears at expiry"), Pawn->IsTrapSlowed());
+	TestEqual(TEXT("hybrid thrust factor restores exactly"), Proto->TrapSlowFactor, 1.0f);
+	TestEqual(TEXT("walk speed restores exactly"), Pawn->GetCharacterMovement()->MaxWalkSpeed, Walk0);
+	TestEqual(TEXT("fly speed restores exactly"), Pawn->GetCharacterMovement()->MaxFlySpeed, Fly0);
 	return true;
 }
 

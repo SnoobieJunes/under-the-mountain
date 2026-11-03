@@ -266,7 +266,7 @@ void UDragonMovementComponent::PhysCustom(float deltaTime, int32 Iterations)
 	{
 		PendingInput += NoseDir.GetSafeNormal2D() * 0.6f;
 	}
-	const FVector PrecisionVel = PendingInput.GetClampedToMaxSize(1.0f) * FlightParams.PrecisionThrustSpeed;
+	const FVector PrecisionVel = PendingInput.GetClampedToMaxSize(1.0f) * FlightParams.PrecisionThrustSpeed * TrapSlowFactor;
 	const float Steer = ComputeSteerResponsiveness(Velocity.Size(), AuthorityW, FlightParams);
 	// [2026-11-03 T-075] C hybrid (additive): momentum is always the baseline
 	// so coasts glide through the band; precision ADDS input thrust scaled by
@@ -300,7 +300,7 @@ void UDragonMovementComponent::PhysCustom(float deltaTime, int32 Iterations)
 	if (AuthorityW > 0.0f && (bProtoRise || bProtoSink))
 	{
 		const float RiseInput = (bProtoRise ? 1.0f : 0.0f) - (bProtoSink ? 1.0f : 0.0f);
-		Velocity.Z = FMath::Lerp(Velocity.Z, RiseInput * FlightParams.PrecisionThrustSpeed,
+		Velocity.Z = FMath::Lerp(Velocity.Z, RiseInput * FlightParams.PrecisionThrustSpeed * TrapSlowFactor,
 								 FMath::Min(1.0f, deltaTime * Steer));
 	}
 	if (bLandingAssist)
@@ -374,7 +374,9 @@ void UDragonMovementComponent::ApplySurge()
 	// [2026-11-03 T-075] Latch momentum authority for the impulse window so
 	// the launch flies instead of snapping back to hover (C).
 	ImpulseAuthorityTime = FlightParams.ImpulseAuthorityWindow;
-	Velocity += NoseRot.Vector() * FlightParams.SurgeDeltaV;
+	// [2026-11-03 T-103] Trap slow taxes paid impulses like sustained
+	// thrust: a slowed takeoff buys less launch.
+	Velocity += NoseRot.Vector() * FlightParams.SurgeDeltaV * TrapSlowFactor;
 	Velocity = Velocity.GetClampedToMaxSize(ClampSpeedToCeilings(Velocity.Size(), NoseRot.Pitch));
 }
 
@@ -396,7 +398,8 @@ void UDragonMovementComponent::ApplyAscent()
 	}
 	ImpulseAuthorityTime = FlightParams.ImpulseAuthorityWindow;
 	const FVector UpForward = (FVector::UpVector + NoseRot.Vector() * 0.5f).GetSafeNormal();
-	Velocity += UpForward * FlightParams.AscentDeltaV;
+	// [2026-11-03 T-103] Same trap tax as Surge (see above).
+	Velocity += UpForward * FlightParams.AscentDeltaV * TrapSlowFactor;
 	Velocity = Velocity.GetClampedToMaxSize(ClampSpeedToCeilings(Velocity.Size(), NoseRot.Pitch));
 }
 

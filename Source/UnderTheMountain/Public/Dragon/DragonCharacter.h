@@ -166,6 +166,12 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 		return TrapSlowTimeRemaining > 0.0f;
 	}
 
+	// [2026-11-03 T-103] Trap-slow clock + expiry, extracted from Tick so the
+	// slow/restore contract is provable headlessly (Tick itself needs a
+	// world). Counts down and restores the captured speeds and the hybrid
+	// thrust factor exactly when the clock runs out.
+	void TickTrapSlow(float DeltaSeconds);
+
 	// [2026-10-28 T-033] Input contract: true only when every
 	// code-created action and the mapping context exist.
 	// EnsureInputActions() guarantees this before SetupPlayerInput

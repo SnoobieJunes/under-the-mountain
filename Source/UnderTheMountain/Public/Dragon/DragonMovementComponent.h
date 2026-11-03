@@ -101,8 +101,9 @@ struct FDragonFlightParams
 
 	// [2026-11-03 T-075] Nose-follow responsiveness (1/s): how fast velocity
 	// steers onto the nose-directed desired vector. B doubles it.
-	// TODO(T-075): trap slow scales these params (spike: never only
-	// MaxFlySpeed) — lands with the input-remap slice.
+	// [2026-11-03 T-103] Trap slow now scales the params (T-075 TODO retired):
+	// the pawn feeds TrapSlowFactor (never MaxFlySpeed alone, which the
+	// hybrid path ignores) and the integrator applies it below.
 	UPROPERTY(EditAnywhere, Category = "Dragon|Flight")
 	float SteerResponsiveness = 3.0f;
 
@@ -213,6 +214,13 @@ class UNDERTHEMOUNTAIN_API UDragonMovementComponent : public UCharacterMovementC
 	// [2026-11-03 T-075] Brake feed from the pawn (Shift/LT held). While held
 	// the integrator decels and (C slice) forces precision authority.
 	bool bProtoBraking = false;
+
+	// [2026-11-03 T-103] Trap-slow feed from the pawn (dwarf traps, T-014).
+	// The integrator multiplies precision thrust, Surge/Ascent impulses and
+	// rise rate by this (1.0 = unslowed); the pawn sets/restores it on the
+	// same clock as the legacy MaxWalk/MaxFlySpeed scaling, which the hybrid
+	// path never reads. Brake is never scaled (safety verb).
+	float TrapSlowFactor = 1.0f;
 
 	// [2026-11-03 T-075] Impulse authority latch: seconds of forced momentum
 	// authority remaining (set by Surge/Ascent, burned down in PhysCustom).

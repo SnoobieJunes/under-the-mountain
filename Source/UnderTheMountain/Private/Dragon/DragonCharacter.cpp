@@ -268,6 +268,10 @@ void ADragonCharacter::ApplyTrapSlow(float Factor, float Seconds)
 	// [2026-10-28 T-014] First application captures the true speeds;
 	// a re-trigger while slowed only refreshes the clock so the
 	// restore point can never be a slowed value.
+	// [2026-11-03 T-103] The hybrid chassis ignores MaxFlySpeed, so the
+	// same first-application rule carries the hybrid thrust factor
+	// (1.0 = unslowed): slowed flight scales precision thrust, impulses
+	// and rise rate in PhysCustom until TickTrapSlow restores it.
 	UCharacterMovementComponent* Move = GetCharacterMovement();
 	if (TrapSlowTimeRemaining <= 0.0f)
 	{
@@ -275,9 +279,41 @@ void ADragonCharacter::ApplyTrapSlow(float Factor, float Seconds)
 		UnslowedFlySpeed = Move->MaxFlySpeed;
 		Move->MaxWalkSpeed *= Factor;
 		Move->MaxFlySpeed *= Factor;
+		if (UDragonMovementComponent* Proto = Cast<UDragonMovementComponent>(Move))
+		{
+			Proto->TrapSlowFactor = Factor;
+		}
 	}
 	TrapSlowTimeRemaining = FMath::Max(TrapSlowTimeRemaining, Seconds);
 	UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon trap-slowed: factor %.2f for %.1fs"), Factor, Seconds);
+}
+
+void ADragonCharacter::TickTrapSlow(float DeltaSeconds)
+{
+	// [2026-11-03 T-103] Trap-slow clock + expiry. Restores the captured
+	// speeds AND the hybrid thrust factor in the same call the clock runs
+	// out, so a slowed dragon can never keep slowed values past expiry.
+	// World-free by construction (movement component + floats + one log
+	// line): the automation test drives slow/restore directly.
+	if (TrapSlowTimeRemaining <= 0.0f)
+	{
+		return;
+	}
+	TrapSlowTimeRemaining -= DeltaSeconds;
+	if (TrapSlowTimeRemaining > 0.0f)
+	{
+		return;
+	}
+	if (UCharacterMovementComponent* Move = GetCharacterMovement())
+	{
+		Move->MaxWalkSpeed = UnslowedWalkSpeed;
+		Move->MaxFlySpeed = UnslowedFlySpeed;
+		if (UDragonMovementComponent* Proto = Cast<UDragonMovementComponent>(Move))
+		{
+			Proto->TrapSlowFactor = 1.0f;
+		}
+	}
+	UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon trap slow expired; speeds restored"));
 }
 
 bool ADragonCharacter::HasInputActions() const
@@ -1662,15 +1698,19 @@ void ADragonCharacter::UpdatePrototypeFlight(float DeltaSeconds)
 					UDragonMovementComponent::PrecisionAuthorityWeight(
 						Move->Velocity.Size(), Proto->FlightParams) < 0.5f)
 				{
+					// [2026-11-03 T-103] Trap slow widens turns: yaw scales
+					// with the thrust factor.
 					AddControllerYawInput(LastMoveAxis.X *
 										  UDragonMovementComponent::YawRateForAirspeed(
 											  Move->Velocity.Size(), Proto->FlightParams) *
-										  DeltaSeconds);
+										  Proto->TrapSlowFactor * DeltaSeconds);
 				}
 				if (bSteerLatch)
 				{
+					// [2026-11-03 T-103] Latch turns widen under trap slow too.
 					const float MaxTurn = UDragonMovementComponent::YawRateForAirspeed(
-						Move->Velocity.Size(), Proto->FlightParams);
+											  Move->Velocity.Size(), Proto->FlightParams) *
+										  Proto->TrapSlowFactor;
 					ProtoNose = FMath::RInterpConstantTo(ProtoNose, GetControlRotation(), DeltaSeconds, MaxTurn);
 				}
 				else
@@ -2143,17 +2183,9 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 	TickFlightCourse(DeltaSeconds);
 	// [2026-10-28 T-014] Trap-slow expiry: restore the captured speeds
 	// in the same tick the clock runs out.
-	if (TrapSlowTimeRemaining > 0.0f)
-	{
-		TrapSlowTimeRemaining -= DeltaSeconds;
-		if (TrapSlowTimeRemaining <= 0.0f)
-		{
-			UCharacterMovementComponent* Move = GetCharacterMovement();
-			Move->MaxWalkSpeed = UnslowedWalkSpeed;
-			Move->MaxFlySpeed = UnslowedFlySpeed;
-			UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon trap slow expired; speeds restored"));
-		}
-	}
+	// [2026-11-03 T-103] Clock + restore live in TickTrapSlow (testable
+	// without a world); Tick just pumps it.
+	TickTrapSlow(DeltaSeconds);
 	// [2026-10-28 T-015] Combat, before flight work: the component never
 	// ticks itself, so the pawn drives fire + eat here. Targets are
 	// gathered only while fire is wanted (TickEat needs none), so an
