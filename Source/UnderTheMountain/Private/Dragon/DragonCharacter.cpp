@@ -9,6 +9,7 @@
 
 #include "Dragon/DragonCharacter.h"
 #include "Dragon/DragonAppearanceComponent.h"
+#include "Dragon/DragonCameraSaveGame.h"
 #include "Dragon/DragonCombatComponent.h"
 #include "Dragon/DragonMovementComponent.h"
 #include "Dragon/DragonStatsComponent.h"
@@ -95,6 +96,20 @@ TAutoConsoleVariable<int32> CVarIntroEnabled(
 TAutoConsoleVariable<int32> CVarFlightCourse(
 	TEXT("utm.flight.course"), 0,
 	TEXT("1 = fly the scripted T-075 course legs in the live world, dump CSV, quit."));
+
+// [2026-11-03 T-065] Pitch-invert choices (Settings values until T-088's
+// screen surfaces them). All default off = stick/mouse up is nose-up:
+// mouse flight pitch, gamepad flight pitch (left stick), gamepad camera
+// pitch (right stick).
+TAutoConsoleVariable<int32> CVarInvertMousePitch(
+	TEXT("utm.camera.invertMousePitch"), 0,
+	TEXT("1 = mouse-up pitches the nose down (flight)."));
+TAutoConsoleVariable<int32> CVarInvertPadFlight(
+	TEXT("utm.camera.invertPadFlight"), 0,
+	TEXT("1 = left-stick-up pitches the nose down (momentum band)."));
+TAutoConsoleVariable<int32> CVarInvertPadCamera(
+	TEXT("utm.camera.invertPadCamera"), 0,
+	TEXT("1 = right-stick-up pitches the camera down."));
 } // namespace
 
 // [2026-11-03 T-075] Swap the movement component class for the prototype
@@ -347,6 +362,151 @@ void ADragonCharacter::FlightStateFlags(bool& bOutDiving, bool& bOutBraking, boo
 	}
 }
 
+bool ADragonCharacter::InvertMousePitch()
+{
+	return CVarInvertMousePitch.GetValueOnGameThread() != 0;
+}
+
+bool ADragonCharacter::InvertPadFlightPitch()
+{
+	return CVarInvertPadFlight.GetValueOnGameThread() != 0;
+}
+
+bool ADragonCharacter::InvertPadCameraPitch()
+{
+	return CVarInvertPadCamera.GetValueOnGameThread() != 0;
+}
+
+EDragonCameraMode ADragonCharacter::GetCameraMode() const
+{
+	return CameraMode;
+}
+
+void ADragonCharacter::SetCameraSaveSlotForTesting(const FString& SlotName)
+{
+	CameraSaveSlotName = SlotName;
+}
+
+void ADragonCharacter::HandleCameraCycle()
+{
+	// [2026-11-03 T-065] Steps the adopted set and persists the choice, so
+	// the next session opens on the same camera.
+	CycleCamera();
+}
+
+void ADragonCharacter::CycleCamera()
+{
+	CameraMode = static_cast<EDragonCameraMode>((static_cast<int32>(CameraMode) + 1) % 3);
+	SaveCameraChoice();
+	UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon camera: %d"), static_cast<int32>(CameraMode));
+}
+
+void ADragonCharacter::SaveCameraChoice() const
+{
+	UDragonCameraSaveGame* Save = Cast<UDragonCameraSaveGame>(
+		UGameplayStatics::CreateSaveGameObject(UDragonCameraSaveGame::StaticClass()));
+	if (Save == nullptr)
+	{
+		UE_LOG(LogUnderTheMountain, Warning, TEXT("Camera save FAILED: could not create save object"));
+		return;
+	}
+	Save->CameraModeIndex = static_cast<int32>(CameraMode);
+	if (!UGameplayStatics::SaveGameToSlot(Save, CameraSaveSlotName, 0))
+	{
+		UE_LOG(LogUnderTheMountain, Warning, TEXT("Camera save FAILED: slot '%s' refused the write"),
+			   *CameraSaveSlotName);
+	}
+}
+
+void ADragonCharacter::LoadCameraChoice()
+{
+	// [2026-11-03 T-065] Missing slot = first run: keep the default head
+	// chase silently. A slot that exists but loads wrong is corruption —
+	// warn naming the slot (the T-039 tint-slot lesson).
+	if (!UGameplayStatics::DoesSaveGameExist(CameraSaveSlotName, 0))
+	{
+		CameraMode = EDragonCameraMode::HeadChase;
+		return;
+	}
+	if (UDragonCameraSaveGame* Loaded = Cast<UDragonCameraSaveGame>(
+			UGameplayStatics::LoadGameFromSlot(CameraSaveSlotName, 0)))
+	{
+		const int32 Index = Loaded->CameraModeIndex;
+		if (Index >= 0 && Index <= 2)
+		{
+			CameraMode = static_cast<EDragonCameraMode>(Index);
+		}
+		else
+		{
+			UE_LOG(LogUnderTheMountain, Warning,
+				   TEXT("Camera load: slot '%s' holds out-of-range index %d; keeping head chase"),
+				   *CameraSaveSlotName, Index);
+			CameraMode = EDragonCameraMode::HeadChase;
+		}
+	}
+	else
+	{
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("Camera load FAILED: slot '%s' exists but could not be loaded; keeping head chase"),
+			   *CameraSaveSlotName);
+		CameraMode = EDragonCameraMode::HeadChase;
+	}
+}
+
+void ADragonCharacter::ApplyCameraRig(float DeltaSeconds)
+{
+	// [2026-11-03 T-065] Per-tick rig: pivot follows the head bone so the
+	// chase orbits the eyes (not the capsule); arm shortens in the
+	// precision band; first-person hides the pawn mesh (head interior would
+	// fill the frame — fire/rain FX are capsule-attached and stay visible).
+	// Stall needs no work here: the boom rides control rotation, which never
+	// follows the sinking mesh nose. Null-safe throughout: a missing bone
+	// keeps the last pivot instead of snapping anywhere.
+	if (CameraBoom == nullptr || GetMesh() == nullptr || GetCapsuleComponent() == nullptr)
+	{
+		return;
+	}
+	if (GetMesh()->GetBoneIndex(TEXT("head")) != INDEX_NONE)
+	{
+		const FVector HeadWorld = GetMesh()->GetBoneLocation(TEXT("head"));
+		const FVector HeadLocal =
+			GetCapsuleComponent()->GetComponentTransform().InverseTransformPosition(HeadWorld);
+		CameraBoom->SetRelativeLocation(HeadLocal);
+	}
+	float DesiredArm = 500.0f;
+	switch (CameraMode)
+	{
+	case EDragonCameraMode::WideScenic:
+		DesiredArm = 1200.0f;
+		break;
+	case EDragonCameraMode::FirstPerson:
+		DesiredArm = 0.0f;
+		break;
+	case EDragonCameraMode::HeadChase:
+	default:
+		DesiredArm = 500.0f;
+		break;
+	}
+	if (CameraMode != EDragonCameraMode::FirstPerson && IsPrototypeFlying())
+	{
+		if (const UDragonMovementComponent* Proto =
+				Cast<UDragonMovementComponent>(GetCharacterMovement()))
+		{
+			const float AuthorityW = UDragonMovementComponent::PrecisionAuthorityWeight(
+				Proto->Velocity.Size(), Proto->FlightParams);
+			DesiredArm = FMath::Max(120.0f, DesiredArm * (1.0f - 0.5f * AuthorityW));
+		}
+	}
+	CameraBoom->TargetArmLength =
+		FMath::FInterpTo(CameraBoom->TargetArmLength, DesiredArm, DeltaSeconds, 6.0f);
+	const bool bHideMesh = (CameraMode == EDragonCameraMode::FirstPerson);
+	if (bHideMesh != bMeshHiddenForCamera)
+	{
+		bMeshHiddenForCamera = bHideMesh;
+		GetMesh()->SetVisibility(!bHideMesh);
+	}
+}
+
 bool ADragonCharacter::HasInputActions() const
 {
 	// [2026-10-28 T-033] Non-null check for the full code-created
@@ -360,6 +520,8 @@ bool ADragonCharacter::HasInputActions() const
 		   TintAction != nullptr && FireAction != nullptr && RoarAction != nullptr &&
 		   EatAction != nullptr && WingBuffetAction != nullptr && TailSlamAction != nullptr &&
 		   FreeLookAction != nullptr && SinkAction != nullptr && SteerLatchAction != nullptr &&
+		   // [2026-11-03 T-065] Split look/move + camera cycle join the contract.
+		   PadLookAction != nullptr && PadMoveAction != nullptr && CameraCycleAction != nullptr &&
 		   MappingContext != nullptr;
 }
 
@@ -383,6 +545,9 @@ void ADragonCharacter::BeginPlay()
 	// EnsureInputActions); SetupPlayerInputComponent does the same
 	// before binding, so either order is now safe.
 	EnsureInputActions();
+	// [2026-11-03 T-065] Restored camera before anything reads the rig so
+	// the first tick already orbits the persisted choice.
+	LoadCameraChoice();
 	if (APlayerController* PC = Cast<APlayerController>(GetController()))
 	{
 		if (UEnhancedInputLocalPlayerSubsystem* Sub =
@@ -522,6 +687,13 @@ void ADragonCharacter::BuildInputActions()
 	// [2026-11-01 T-068] Buffet/slam verbs, press-edge like Roar.
 	WingBuffetAction = MakeAction(TEXT("IA_WingBuffet"), EInputActionValueType::Boolean);
 	TailSlamAction = MakeAction(TEXT("IA_TailSlam"), EInputActionValueType::Boolean);
+	// [2026-11-03 T-065] Split look/move (mouse vs sticks need separate
+	// pitch-invert choices; the left stick needs its own flight-pitch
+	// feed) plus the camera-cycle action. All Axis2D/Boolean like the
+	// actions they split from.
+	PadLookAction = MakeAction(TEXT("IA_PadLook"), EInputActionValueType::Axis2D);
+	PadMoveAction = MakeAction(TEXT("IA_PadMove"), EInputActionValueType::Axis2D);
+	CameraCycleAction = MakeAction(TEXT("IA_CameraCycle"), EInputActionValueType::Boolean);
 
 	MappingContext = NewObject<UInputMappingContext>(this, TEXT("IMC_Dragon"));
 	auto Map = [this](UInputAction* Action, FKey Key)
@@ -567,8 +739,11 @@ void ADragonCharacter::BuildInputActions()
 	Map(TailSlamAction, EKeys::Z);
 	// Gamepad: left stick move, right stick look, bottom face flap,
 	// top face toggle flight, right trigger dive.
-	Map(MoveAction, EKeys::Gamepad_Left2D);
-	Map(LookAction, EKeys::Gamepad_Right2D);
+	// [2026-11-03 T-065] Sticks live on their own actions (see creation):
+	// the shared actions stay keyboard/mouse-only so each device gets its
+	// own pitch-invert choice and the left stick gets its flight-pitch feed.
+	Map(PadMoveAction, EKeys::Gamepad_Left2D);
+	Map(PadLookAction, EKeys::Gamepad_Right2D);
 	Map(FlapAction, EKeys::Gamepad_FaceButton_Bottom);
 	Map(ToggleFlightAction, EKeys::Gamepad_FaceButton_Top);
 	Map(DiveAction, EKeys::Gamepad_RightTrigger);
@@ -584,6 +759,10 @@ void ADragonCharacter::BuildInputActions()
 	// [2026-11-01 T-068] T-061 scent toggle and T-063 steer-to-camera).
 	Map(WingBuffetAction, EKeys::Gamepad_DPad_Left);
 	Map(TailSlamAction, EKeys::Gamepad_DPad_Right);
+	// [2026-11-03 T-065] Camera cycle: V on keyboard, R3 (right-stick press)
+	// on gamepad (adopted set: head chase / wide scenic / first-person).
+	Map(CameraCycleAction, EKeys::V);
+	Map(CameraCycleAction, EKeys::Gamepad_RightThumbstick);
 }
 
 void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -607,9 +786,26 @@ void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	{
 		EIC->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ADragonCharacter::HandleMove);
 	}
+	if (PadMoveAction != nullptr)
+	{
+		// [2026-11-03 T-065] Left stick: same movement + surge-gate edges as
+		// WASD, but tagged as gamepad so stick-back pitches instead of
+		// flaring (adopted maps diverge by device).
+		EIC->BindAction(PadMoveAction, ETriggerEvent::Triggered, this, &ADragonCharacter::HandlePadMove);
+	}
 	if (LookAction != nullptr)
 	{
 		EIC->BindAction(LookAction, ETriggerEvent::Triggered, this, &ADragonCharacter::HandleLook);
+	}
+	if (PadLookAction != nullptr)
+	{
+		// [2026-11-03 T-065] Right stick: the camera stick, with its own
+		// pitch-invert choice (separate from the mouse).
+		EIC->BindAction(PadLookAction, ETriggerEvent::Triggered, this, &ADragonCharacter::HandlePadLook);
+	}
+	if (CameraCycleAction != nullptr)
+	{
+		EIC->BindAction(CameraCycleAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleCameraCycle);
 	}
 	if (FlapAction != nullptr)
 	{
@@ -628,6 +824,15 @@ void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 		// A/D-turn in HandleMove): a released key stops flaring/turning.
 		EIC->BindAction(MoveAction, ETriggerEvent::Completed, this, &ADragonCharacter::HandleMoveEnd);
 		EIC->BindAction(MoveAction, ETriggerEvent::Canceled, this, &ADragonCharacter::HandleMoveEnd);
+	}
+	if (PadMoveAction != nullptr)
+	{
+		// [2026-11-03 T-065] Stick flick shares the Surge gate (forward push
+		// past half deflection in the momentum band); release clears the
+		// remembered axis the same way.
+		EIC->BindAction(PadMoveAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleMoveStarted);
+		EIC->BindAction(PadMoveAction, ETriggerEvent::Completed, this, &ADragonCharacter::HandleMoveEnd);
+		EIC->BindAction(PadMoveAction, ETriggerEvent::Canceled, this, &ADragonCharacter::HandleMoveEnd);
 	}
 	if (FreeLookAction != nullptr)
 	{
@@ -692,12 +897,28 @@ void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 
 void ADragonCharacter::HandleMove(const FInputActionValue& Value)
 {
-	const FVector2D Axis = Value.Get<FVector2D>();
+	// [2026-11-03 T-065] Keyboard path: WASD, tagged keyboard so S flares.
+	HandleMoveAxis(Value.Get<FVector2D>(), false);
+}
+
+void ADragonCharacter::HandlePadMove(const FInputActionValue& Value)
+{
+	// [2026-11-03 T-065] Gamepad path: left stick, tagged gamepad so
+	// stick-back pitches instead of flaring (adopted maps diverge).
+	HandleMoveAxis(Value.Get<FVector2D>(), true);
+}
+
+void ADragonCharacter::HandleMoveAxis(const FVector2D& Axis, bool bFromGamepad)
+{
 	// [2026-11-03 T-062] Every move sample is remembered for the flight model:
 	// S-held (Y < -0.5) flares/bleeds speed in the momentum band and A/D (X)
 	// yaws the nose there (bank/turn), while the precision band keeps every
 	// axis as thrust via the integrator's pending input vector.
+	// [2026-11-03 T-065] The device tag rides with the sample: only a
+	// keyboard S flares; pad stick deflection pitches the nose in the
+	// momentum band instead (see UpdatePrototypeFlight).
 	LastMoveAxis = Axis;
+	bLastMoveFromGamepad = bFromGamepad;
 	if (!Controller || Axis.IsNearlyZero())
 	{
 		return;
@@ -716,9 +937,19 @@ void ADragonCharacter::HandleMove(const FInputActionValue& Value)
 
 void ADragonCharacter::HandleLook(const FInputActionValue& Value)
 {
+	// [2026-11-03 T-065] Mouse path: pitch follows the mouse invert choice.
 	const FVector2D Axis = Value.Get<FVector2D>();
 	AddControllerYawInput(Axis.X);
-	AddControllerPitchInput(Axis.Y);
+	AddControllerPitchInput(Axis.Y * (InvertMousePitch() ? -1.0f : 1.0f));
+}
+
+void ADragonCharacter::HandlePadLook(const FInputActionValue& Value)
+{
+	// [2026-11-03 T-065] Right stick: the camera stick, with its own pitch-
+	// invert choice (separate from the mouse).
+	const FVector2D Axis = Value.Get<FVector2D>();
+	AddControllerYawInput(Axis.X);
+	AddControllerPitchInput(Axis.Y * (InvertPadCameraPitch() ? -1.0f : 1.0f));
 }
 
 void ADragonCharacter::HandleFlap()
@@ -1703,7 +1934,9 @@ void ADragonCharacter::UpdatePrototypeFlight(float DeltaSeconds)
 			// [2026-11-03 T-062] Shift (bDiving) brakes; S-held (remembered
 			// Y < -0.5, the adopted flare) brakes the same way. Bleeding speed
 			// IS the flare, and the Brake rule (forced precision) covers both.
-			Proto->bProtoBraking = bDiving || LastMoveAxis.Y < -0.5f;
+			// [2026-11-03 T-065] Keyboard S only: pad stick-back pitches
+			// instead of flaring (device tag on the sample).
+			Proto->bProtoBraking = bDiving || (!bLastMoveFromGamepad && LastMoveAxis.Y < -0.5f);
 			Proto->bProtoRise = bRiseHeld;
 			Proto->bProtoSink = bSinkHeld;
 			if (!IsPrototypeFlying())
@@ -1746,6 +1979,21 @@ void ADragonCharacter::UpdatePrototypeFlight(float DeltaSeconds)
 				}
 				else
 				{
+					// [2026-11-03 T-065] Pad left-stick aims the nose in the
+					// momentum band (adopted flight grammar): forward stick
+					// pitches down toward a dive, back stick pitches up to
+					// climb. Keyboard keeps mouse-aim (S never pitches).
+					// Runs before the nose-follow below so the nose picks
+					// up the pitched view the same tick.
+					if (bLastMoveFromGamepad && Controller != nullptr && FMath::Abs(LastMoveAxis.Y) > 0.2f &&
+						UDragonMovementComponent::PrecisionAuthorityWeight(
+							Move->Velocity.Size(), Proto->FlightParams) < 0.5f)
+					{
+						AddControllerPitchInput(LastMoveAxis.Y *
+												UDragonMovementComponent::YawRateForAirspeed(
+													Move->Velocity.Size(), Proto->FlightParams) *
+												(InvertPadFlightPitch() ? -1.0f : 1.0f) * DeltaSeconds);
+					}
 					ProtoNose = GetControlRotation();
 				}
 			}
@@ -2231,6 +2479,9 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 	// [2026-11-03 T-103] Clock + restore live in TickTrapSlow (testable
 	// without a world); Tick just pumps it.
 	TickTrapSlow(DeltaSeconds);
+	// [2026-11-03 T-065] Camera rig follows every tick (walk and flight):
+	// head-anchored pivot, precision-shortened arm, first-person mesh hide.
+	ApplyCameraRig(DeltaSeconds);
 	// [2026-10-28 T-015] Combat, before flight work: the component never
 	// ticks itself, so the pawn drives fire + eat here. Targets are
 	// gathered only while fire is wanted (TickEat needs none), so an

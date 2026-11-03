@@ -37,6 +37,19 @@ class UAnimSequence;
 // [2026-11-01 T-068] EDragonAnimState is owned by DragonAnimInstance.h
 // [2026-11-01 T-068] (included above, before generated.h per UHT rules).
 
+// [2026-11-03 T-065] Camera set (T-065): head/eye-anchored close chase
+// (default), wide scenic chase, first-person from the head. The pawn
+// cycles the set and persists the choice; T-088's Settings screen
+// surfaces the same value later. Global scope: UENUM cannot live inside
+// the pawn class.
+UENUM(BlueprintType)
+enum class EDragonCameraMode : uint8
+{
+	HeadChase UMETA(DisplayName = "Head/eye-anchored close chase (default)"),
+	WideScenic UMETA(DisplayName = "Wide scenic chase"),
+	FirstPerson UMETA(DisplayName = "First-person from the head"),
+};
+
 UCLASS()
 class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 {
@@ -179,6 +192,24 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// state only, never writes pools.
 	void FlightStateFlags(bool& bOutDiving, bool& bOutBraking, bool& bOutHovering) const;
 
+	// [2026-11-03 T-065] Camera set: steps HeadChase → WideScenic →
+	// FirstPerson and persists the choice (SaveGame slot below). World-free
+	// apart from the slot file itself, so the order + persistence round-trip
+	// is headless-testable.
+	void CycleCamera();
+	EDragonCameraMode GetCameraMode() const;
+	void SetCameraSaveSlotForTesting(const FString& SlotName);
+	void LoadCameraChoice();
+	void SaveCameraChoice() const;
+
+	// [2026-11-03 T-065] Pitch-invert choices (Settings values until T-088's
+	// screen surfaces them; all default off = stick/mouse up is nose-up):
+	// mouse flight pitch, gamepad flight pitch (left stick), gamepad camera
+	// pitch (right stick). Static so tests pin the defaults.
+	static bool InvertMousePitch();
+	static bool InvertPadFlightPitch();
+	static bool InvertPadCameraPitch();
+
 	// [2026-10-28 T-033] Input contract: true when every
 	// code-created action and the mapping context exist.
 	// EnsureInputActions() guarantees this before SetupPlayerInput
@@ -295,6 +326,17 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	UPROPERTY()
 	TObjectPtr<UInputAction> TintAction;
 	// [2026-10-28 T-015] Combat actions, code-created like the rest:
+	// [2026-11-03 T-065] Split look/move: the mouse and the right stick
+	// need separate pitch-invert choices, and the left stick needs its
+	// own flight-pitch feed — one shared action cannot tag the device.
+	UPROPERTY()
+	TObjectPtr<UInputAction> PadLookAction;
+	UPROPERTY()
+	TObjectPtr<UInputAction> PadMoveAction;
+	// [2026-11-03 T-065] Camera cycle (V / gamepad R3): steps the adopted
+	// set and persists the choice.
+	UPROPERTY()
+	TObjectPtr<UInputAction> CameraCycleAction;
 	// Fire is held (Triggered/Completed), Roar and Eat are presses.
 	UPROPERTY()
 	TObjectPtr<UInputAction> FireAction;
@@ -325,7 +367,10 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 
 	void BuildInputActions();
 	void HandleMove(const struct FInputActionValue& Value);
+	void HandlePadMove(const struct FInputActionValue& Value);
 	void HandleLook(const struct FInputActionValue& Value);
+	void HandlePadLook(const struct FInputActionValue& Value);
+	void HandleCameraCycle();
 	void HandleFlap();
 	void HandleToggleFlight();
 	void HandleDive(const struct FInputActionValue& Value);
@@ -341,6 +386,9 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// [2026-11-03 T-062] Release edge for the remembered move axis (S-flare /
 	// A/D-turn below): a released key must stop flaring/turning.
 	void HandleMoveEnd();
+	// [2026-11-03 T-065] Device-tagged move core: keyboard S flares while
+	// pad stick-back pitches instead (adopted maps diverge by device).
+	void HandleMoveAxis(const FVector2D& Axis, bool bFromGamepad);
 	void HandleRiseHeld(const struct FInputActionValue& Value);
 	void HandleRiseEnd();
 	void HandleFreeLook(const struct FInputActionValue& Value);
@@ -362,6 +410,19 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// [2026-11-03 T-062] Last move-axis sample (see HandleMove): S-held
 	// (Y < -0.5) flares in the momentum band, A/D (X) yaws the nose there.
 	FVector2D LastMoveAxis = FVector2D::ZeroVector;
+	// [2026-11-03 T-065] Device tag for the sample above: pad stick-back
+	// is NOT an S-flare (it pitches the nose instead), and pad stick
+	// deflection pitches in the momentum band. Set by every move sample.
+	bool bLastMoveFromGamepad = false;
+
+	// [2026-11-03 T-065] Camera rig state: active set member (persisted),
+	// head-anchor offset is recomputed every tick from the mesh head bone
+	// (null-safe: a missing bone keeps the last pivot). First-person hides
+	// the pawn mesh (head interior would fill the frame); fire/rain FX are
+	// capsule-attached and stay visible.
+	EDragonCameraMode CameraMode = EDragonCameraMode::HeadChase;
+	FString CameraSaveSlotName = TEXT("DragonCameraChoice");
+	bool bMeshHiddenForCamera = false;
 
 	// [2026-11-03 T-075] Scripted course runner (utm.flight.course): the program
 	// owns nose/brake/assist while bCourseFlying; UpdatePrototypeFlight skips its
@@ -380,6 +441,10 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	void QuitCourseGame();
 	void RestoreCoursePool(const TCHAR* LegName);
 	void CourseLog(const TCHAR* Fmt, ...);
+
+	// [2026-11-03 T-065] Camera rig per-tick pivot/arm/visibility (persistence
+	// lives in the public Load/SaveCameraChoice above so tests drive it).
+	void ApplyCameraRig(float DeltaSeconds);
 	// [2026-10-28 T-013] Seeing Stone toggle (key T / gamepad left face).
 	void HandleTrueSight();
 	// [2026-11-03 T-061] Scent-ribbon show/hide (key N / gamepad D-pad Down).

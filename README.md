@@ -161,6 +161,7 @@ context):
 | Sink in hover | Left Ctrl (hold) | — (arrives with the trigger remap, T-102) |
 | Free-look (nose frozen, camera roams) | Right mouse (hold) | — (right stick already looks) |
 | Steer-to-look (latch; any move input cancels) | Double-click right mouse | D-pad Up |
+| Cycle camera (head chase / wide scenic / first-person) | V | R3 (right-stick press) |
 | True-sight (Seeing Stone) | T | Left face (X) |
 | Scent ribbons show/hide | N | D-pad Down |
 | Scale-colour picker | C | Right face (A) |

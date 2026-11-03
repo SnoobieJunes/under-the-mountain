@@ -8,9 +8,11 @@
 
 #include "Misc/AutomationTest.h"
 #include "Dragon/DragonCharacter.h"
+#include "Dragon/DragonCameraSaveGame.h"
 #include "InputAction.h"
 #include "InputCoreTypes.h"
 #include "InputMappingContext.h"
+#include "Kismet/GameplayStatics.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -48,7 +50,8 @@ bool FDragonInputTest::RunTest(const FString& Parameters)
 		 {TEXT("MoveAction"), TEXT("LookAction"), TEXT("FlapAction"), TEXT("ToggleFlightAction"),
 		  TEXT("DiveAction"), TEXT("TrueSightAction"), TEXT("TintAction"), TEXT("TintWidget"),
 		  TEXT("FreeLookAction"), TEXT("SinkAction"), TEXT("SteerLatchAction"),
-		  TEXT("ScentToggleAction"), // [2026-11-03 T-061] N-key scent toggle joins the GC contract.
+		  TEXT("ScentToggleAction"),											   // [2026-11-03 T-061] N-key scent toggle joins the GC contract.
+		  TEXT("PadLookAction"), TEXT("PadMoveAction"), TEXT("CameraCycleAction"), // [2026-11-03 T-065] split sticks + cycle.
 		  TEXT("MappingContext")})
 	{
 		TestNotNull(FString::Printf(TEXT("%s is a reflected UPROPERTY"), Member),
@@ -178,6 +181,169 @@ bool FDragonFreeLookBindingTest::RunTest(const FString& Parameters)
 	}
 	TestTrue(TEXT("right mouse button drives free look"), bHasRMB);
 	TestTrue(TEXT("gamepad D-pad Up drives the steer latch"), bHasPadUp);
+	return true;
+}
+
+// [2026-11-03 T-065] The split stick map + camera cycle, proven headless:
+// mouse stays on LookAction, the sticks move to their own actions, and V +
+// R3 step the adopted set. Same reflection pattern as the scent binding
+// test (the T-035 precedent — no test-only accessors).
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDragonCameraBindingTest,
+								 "UnderTheMountain.Dragon.CameraBinding",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDragonCameraBindingTest::RunTest(const FString& Parameters)
+{
+	ADragonCharacter* Pawn = NewObject<ADragonCharacter>();
+	TestNotNull(TEXT("pawn constructs for binding check"), Pawn);
+	if (Pawn == nullptr)
+	{
+		return false;
+	}
+	Pawn->EnsureInputActions();
+
+	UClass* PawnClass = ADragonCharacter::StaticClass();
+	const FObjectProperty* LookProp = FindFProperty<FObjectProperty>(PawnClass, TEXT("LookAction"));
+	const FObjectProperty* PadLookProp = FindFProperty<FObjectProperty>(PawnClass, TEXT("PadLookAction"));
+	const FObjectProperty* MoveProp = FindFProperty<FObjectProperty>(PawnClass, TEXT("MoveAction"));
+	const FObjectProperty* PadMoveProp = FindFProperty<FObjectProperty>(PawnClass, TEXT("PadMoveAction"));
+	const FObjectProperty* CycleProp = FindFProperty<FObjectProperty>(PawnClass, TEXT("CameraCycleAction"));
+	const FObjectProperty* ContextProp = FindFProperty<FObjectProperty>(PawnClass, TEXT("MappingContext"));
+	TestNotNull(TEXT("LookAction member reflects"), LookProp);
+	TestNotNull(TEXT("PadLookAction member reflects"), PadLookProp);
+	TestNotNull(TEXT("MoveAction member reflects"), MoveProp);
+	TestNotNull(TEXT("PadMoveAction member reflects"), PadMoveProp);
+	TestNotNull(TEXT("CameraCycleAction member reflects"), CycleProp);
+	TestNotNull(TEXT("MappingContext member reflects"), ContextProp);
+	if (!LookProp || !PadLookProp || !MoveProp || !PadMoveProp || !CycleProp || !ContextProp)
+	{
+		return false;
+	}
+
+	const UInputAction* Look = Cast<UInputAction>(LookProp->GetObjectPropertyValue_InContainer(Pawn));
+	const UInputAction* PadLook = Cast<UInputAction>(PadLookProp->GetObjectPropertyValue_InContainer(Pawn));
+	const UInputAction* Move = Cast<UInputAction>(MoveProp->GetObjectPropertyValue_InContainer(Pawn));
+	const UInputAction* PadMove = Cast<UInputAction>(PadMoveProp->GetObjectPropertyValue_InContainer(Pawn));
+	const UInputAction* Cycle = Cast<UInputAction>(CycleProp->GetObjectPropertyValue_InContainer(Pawn));
+	const UInputMappingContext* Context =
+		Cast<UInputMappingContext>(ContextProp->GetObjectPropertyValue_InContainer(Pawn));
+	TestNotNull(TEXT("ensured pawn owns every split action and the context"), Look);
+	TestNotNull(TEXT("ensured pawn owns the pad look action"), PadLook);
+	TestNotNull(TEXT("ensured pawn owns the pad move action"), PadMove);
+	TestNotNull(TEXT("ensured pawn owns the camera cycle action"), Cycle);
+	TestNotNull(TEXT("ensured pawn owns the mapping context"), Context);
+	if (!Look || !PadLook || !Move || !PadMove || !Cycle || !Context)
+	{
+		return false;
+	}
+
+	bool bMouseLook = false;
+	bool bPadOnLook = false;
+	bool bPadLook = false;
+	bool bWASD = false;
+	bool bStickOnMove = false;
+	bool bPadMove = false;
+	bool bCycleV = false;
+	bool bCycleR3 = false;
+	for (const FEnhancedActionKeyMapping& Mapping : Context->GetMappings())
+	{
+		if (Mapping.Action == Look)
+		{
+			bMouseLook = bMouseLook || Mapping.Key == EKeys::Mouse2D;
+			bPadOnLook = bPadOnLook || Mapping.Key == EKeys::Gamepad_Right2D;
+		}
+		if (Mapping.Action == PadLook)
+		{
+			bPadLook = bPadLook || Mapping.Key == EKeys::Gamepad_Right2D;
+		}
+		if (Mapping.Action == Move)
+		{
+			bWASD = bWASD || Mapping.Key == EKeys::W || Mapping.Key == EKeys::A;
+			bStickOnMove = bStickOnMove || Mapping.Key == EKeys::Gamepad_Left2D;
+		}
+		if (Mapping.Action == PadMove)
+		{
+			bPadMove = bPadMove || Mapping.Key == EKeys::Gamepad_Left2D;
+		}
+		if (Mapping.Action == Cycle)
+		{
+			bCycleV = bCycleV || Mapping.Key == EKeys::V;
+			bCycleR3 = bCycleR3 || Mapping.Key == EKeys::Gamepad_RightThumbstick;
+		}
+	}
+	TestTrue(TEXT("mouse look stays on the mouse action"), bMouseLook);
+	TestFalse(TEXT("right stick leaves the mouse action"), bPadOnLook);
+	TestTrue(TEXT("right stick drives the pad-look action"), bPadLook);
+	TestTrue(TEXT("WASD stays on the move action"), bWASD);
+	TestFalse(TEXT("left stick leaves the move action"), bStickOnMove);
+	TestTrue(TEXT("left stick drives the pad-move action"), bPadMove);
+	TestTrue(TEXT("V cycles the camera"), bCycleV);
+	TestTrue(TEXT("gamepad R3 cycles the camera"), bCycleR3);
+	return true;
+}
+
+// [2026-11-03 T-065] Camera order + persistence, headless: HeadChase →
+// WideScenic → FirstPerson → HeadChase, saved to the slot on every step,
+// reloaded on a fresh pawn, missing slot means default, corrupt index
+// means default (never a bad mode). Uses a test slot like the tint test
+// so the player's DragonCameraChoice.sav is never touched.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDragonCameraCycleTest,
+								 "UnderTheMountain.Dragon.CameraCycle",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDragonCameraCycleTest::RunTest(const FString& Parameters)
+{
+	const FString TestSlot = TEXT("DragonCameraChoiceTest");
+	UGameplayStatics::DeleteGameInSlot(TestSlot, 0);
+
+	ADragonCharacter* Pawn = NewObject<ADragonCharacter>();
+	TestNotNull(TEXT("pawn constructs for camera check"), Pawn);
+	if (Pawn == nullptr)
+	{
+		return false;
+	}
+	Pawn->SetCameraSaveSlotForTesting(TestSlot);
+	Pawn->LoadCameraChoice();
+	TestEqual(TEXT("missing slot means head chase"), static_cast<int32>(Pawn->GetCameraMode()), 0);
+
+	Pawn->CycleCamera();
+	TestEqual(TEXT("first cycle steps to wide scenic"), static_cast<int32>(Pawn->GetCameraMode()), 1);
+	Pawn->CycleCamera();
+	TestEqual(TEXT("second cycle steps to first-person"), static_cast<int32>(Pawn->GetCameraMode()), 2);
+	Pawn->CycleCamera();
+	TestEqual(TEXT("third cycle wraps to head chase"), static_cast<int32>(Pawn->GetCameraMode()), 0);
+
+	Pawn->CycleCamera();
+	TestEqual(TEXT("wide scenic persists"), static_cast<int32>(Pawn->GetCameraMode()), 1);
+	ADragonCharacter* Fresh = NewObject<ADragonCharacter>();
+	TestNotNull(TEXT("fresh pawn constructs for reload check"), Fresh);
+	if (Fresh == nullptr)
+	{
+		return false;
+	}
+	Fresh->SetCameraSaveSlotForTesting(TestSlot);
+	Fresh->LoadCameraChoice();
+	TestEqual(TEXT("fresh pawn reloads wide scenic"), static_cast<int32>(Fresh->GetCameraMode()), 1);
+
+	UDragonCameraSaveGame* Corrupt = Cast<UDragonCameraSaveGame>(
+		UGameplayStatics::CreateSaveGameObject(UDragonCameraSaveGame::StaticClass()));
+	TestNotNull(TEXT("corrupt save object creates"), Corrupt);
+	if (Corrupt == nullptr)
+	{
+		return false;
+	}
+	Corrupt->CameraModeIndex = 99;
+	TestTrue(TEXT("corrupt slot writes"), UGameplayStatics::SaveGameToSlot(Corrupt, TestSlot, 0));
+	Fresh->LoadCameraChoice();
+	TestEqual(TEXT("corrupt index falls back to head chase"), static_cast<int32>(Fresh->GetCameraMode()), 0);
+
+	// Pitch-invert defaults: nose-up on every device until T-088 surfaces
+	// the Settings choice (adopted FLIGHT-SPIKE.md default).
+	TestFalse(TEXT("mouse pitch defaults to non-inverted"), ADragonCharacter::InvertMousePitch());
+	TestFalse(TEXT("pad flight pitch defaults to non-inverted"), ADragonCharacter::InvertPadFlightPitch());
+	TestFalse(TEXT("pad camera pitch defaults to non-inverted"), ADragonCharacter::InvertPadCameraPitch());
+
+	UGameplayStatics::DeleteGameInSlot(TestSlot, 0);
 	return true;
 }
 
