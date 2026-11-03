@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-03 — T-034 — Sweep #2: plan gate sentence folded past-tense, 9 audit findings filed as T-103–T-108, successor sweep T-109 filed (no user-visible change)
+
 2026-11-03 — T-063 — Right-mouse hold looks around without turning the dragon and double-click latches steering to the view (any move input cancels); gamepad D-pad Up latches and unlatches the same way
 
 2026-11-03 — T-062 — Flight is the hybrid model now: the dragon flies by pitch and momentum at speed, translates and hover-holds at low speed, takes off with Space, brakes with Shift (S flares too), lands with F assist, and gliding costs no stamina

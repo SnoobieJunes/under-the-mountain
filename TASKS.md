@@ -3,6 +3,11 @@
      acceptance criteria are not pickable — sharpen them first. -->
 
 ## Now
+<!-- [2026-11-03] T-109 is the standing successor sweep (Gated: cadence). Task-loop step 9 promotes it when the cadence hits; it closes by filing T-110. -->
+- [ ] T-109 — goose-deuce sweep (successor to T-034)
+      Why: standing audit cadence (AGENTS.md → Deviations); filed by the T-034 sweep 2026-11-03.
+      Accept: NEW-PROJECT-GUIDE step-5 checklist run; [process] marker entry filed; successor sweep task filed.
+      Touches: goose-deuce.md, docs/PLAN.md, TASKS.md   Depends: none   Gated: cadence
 <!-- [2026-10-29] Owner playtest feedback, Path A session. Filed only — no work
      started. Owner direction: most of these need a one-at-a-time deep dive
      before implementation; design-ambiguous items are Gated: owner for that
@@ -21,14 +26,34 @@
      unmade owner deep dive only — feel/render checks live in Accepts as
      evidence, not as pick blockers. T-059 + T-067 are already CLOSED on
      stretch-scope (340378f, f6ad609): merge that branch, do not redo them. -->
-- [ ] T-034 — goose-deuce sweep (successor to T-004) — PROMOTED 2026-11-03: 36 tasks closed since sweep #1 (2026-10-28), past the 10-close cadence
-      Why: standing audit cadence (AGENTS.md → Deviations); filed by the T-004 sweep 2026-10-28.
-      Accept: NEW-PROJECT-GUIDE step-5 checklist run; [process] marker entry filed; successor sweep task filed.
-      Touches: goose-deuce.md, docs/PLAN.md, TASKS.md   Depends: none   Gated: none
 - [ ] T-102 — Flight gamepad trigger remap: RT Surge / LT Brake / RB Fire
       Why: T-062 ships the adopted keyboard/mouse map and the pad sticks/D-pad, but the pad triggers still follow the pre-hybrid combat layout (RT brake, LT fire) while docs/FLIGHT-SPIKE.md adopts RT Surge / LT Brake+precision / RB Fire (fire moves off the brake finger).
       Accept: Pad map matches docs/FLIGHT-SPIKE.md adopted inputs (RT Surge, LT Brake/precision, RB Fire, Right-face Claw/sink/Eat-context) with T-093's tint-picker pad path kept working — no two verbs share one button; Dragon.Tint + Dragon.ScentToggleBinding still pass; proven in PIE with a real or simulated gamepad.
       Touches: Source/UnderTheMountain/Private/Dragon/DragonCharacter.cpp (BuildInputActions)   Depends: T-062   Gated: none
+- [ ] T-103 — Trap slow does nothing in hybrid flight (dwarf trap vs PhysCustom)
+      Why: sweep finding: ApplyTrapSlow scales MaxWalkSpeed/MaxFlySpeed, which the shipped Scheme-C PhysCustom integrator never reads — dwarf traps stop working the moment the dragon takes off (the header TODO(T-075) names this as owed with the input-remap slice, which T-062 was).
+      Accept: Trap-slowed dragon in MOVE_Custom flies measurably slower (turns wider and/or climbs worse by the slowed factor through the movement params, not MaxFlySpeed); expiry restores exact pre-slow values; automation test covers the slow/restore on the hybrid path.
+      Touches: Source/UnderTheMountain/Private/Dragon/DragonCharacter.cpp (ApplyTrapSlow), Source/UnderTheMountain/Public/Dragon/DragonMovementComponent.h (params), Source/UnderTheMountain/Tests/   Depends: T-062   Gated: none
+- [ ] T-104 — Wave ends early on missing thief instead of failing loudly
+      Why: sweep finding: AreWaveThievesResolved counts null thief/brain slots as resolved — a failed spawn or unaccounted despawn ends the wave early instead of surfacing the failure (the empty-wave mercy is deliberate anti-deadlock; missing-individual accounting is the hole).
+      Accept: A wave with a missing thief (null slot where a spawn was recorded) logs loudly naming the wave/thief instead of silently resolving; the deliberate empty-wave mercy stays; automation test covers null-slot vs all-resolved.
+      Touches: Source/UnderTheMountain/Private/Waves/WaveSubsystem.cpp, Source/UnderTheMountain/Tests/   Depends: T-016   Gated: none
+- [ ] T-105 — Landing-damage curve lives in two places (FlightParams + Stats)
+      Why: sweep finding: 800/2200 thresholds are duplicated in FDragonFlightParams and UDragonStatsComponent with no sync test — tuning one silently diverges wall-impact severity (T-079) from landing damage.
+      Accept: One source of truth (params read the Stats curve or vice versa — decided at claim) with a test that pins them equal; T-079 prices wall impacts on the same scale unchanged.
+      Touches: Source/UnderTheMountain/Public/Dragon/DragonMovementComponent.h, Source/UnderTheMountain/Public/Dragon/DragonStatsComponent.h, Source/UnderTheMountain/Tests/   Depends: T-062   Gated: none
+- [ ] T-106 — Content scripts destroy without backup; re-runs can duplicate
+      Why: sweep finding: Scripts/create_burnables.py destroys matching actors and saves the level with no backup; a mis-ordered re-run resurrects duplicates (the file's own header admits it). Lair/exterior/treasure/thief scripts share the shape.
+      Accept: create_burnables.py is re-runnable safely (pre-destroy census logged, duplicates impossible by construction, and a .umap backup or git-clean-tree preflight before any destroy); the same guard is applied or explicitly waived per sibling script, recorded here.
+      Touches: Scripts/create_burnables.py (siblings audited)   Depends: none   Gated: none
+- [ ] T-107 — True-sight markers spawn per treasure even with true-sight off
+      Why: sweep finding: ScentComponent spawns one marker actor per treasure on tick and hides it when true-sight is off — actor bloat that should defer to activation.
+      Accept: No marker actors exist while true-sight is inactive (verified by count in PIE/-game log or test seam); activating true-sight spawns them, deactivating removes them; ribbon behaviour unchanged.
+      Touches: Source/UnderTheMountain/Private/Scent/ScentComponent.cpp, Source/UnderTheMountain/Tests/   Depends: T-013   Gated: none
+- [ ] T-108 — Sweep input/doc honesty pass (README glide, movement header, mercy comment, GC test gap)
+      Why: sweep findings, no behaviour change: README.md says glide 1/s (code is 0/s since T-062), DragonMovementComponent.h still calls the chassis a prototype "inert on scheme 0", DragonStatsComponent.cpp says "glide and hover have positive rates" (glide is 0/s), and the Dragon.Input GC-reflection test enumerates 13 members while HasInputActions covers 17 (Fire/Roar/Eat/WingBuffet/TailSlam can lose UPROPERTY silently).
+      Accept: All statements true as written; GC test covers every HasInputActions member; gate green; no product-code change.
+      Touches: README.md, Source/UnderTheMountain/Public/Dragon/DragonMovementComponent.h, Source/UnderTheMountain/Private/Dragon/DragonStatsComponent.cpp, Source/UnderTheMountain/Tests/DragonInputTest.cpp (GC contract)   Depends: none   Gated: none
 - [ ] T-064 — Dive: define it, make it readable, teach it (F7)
       Why: owner playtest: "Not sure how dive is supposed to work." Current shipped behaviour (for the record): hold Left Shift (gamepad right trigger) while flying → accelerate along the camera/control forward at DiveAcceleration 2400 cm/s², 0 stamina/s (GAMEPLAY.md §2: altitude→speed trade), dive = fast flap anim. Nothing in-game says any of that, and if the intent is pitch-down-only gravity conversion, accelerating along camera forward (including upward) is arguably wrong.
       Decision [2026-10-31]: dive IS nose-down posture under the momentum model; the powered camera-forward button dies, Shift/LT becomes Brake, and the prototype steep-dive terminal starts at 4000 cm/s (GAMEPLAY.md §2 amended). Question half of T-030 is answered by this decision; its PIE session still stands.
@@ -206,6 +231,7 @@
 ## Dropped
 
 ## Done
+- [x] T-034 — goose-deuce sweep (successor to T-004) (2026-11-03, this commit) — Range: goose entries 2026-10-28 (post-sweep-#1 marker) through 2026-11-03. Folded the stale PLAN gate sentence (T-075 course flown, Scheme C shipped in T-062) into docs/PLAN.md. Owing audit: sole in-range [deferred] (T-062) has live items (T-102, T-030); no orphans, no Corrections. Adversarial review (independent sub-agent) returned 12 findings: 9 filed across T-103–T-108, 3 already owned (god-mode→T-088, tint pad path→T-093, lock files→T-101). Stranger test passed (named T-102 + exact Accept). Token audit: AGENTS.md 28,523 bytes, unchanged since sweep #1 (0% growth). Floor ratchet still owned by T-042 (owner approval). Successor T-109 filed (Gated: cadence).
 - [x] T-063 — Chimney climb + mouse-steered flight: RMB free-look, double-click to move/steer (F6) (2026-11-03, this commit) — Adopted variant ships on the hybrid: RMB hold free-looks without turning the dragon (release returns cleanly), double-click toggles steer/move-to-look by the flight band, any WASD/stick input cancels instantly, D-pad Up toggles the same latch. Proven: 34/34 green incl. new Dragon.FreeLookBinding (RMB→IA_FreeLook, D-pad Up→IA_SteerLatch); gate green, coverage 35.8%. No geometry changed (shaft exonerated); old-scheme failure named in goose-deuce (controls first, camera second); live climb + descent + feel-check ride with T-030.
 - [x] T-062 — Flight controls overhaul: full 3-axis movement + hold (F5) (2026-11-03, this commit) — Scheme C is the shipped default (utm.flight.scheme 2; 0 = legacy baseline): momentum flight at speed, X/Y/Z translation + hover-hold in the precision band, walk→Ascent-takeoff→flight→Landing Assist without velocity pops (touchdown keeps velocity into walk; grounded F = Tail Slam), adopted KB map (W-tap Surge, S-flare, A/D-turn at speed, Space Ascent + hold-rise, Ctrl sink, Shift brake, RMB free-look/double-click latch with WASD cancel); glide costs 0/s per GAMEPLAY.md §2 with the 5-reserve impulse economy and zero-stamina mercy on unpowered flight. Proven: 33/33 green incl. updated Dragon.Flight (glide free, impulse economy, mercy) + Dragon.Movement (C default); gate green, coverage 35.8%. Pad trigger remap deferred to T-102; live feel-check + chimney climb ride with T-030 (goose-deuce 2026-11-03).
 - [x] T-061 — Treasure scents toggleable via a hotkey (F4) (2026-11-03, this commit) — UScentComponent gains bScentVisible (default on) + Set/Is/ToggleScentVisible; N key and gamepad D-pad Down drive IA_ScentToggle → HandleToggleScent; ribbons hidden/shown never destroyed, spawn-while-hidden covered, markers stay on the T layer; state on the debug readout. Proven: UnderTheMountain.Scent.ToggleVisibility + Dragon.ScentToggleBinding (mapping table pins N + D-pad Down) within 33/33 green; gate green, coverage 35.9%. Live N-press + visual ride with T-030's PIE session (goose-deuce 2026-11-03).

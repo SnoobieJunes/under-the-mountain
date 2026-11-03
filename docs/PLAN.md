@@ -184,9 +184,14 @@ falsifies them. No scope was cut.
   calories in a food-survival loop; skimming only receives physical ground
   effect (less drag/sink). GAMEPLAY §2 now carries the target bands, starting
   speeds (2400 cruise / 3200 Surge / 4000 dive terminal), zero-stamina mercy
-  rule, and a Settings testing toggle for Infinite Stamina. No scheme has been
-  flown yet: T-075's PIE course (chimney, slalom, village circuit, dive-to-eat,
-  cave precision, zero-stamina) still gates production adoption in T-062.
+  rule, and a Settings testing toggle for Infinite Stamina. T-075's scripted
+  course flew all three schemes in the live Lair on 2026-11-03 (evidence in
+  docs/course-evidence/scheme{1,2,3}.csv): Scheme C picked provisionally and
+  shipped as the T-062 default. The owner feel-check at the demo may still
+  veto (a veto reopens tuning). Geometry legs (chimney, cave, slalom,
+  village, dive-goat, zero-stamina) remain owner-flown; T-030 owns the PIE
+  session. [2026-11-03 T-034 sweep: folded the "no scheme flown / gates T-062"
+  gate — it fired.]
 - **Animation:** single-node, two-clip playback is the ceiling. Adopted
   architecture is a lean `ABP_Dragon` on a C++ `UDragonAnimInstance` parent:
   locomotion states/blends, montage slots, fold/tuck/bank/aim additive layers,
