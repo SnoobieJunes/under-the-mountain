@@ -53,8 +53,11 @@ bool FDragonInputTest::RunTest(const FString& Parameters)
 		  TEXT("ScentToggleAction"),
 		  TEXT("PadLookAction"), TEXT("PadMoveAction"), TEXT("CameraCycleAction"),
 		  TEXT("FireAction"), TEXT("RoarAction"), TEXT("EatAction"), TEXT("WingBuffetAction"),
-		  TEXT("TailSlamAction"), // [2026-11-03 T-108] combat verbs join the GC contract: an
-								  // unreflected action is collectable mid-fight (same T-004 lesson).
+		  // [2026-11-03 T-108] Combat verbs join the GC contract: an
+		  // unreflected action is collectable mid-fight (same T-004 lesson).
+		  TEXT("TailSlamAction"),
+		  // [2026-11-03 T-072] Flow pause joins the GC contract (same lesson).
+		  TEXT("PauseAction"),
 		  TEXT("MappingContext")})
 	{
 		TestNotNull(FString::Printf(TEXT("%s is a reflected UPROPERTY"), Member),
@@ -347,6 +350,67 @@ bool FDragonCameraCycleTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("pad camera pitch defaults to non-inverted"), ADragonCharacter::InvertPadCameraPitch());
 
 	UGameplayStatics::DeleteGameInSlot(TestSlot, 0);
+	return true;
+}
+
+// [2026-11-03 T-072] The flow-pause wiring, proven headless: the GC
+// sees the pause action (T-108 contract keeps every HasInputActions
+// member reflected) and the mapping table binds it to exactly Esc +
+// gamepad menu (Start). Same pattern as the scent/camera binding
+// tests; a live keypress rides with the next PIE session.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDragonPauseBindingTest,
+								 "UnderTheMountain.Dragon.PauseBinding",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDragonPauseBindingTest::RunTest(const FString& Parameters)
+{
+	ADragonCharacter* Pawn = NewObject<ADragonCharacter>();
+	TestNotNull(TEXT("pawn constructs for binding check"), Pawn);
+	if (Pawn == nullptr)
+	{
+		return false;
+	}
+	Pawn->EnsureInputActions();
+
+	UClass* PawnClass = ADragonCharacter::StaticClass();
+	const FObjectProperty* PauseProp =
+		FindFProperty<FObjectProperty>(PawnClass, TEXT("PauseAction"));
+	const FObjectProperty* ContextProp =
+		FindFProperty<FObjectProperty>(PawnClass, TEXT("MappingContext"));
+	TestNotNull(TEXT("PauseAction member reflects"), PauseProp);
+	TestNotNull(TEXT("MappingContext member reflects"), ContextProp);
+	if (PauseProp == nullptr || ContextProp == nullptr)
+	{
+		return false;
+	}
+	const UInputAction* Pause =
+		Cast<UInputAction>(PauseProp->GetObjectPropertyValue_InContainer(Pawn));
+	TestNotNull(TEXT("ensured pawn owns the pause action"), Pause);
+	const UInputMappingContext* Context =
+		Cast<UInputMappingContext>(ContextProp->GetObjectPropertyValue_InContainer(Pawn));
+	TestNotNull(TEXT("ensured pawn owns the mapping context"), Context);
+	if (Pause == nullptr || Context == nullptr)
+	{
+		return false;
+	}
+
+	TestTrue(TEXT("pause action joins the input contract"), Pawn->HasInputActions());
+
+	bool bEsc = false;
+	bool bPadMenu = false;
+	if (Context != nullptr)
+	{
+		for (const FEnhancedActionKeyMapping& Mapping : Context->GetMappings())
+		{
+			if (Mapping.Action == Pause)
+			{
+				bEsc = bEsc || Mapping.Key == EKeys::Escape;
+				bPadMenu = bPadMenu || Mapping.Key == EKeys::Gamepad_Special_Right;
+			}
+		}
+	}
+	TestTrue(TEXT("Esc pauses the flow"), bEsc);
+	TestTrue(TEXT("gamepad menu pauses the flow"), bPadMenu);
 	return true;
 }
 

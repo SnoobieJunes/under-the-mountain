@@ -337,6 +337,10 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// set and persists the choice.
 	UPROPERTY()
 	TObjectPtr<UInputAction> CameraCycleAction;
+	// [2026-11-03 T-072] Flow pause (Esc / gamepad menu): routes
+	// through the game mode's machine, never pauses directly.
+	UPROPERTY()
+	TObjectPtr<UInputAction> PauseAction;
 	// Fire is held (Triggered/Completed), Roar and Eat are presses.
 	UPROPERTY()
 	TObjectPtr<UInputAction> FireAction;
@@ -391,6 +395,9 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	void HandleMoveAxis(const FVector2D& Axis, bool bFromGamepad);
 	void HandleRiseHeld(const struct FInputActionValue& Value);
 	void HandleRiseEnd();
+	// [2026-11-03 T-072] Pause routing by flow state: Playing pauses,
+	// Paused resumes, Won/Lost back out to title, Title ignores.
+	void HandlePause();
 	void HandleFreeLook(const struct FInputActionValue& Value);
 	void HandleFreeLookEnd();
 	void HandleSteerLatch();

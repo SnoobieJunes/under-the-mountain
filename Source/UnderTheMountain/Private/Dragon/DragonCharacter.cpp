@@ -8,6 +8,9 @@
 // debug readout makes velocity/drain visible while tuning in PIE.
 
 #include "Dragon/DragonCharacter.h"
+
+#include "Core/GameFlowMachine.h"
+#include "Core/UnderTheMountainGameMode.h"
 #include "Dragon/DragonAppearanceComponent.h"
 #include "Dragon/DragonCameraSaveGame.h"
 #include "Dragon/DragonCombatComponent.h"
@@ -394,6 +397,35 @@ void ADragonCharacter::HandleCameraCycle()
 	CycleCamera();
 }
 
+void ADragonCharacter::HandlePause()
+{
+	// [2026-11-03 T-072] Routing by flow state lives here so one key
+	// does the right thing on every screen: pause/resume in play,
+	// back out to title from an end screen, nothing on title (the
+	// Start button owns that transition).
+	UWorld* World = GetWorld();
+	if (World == nullptr)
+	{
+		return;
+	}
+	AUnderTheMountainGameMode* Mode =
+		World->GetAuthGameMode<AUnderTheMountainGameMode>();
+	if (Mode == nullptr)
+	{
+		return;
+	}
+	const UGameFlowMachine::EState State = Mode->GetFlowState();
+	if (State == UGameFlowMachine::EState::Playing ||
+		State == UGameFlowMachine::EState::Paused)
+	{
+		Mode->TogglePauseRun();
+	}
+	else if (State == UGameFlowMachine::EState::Won || State == UGameFlowMachine::EState::Lost)
+	{
+		Mode->QuitToTitle();
+	}
+}
+
 void ADragonCharacter::CycleCamera()
 {
 	CameraMode = static_cast<EDragonCameraMode>((static_cast<int32>(CameraMode) + 1) % 3);
@@ -522,6 +554,7 @@ bool ADragonCharacter::HasInputActions() const
 		   FreeLookAction != nullptr && SinkAction != nullptr && SteerLatchAction != nullptr &&
 		   // [2026-11-03 T-065] Split look/move + camera cycle join the contract.
 		   PadLookAction != nullptr && PadMoveAction != nullptr && CameraCycleAction != nullptr &&
+		   PauseAction != nullptr &&
 		   MappingContext != nullptr;
 }
 
@@ -774,6 +807,11 @@ void ADragonCharacter::BuildInputActions()
 	// on gamepad (adopted set: head chase / wide scenic / first-person).
 	Map(CameraCycleAction, EKeys::V);
 	Map(CameraCycleAction, EKeys::Gamepad_RightThumbstick);
+	// [2026-11-03 T-072] Flow pause: Esc on keyboard, menu (Start) on
+	// gamepad. Routed through the game mode's machine (never direct).
+	PauseAction = MakeAction(TEXT("IA_Pause"), EInputActionValueType::Boolean);
+	Map(PauseAction, EKeys::Escape);
+	Map(PauseAction, EKeys::Gamepad_Special_Right);
 }
 
 void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -817,6 +855,10 @@ void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	if (CameraCycleAction != nullptr)
 	{
 		EIC->BindAction(CameraCycleAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleCameraCycle);
+	}
+	if (PauseAction != nullptr)
+	{
+		EIC->BindAction(PauseAction, ETriggerEvent::Started, this, &ADragonCharacter::HandlePause);
 	}
 	if (FlapAction != nullptr)
 	{
@@ -1536,6 +1578,21 @@ void ADragonCharacter::AuditGameLoop(float DeltaSeconds)
 				   TEXT("Session outcome: %d (hoard %lld of %lld, stars %d, wave %d)"),
 				   static_cast<int32>(Outcome), Hoard->GetCurrentHoard(TreasureSub->Registry()->TotalGold()),
 				   Hoard->GetStartingHoard(), Notoriety->GetStars(), Waves->GetCurrentWave());
+			// [2026-11-03 T-072] Feed the flow shell: the end screen
+			// shows this outcome (PyrrhicWin still counts as won —
+			// the hoard numbers on the screen tell the cost).
+			if (AUnderTheMountainGameMode* Mode =
+					World->GetAuthGameMode<AUnderTheMountainGameMode>())
+			{
+				const EGameFlowOutcome FlowOutcome =
+					(Outcome == EHoardOutcome::Win || Outcome == EHoardOutcome::PyrrhicWin)
+						? EGameFlowOutcome::Won
+						: EGameFlowOutcome::Lost;
+				Mode->RequestSessionEnd(FlowOutcome,
+										Hoard->GetCurrentHoard(TreasureSub->Registry()->TotalGold()),
+										Hoard->GetStartingHoard(), Notoriety->GetStars(),
+										Waves->GetCurrentWave());
+			}
 		}
 	}
 }
@@ -2475,7 +2532,24 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 		}
 	}
 	// [2026-11-01 T-018] Intro sequence (camera, gnome, choice).
-	TickIntro(DeltaSeconds);
+	// [2026-11-03 T-072] The run starts at the title screen: the intro
+	// waits for StartPlay (HasRunStarted) instead of playing behind
+	// the title. The cvar path below is unchanged (skip still skips).
+	if (UWorld* IntroWorld = GetWorld())
+	{
+		if (const AUnderTheMountainGameMode* Mode =
+				IntroWorld->GetAuthGameMode<AUnderTheMountainGameMode>())
+		{
+			if (Mode->HasRunStarted())
+			{
+				TickIntro(DeltaSeconds);
+			}
+		}
+		else
+		{
+			TickIntro(DeltaSeconds);
+		}
+	}
 	// [2026-11-01 T-016] Game loop: waves, notoriety/hoard
 	// accounting and outcome classification, driven from here
 	// (the pawn is the one actor that always ticks).

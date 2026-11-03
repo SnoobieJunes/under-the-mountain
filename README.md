@@ -48,7 +48,10 @@ Scripts/coverage.sh    # real llvm-cov line coverage (floor: AGENTS.md, 29%)
 ```
 
 To play: open the editor, load `/Game/Maps/Lair/Lair`, press **Play**. The
-dragon spawns at `DragonStart` in the great chamber; the hoard mound, the
+title screen opens first (world paused) — press **Start Run** (the intro
+wake-up plays, then free play). **Esc** pauses and resumes; the pause,
+win, and lose screens offer restart (clean run via map reload), title,
+and quit. The dragon spawns at `DragonStart` in the great chamber; the hoard mound, the
 crown opening, the caves, and the village are all reachable from there.
 
 **Quick test (no editor): `Scripts/play.sh`** — builds the game target and
