@@ -546,6 +546,14 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	TSet<FName> CountedPropBurns;
 	float LoopAuditTimer = 0.0f;
 	bool bOutcomeLogged = false;
+	// [2026-11-03 T-083] Wave-gold XP bookkeeping: the wave whose
+	// hoard window is open, and the hoard total when it opened. When
+	// the wave number advances, the finished wave's net gold is
+	// awarded (idempotent per wave inside the subsystem); the final
+	// wave awards at session over.
+	int32 XPWaveTracked = 0;
+	int64 XPWaveHoardStart = 0;
+	bool bXPFinalWaveAwarded = false;
 	float GroundScorchAccum = 0.0f;
 	float GroundScorchTimer = 0.0f;
 

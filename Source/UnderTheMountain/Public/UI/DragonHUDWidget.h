@@ -28,7 +28,7 @@ class UNDERTHEMOUNTAIN_API UDragonHUDWidget : public UUserWidget
 	// fractions, star pips, gold and wave. WaveStateText is the
 	// caller's word so this widget stays presentation-only.
 	void Refresh(float HP, float MaxHP, float Stamina, float MaxStamina, int32 Stars, int32 Points,
-				 int64 Hoard, int64 StartingHoard, int32 Wave, const FString& WaveStateText,
+				 int64 Hoard, int64 StartingHoard, int32 Wave, int32 XP, const FString& WaveStateText,
 				 const FString& FlightStateLabel);
 
 	// [2026-11-01 T-019] Pure formatting, tested verbatim:
@@ -36,7 +36,7 @@ class UNDERTHEMOUNTAIN_API UDragonHUDWidget : public UUserWidget
 	// gold line, and bar fractions clamped to [0,1] (a stat
 	// over its max reads full, never overflowing the bar).
 	static FString FormatStars(int32 Stars, int32 Points);
-	static FString FormatHoard(int64 Hoard, int64 StartingHoard, int32 Wave,
+	static FString FormatHoard(int64 Hoard, int64 StartingHoard, int32 Wave, int32 XP,
 							   const FString& WaveStateText);
 	static float BarFraction(float Value, float Max);
 

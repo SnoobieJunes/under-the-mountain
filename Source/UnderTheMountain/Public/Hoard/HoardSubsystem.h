@@ -45,6 +45,12 @@ class UNDERTHEMOUNTAIN_API UHoardThresholdsAsset : public UDataAsset
 
 	UPROPERTY(EditAnywhere, Category = "Hoard")
 	int32 FinalWave = 6;
+
+	// [2026-11-03 T-083] Level curve, RESERVED EMPTY in M1 per
+	// GAMEPLAY.md section 8 (levels + stat growth arrive in M2).
+	// Present so the data slot exists; no code reads it yet.
+	UPROPERTY(EditAnywhere, Category = "Hoard")
+	TArray<int32> XPCurve;
 };
 
 UCLASS()

@@ -31,6 +31,7 @@
 #include "Hoard/HoardSubsystem.h"
 #include "Intro/IntroSubsystem.h"
 #include "Notoriety/NotorietySubsystem.h"
+#include "Progression/XPSubsystem.h"
 #include "Treasure/TreasureSubsystem.h"
 #include "Waves/WaveSubsystem.h"
 #include "World/BurnablePropActor.h"
@@ -1664,13 +1665,42 @@ void ADragonCharacter::AuditGameLoop(float DeltaSeconds)
 	UHoardSubsystem* Hoard = World->GetSubsystem<UHoardSubsystem>();
 	UWaveSubsystem* Waves = World->GetSubsystem<UWaveSubsystem>();
 	UTreasureSubsystem* TreasureSub = World->GetSubsystem<UTreasureSubsystem>();
+	UXPSubsystem* XP = World->GetSubsystem<UXPSubsystem>();
 	if (Notoriety == nullptr || Hoard == nullptr || Waves == nullptr || TreasureSub == nullptr ||
-		TreasureSub->Registry() == nullptr)
+		TreasureSub->Registry() == nullptr || XP == nullptr)
 	{
 		return;
 	}
 	Hoard->RecordSessionStart(TreasureSub->Registry()->TotalGold());
 	Waves->TickWave(DeltaSeconds);
+
+	// [2026-11-03 T-083] Wave-gold XP window: when the wave number
+	// advances, the finished wave's net hoard delta is awarded (a
+	// straggler escaping in the gap lands in the next window —
+	// attribution fuzz, documented not hidden); the final wave
+	// awards once at session over instead of on an advance that
+	// never comes.
+	const int64 CurrentHoardNow = Hoard->GetCurrentHoard(TreasureSub->Registry()->TotalGold());
+	if (Waves->IsSessionOver())
+	{
+		if (!bXPFinalWaveAwarded)
+		{
+			bXPFinalWaveAwarded = true;
+			XP->ClaimWaveGold(Waves->GetCurrentWave(), CurrentHoardNow - XPWaveHoardStart);
+		}
+	}
+	else if (Waves->GetCurrentWave() != XPWaveTracked)
+	{
+		// Wave 0 is the pre-run intermission, not a scored wave: its
+		// "window" opens on the starting hoard, so there is nothing to
+		// award — just take the baseline for wave 1 and move on.
+		if (XPWaveTracked != 0)
+		{
+			XP->ClaimWaveGold(XPWaveTracked, CurrentHoardNow - XPWaveHoardStart);
+		}
+		XPWaveTracked = Waves->GetCurrentWave();
+		XPWaveHoardStart = CurrentHoardNow;
+	}
 
 	LoopAuditTimer += DeltaSeconds;
 	if (LoopAuditTimer < 0.5f)
@@ -1715,6 +1745,14 @@ void ADragonCharacter::AuditGameLoop(float DeltaSeconds)
 			if (!bSuppressed)
 			{
 				Notoriety->AddEscapePoints(bWithLoot);
+				// [2026-11-03 T-083] Lootless escapes earn XP (GAMEPLAY.md
+				// section 8): the scare-off reward, claimed by actor name
+				// so it lands once. Intro-suppressed escapes stay in the
+				// intro economy (no XP on top of it).
+				if (!bWithLoot)
+				{
+					XP->ClaimScare(Thief->GetFName(), true);
+				}
 			}
 			int64 Stolen = 0;
 			for (const FName& ItemId : Brain->CarriedItems())
@@ -1733,6 +1771,11 @@ void ADragonCharacter::AuditGameLoop(float DeltaSeconds)
 		{
 			CountedThiefEvents.Add(Key);
 			Notoriety->AddPublicKillPoints(Thief->GetActorLocation());
+			// [2026-11-03 T-083] Inside kills earn XP (GAMEPLAY.md
+			// section 8): claimed by stable actor name, so a later
+			// eat reprocessing the same corpse claims nothing.
+			XP->ClaimKill(Thief->GetFName(),
+						  UNotorietySubsystem::IsInsideLair(Thief->GetActorLocation()));
 		}
 	}
 
@@ -2715,7 +2758,8 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 				UHoardSubsystem* Hoard = GetWorld()->GetSubsystem<UHoardSubsystem>();
 				UWaveSubsystem* Waves = GetWorld()->GetSubsystem<UWaveSubsystem>();
 				UTreasureSubsystem* TreasureSub = GetWorld()->GetSubsystem<UTreasureSubsystem>();
-				if (Notoriety && Hoard && Waves && TreasureSub && TreasureSub->Registry() && Stats)
+				UXPSubsystem* HUDXP = GetWorld()->GetSubsystem<UXPSubsystem>();
+				if (Notoriety && Hoard && Waves && TreasureSub && TreasureSub->Registry() && Stats && HUDXP)
 				{
 					static const TCHAR* WaveWords[] = {TEXT("Intermission"), TEXT("Spawning"),
 													   TEXT("Active"), TEXT("Session over")};
@@ -2736,7 +2780,7 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 									   Notoriety->GetStars(), Notoriety->GetPoints(),
 									   Hoard->GetCurrentHoard(TreasureSub->Registry()->TotalGold()),
 									   Hoard->GetStartingHoard(), Waves->GetCurrentWave(),
-									   WaveWords[WaveIndex], FlightStateText);
+									   HUDXP->GetTotalXP(), WaveWords[WaveIndex], FlightStateText);
 				}
 			}
 		}

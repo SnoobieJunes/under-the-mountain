@@ -27,8 +27,10 @@ bool FDragonHUDTest::RunTest(const FString& Parameters)
 			  UDragonHUDWidget::FormatStars(9, 999),
 			  FString(TEXT("\u2605\u2605\u2605\u2605\u2605  999 pts")));
 	TestEqual(TEXT("gold line"),
-			  UDragonHUDWidget::FormatHoard(2750, 3000, 3, TEXT("Active")),
-			  FString(TEXT("2750 / 3000 gold")));
+			  UDragonHUDWidget::FormatHoard(2750, 3000, 3, 45, TEXT("Active")),
+			  FString(TEXT("2750 / 3000 gold \u00b7 45 XP")));
+	TestEqual(TEXT("zero XP still shows"), UDragonHUDWidget::FormatHoard(3000, 3000, 1, 0, TEXT("Active")),
+			  FString(TEXT("3000 / 3000 gold \u00b7 0 XP")));
 	TestEqual(TEXT("bar fraction mid"), UDragonHUDWidget::BarFraction(55.0f, 100.0f), 0.55f);
 	TestEqual(TEXT("bar fraction clamps over max"), UDragonHUDWidget::BarFraction(150.0f, 100.0f), 1.0f);
 	TestEqual(TEXT("bar fraction clamps under zero"), UDragonHUDWidget::BarFraction(-5.0f, 100.0f), 0.0f);

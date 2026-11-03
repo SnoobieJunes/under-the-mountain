@@ -176,14 +176,14 @@ FString UDragonHUDWidget::FormatFlightState(bool bDiving, bool bBraking, bool bH
 	return TEXT("GLIDING - nose down to dive");
 }
 
-FString UDragonHUDWidget::FormatHoard(int64 Hoard, int64 StartingHoard, int32 Wave,
+FString UDragonHUDWidget::FormatHoard(int64 Hoard, int64 StartingHoard, int32 Wave, int32 XP,
 									  const FString& WaveStateText)
 {
 	// Wave/state render on their own line (WaveText in Refresh);
-	// the gold line is gold only.
+	// the gold line is gold plus the M1 XP readout (T-083).
 	(void)Wave;
 	(void)WaveStateText;
-	return FString::Printf(TEXT("%lld / %lld gold"), Hoard, StartingHoard);
+	return FString::Printf(TEXT("%lld / %lld gold \u00b7 %d XP"), Hoard, StartingHoard, XP);
 }
 
 float UDragonHUDWidget::BarFraction(float Value, float Max)
@@ -196,7 +196,7 @@ float UDragonHUDWidget::BarFraction(float Value, float Max)
 }
 
 void UDragonHUDWidget::Refresh(float HP, float MaxHP, float Stamina, float MaxStamina, int32 Stars,
-							   int32 Points, int64 Hoard, int64 StartingHoard, int32 Wave,
+							   int32 Points, int64 Hoard, int64 StartingHoard, int32 Wave, int32 XP,
 							   const FString& WaveStateText, const FString& FlightStateLabel)
 {
 	if (HPBar)
@@ -223,7 +223,7 @@ void UDragonHUDWidget::Refresh(float HP, float MaxHP, float Stamina, float MaxSt
 	}
 	if (HoardText)
 	{
-		HoardText->SetText(FText::FromString(FormatHoard(Hoard, StartingHoard, Wave, WaveStateText)));
+		HoardText->SetText(FText::FromString(FormatHoard(Hoard, StartingHoard, Wave, XP, WaveStateText)));
 	}
 	if (WaveText)
 	{
