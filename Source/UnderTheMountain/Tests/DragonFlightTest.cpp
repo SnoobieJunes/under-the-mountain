@@ -27,11 +27,12 @@ bool FDragonFlightTest::RunTest(const FString& Parameters)
 {
 	// [2026-10-28 T-011] Defaults first, on a fresh component, before any
 	// test-local tuning overwrites them: these lock the GAMEPLAY.md s2
-	// numbers (flap 3/beat, glide 1/s, hover 8/s, exhaustion 2 HP/s) and
+	// numbers (flap 3/beat, glide 0/s [2026-11-03 T-062: unpowered travel],
+	// hover 8/s, exhaustion 2 HP/s) and
 	// the landing tuning picked in the header (800..2200 cm/s -> 5..25).
 	UDragonStatsComponent* Defaults = NewObject<UDragonStatsComponent>();
 	TestEqual(TEXT("flap cost default is 3 per beat"), Defaults->FlapStaminaCost, 3.0f);
-	TestEqual(TEXT("glide drain default is 1/s"), Defaults->GlideDrainPerSecond, 1.0f);
+	TestEqual(TEXT("glide drain default is 0/s (unpowered)"), Defaults->GlideDrainPerSecond, 0.0f);
 	TestEqual(TEXT("hover drain default is 8/s"), Defaults->HoverDrainPerSecond, 8.0f);
 	TestEqual(TEXT("exhaustion HP drain default is 2/s"), Defaults->ExhaustionHPDrainPerSecond, 2.0f);
 	TestEqual(TEXT("landing threshold default is 800 cm/s"), Defaults->LandingSpeedThreshold, 800.0f);
@@ -101,27 +102,41 @@ bool FDragonFlightTest::RunTest(const FString& Parameters)
 	Stats->DrainHPForExhaustion(-5.0f);
 	TestEqual(TEXT("negative exhaustion time drains nothing"), Stats->HP, 50.0f);
 
-	// [2026-10-28 T-011] Explicit-rate flight drain: glide rate for 10 s
-	// costs 10, a zero rate (dive) is free.
+	// [2026-11-03 T-062] Glide is unpowered (GAMEPLAY.md s2: 0/s — momentum
+	// spends altitude/airspeed, not stamina), so a 10 s glide costs nothing;
+	// a zero rate (dive) stays free with it.
 	Stats->MaxStamina = 100.0f;
 	Stats->Stamina = 100.0f;
 	Stats->DrainForFlight(10.0f, Stats->GlideDrainPerSecond);
-	TestEqual(TEXT("glide-rate drain over 10 s"), Stats->Stamina, 90.0f);
+	TestEqual(TEXT("glide-rate drain over 10 s is free"), Stats->Stamina, 100.0f);
 	Stats->DrainForFlight(10.0f, 0.0f);
-	TestEqual(TEXT("zero-rate (dive) drain is free"), Stats->Stamina, 90.0f);
+	TestEqual(TEXT("zero-rate (dive) drain is free"), Stats->Stamina, 100.0f);
 
 	// [2026-10-28 T-036] Regression: zero stamina must not end a free
 	// dive. Before this rule was extracted, the pawn drained HP only
 	// for positive rates but forced MOVE_Falling for every rate, so a
 	// dive at empty stamina was cancelled despite costing nothing.
-	TestFalse(TEXT("zero-stamina dive does not force a fall"),
-			  Stats->ShouldForceFallAtZeroStamina(0.0f));
+	// [2026-11-03 T-062] Mercy covers unpowered flight: at zero stamina a free
+	// glide (0/s) keeps flying with no HP burn, while a draining hover still
+	// burns HP and forces the fall (T-036 rule, rate-tested).
+	TestFalse(TEXT("zero-stamina glide does not force a fall"),
+			  Stats->ShouldForceFallAtZeroStamina(Stats->GlideDrainPerSecond));
 	TestFalse(TEXT("negative flight rate does not force a fall"),
 			  Stats->ShouldForceFallAtZeroStamina(-1.0f));
-	TestTrue(TEXT("zero-stamina glide forces a fall"),
-			 Stats->ShouldForceFallAtZeroStamina(Stats->GlideDrainPerSecond));
+	TestFalse(TEXT("zero-stamina dive (0/s) does not force a fall"),
+			  Stats->ShouldForceFallAtZeroStamina(0.0f));
 	TestTrue(TEXT("zero-stamina hover forces a fall"),
 			 Stats->ShouldForceFallAtZeroStamina(Stats->HoverDrainPerSecond));
+
+	// [2026-11-03 T-062] Impulse economy: one full 20-point reserve buys one
+	// Ascent/Surge (GAMEPLAY.md s2), so a full pool holds exactly five.
+	Stats->Stamina = Stats->MaxStamina;
+	for (int32 Impulse = 0; Impulse < 5; ++Impulse)
+	{
+		TestTrue(TEXT("a full reserve buys one impulse"), Stats->TryConsumeStamina(20.0f));
+	}
+	TestEqual(TEXT("five impulses exactly empty a full pool"), Stats->Stamina, 0.0f);
+	TestFalse(TEXT("no sixth impulse on an empty pool"), Stats->TryConsumeStamina(20.0f));
 	return true;
 }
 

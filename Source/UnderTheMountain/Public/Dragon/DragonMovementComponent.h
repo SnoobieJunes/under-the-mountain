@@ -15,8 +15,8 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "DragonMovementComponent.generated.h"
 
-// [2026-11-03 T-075] Prototype flight scheme selector, mirrored by the
-// utm.flight.scheme console var (0 = shipped flight, prototype inert).
+// [2026-11-03 T-062] Shipped flight scheme selector, mirrored by the
+// utm.flight.scheme console var (2 = Scheme C hybrid, shipped default).
 UENUM(BlueprintType)
 enum class EDragonFlightScheme : uint8
 {
@@ -137,13 +137,13 @@ class UNDERTHEMOUNTAIN_API UDragonMovementComponent : public UCharacterMovementC
   public:
 	UDragonMovementComponent();
 
-	// [2026-11-03 T-075] Custom-mode id for the PhysCustom flight
+	// [2026-11-03 T-062] Custom-mode id for the PhysCustom flight
 	// integration. The pawn enters MOVE_Custom with this mode; scheme 0
-	// never enters it, so shipped flight is untouched.
+	// keeps the legacy CharacterMovement path for baseline comparisons.
 	static constexpr uint8 DragonFlightCustomMode = 0;
 
-	// [2026-11-03 T-075] Reads utm.flight.scheme (0..3, default 0 = shipped).
-	// The prototype is inert until this returns non-zero.
+	// [2026-11-03 T-062] Reads utm.flight.scheme (0..3, default 2 = Scheme C
+	// hybrid, shipped). 0 is the legacy baseline, not an inert prototype.
 	static int32 GetFlightScheme();
 
 	// [2026-11-03 T-075] Precision authority weight in [0,1]: 1 at or below

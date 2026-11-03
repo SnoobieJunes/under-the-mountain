@@ -36,16 +36,18 @@ class UNDERTHEMOUNTAIN_API UDragonStatsComponent : public UActorComponent
 	// for the legacy DrainForFlight(dt) overload only: the pawn now picks
 	// glide/hover per tick (below) and calls DrainForFlight(dt, rate).
 	// The field is retained so existing tests/callers that set it keep
-	// working; its default follows glide, the cheapest sustained flight.
+	// working; its default follows glide, the free unpowered travel.
 	UPROPERTY(EditAnywhere, Category = "Dragon|Stats")
-	float FlyingDrainPerSecond = 1.0f;
+	float FlyingDrainPerSecond = 0.0f;
 
 	// [2026-10-28 T-011] GAMEPLAY.md section 2 (all [tuning: PT-STAM]):
-	// glide -1/s, hover -8/s, dive 0/s (dive passes a zero rate, so it has
-	// no field here). Hover is "flying but barely moving horizontally";
+	// [2026-11-03 T-062] glide 1/s -> 0/s: unpowered travel is free.
+	// glide 0/s, hover -8/s, dive 0/s (a zero rate is free; glide keeps its
+	// field so the rate stays data, dive passes 0 inline and has none).
+	// Hover is "flying but barely moving horizontally";
 	// the pawn classifies by comparing horizontal speed to this threshold.
 	UPROPERTY(EditAnywhere, Category = "Dragon|Stats")
-	float GlideDrainPerSecond = 1.0f;
+	float GlideDrainPerSecond = 0.0f;
 
 	UPROPERTY(EditAnywhere, Category = "Dragon|Stats")
 	float HoverDrainPerSecond = 8.0f;
@@ -105,8 +107,8 @@ class UNDERTHEMOUNTAIN_API UDragonStatsComponent : public UActorComponent
 	bool TryConsumeStamina(float Cost);
 	void ApplyStaminaDelta(float Delta);
 	void DrainForFlight(float DeltaSeconds);
-	// [2026-10-28 T-011] Drain at a caller-chosen rate (glide/hover/dive);
-	// a rate <= 0 is free (dive), which also means no exhaustion burn.
+	// [2026-11-03 T-062] Drain at a caller-chosen rate (hover positive;
+	// glide/dive pass 0 and are free), which also means no exhaustion burn.
 	void DrainForFlight(float DeltaSeconds, float RatePerSecond);
 	void RegenOnGround(float DeltaSeconds);
 	bool CanFlap() const;
@@ -134,10 +136,10 @@ class UNDERTHEMOUNTAIN_API UDragonStatsComponent : public UActorComponent
 
 	// [2026-10-28 T-036] Exhaustion only ends flight for an action that
 	// is actually spending stamina. The pawn classifies the current
-	// action as a rate (dive 0, glide/hover positive above), and this
+	// action as a rate (dive/glide 0, hover positive), and this
 	// component owns the zero-stamina consequence for that rate: a
-	// positive rate burns HP and forces a fall, while a free dive does
-	// neither. Keeping the decision here makes the rule testable
+	// positive rate burns HP and forces a fall, while a free glide or dive
+	// does neither. Keeping the decision here makes the rule testable
 	// without spawning the pawn or a world.
 	bool ShouldForceFallAtZeroStamina(float RatePerSecond) const;
 };

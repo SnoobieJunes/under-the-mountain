@@ -15,12 +15,14 @@
 #include "Misc/Paths.h"
 #include "UnderTheMountain.h"
 
-// [2026-11-03 T-075] Scheme selector for the prototype chassis. Defaults to
-// 0 (shipped) so every comparison leg in FLIGHT-SPIKE.md runs the current
-// scheme as baseline until the course explicitly opts into A/C/B.
+// [2026-11-03 T-062] Scheme C is the shipped flight model (T-075 course pick,
+// provisional pending owner feel-check): the default selects the hybrid, so
+// takeoffs enter the custom integrator with no opt-in. 0 keeps the legacy
+// CharacterMovement flying path as the comparison baseline (course A/B legs,
+// legacy feel checks); 1/3 keep A/B prototype-only.
 static TAutoConsoleVariable<int32> CVarFlightScheme(
-	TEXT("utm.flight.scheme"), 0,
-	TEXT("Prototype flight scheme (T-075): 0 = shipped flight (prototype inert), " TEXT("1 = Scheme A momentum, 2 = Scheme C hybrid, 3 = Scheme B forced-precision.")));
+	TEXT("utm.flight.scheme"), 2,
+	TEXT("Flight scheme (T-062): 2 = Scheme C hybrid (shipped default), " TEXT("0 = legacy shipped flight (comparison baseline), 1 = Scheme A momentum, 3 = Scheme B forced-precision.")));
 
 UDragonMovementComponent::UDragonMovementComponent()
 {
@@ -337,7 +339,9 @@ void UDragonMovementComponent::PhysCustom(float deltaTime, int32 Iterations)
 		}
 		else if (Velocity.Size() < 300.0f)
 		{
-			Velocity = FVector::ZeroVector;
+			// [2026-11-03 T-062] Touchdown keeps its (small) velocity into walk so
+			// ground friction, not a zero-snap, finishes the stop — no landing
+			// pop. Fast contacts fell out above (Landed() prices them).
 			SetMovementMode(MOVE_Walking);
 		}
 	}

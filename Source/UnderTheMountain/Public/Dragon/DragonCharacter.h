@@ -322,8 +322,12 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 
 	// [2026-11-03 T-075] Prototype inputs (T-075/T-063): W-tap Surge, Space-hold
 	// rise, RMB free-look + double-click steer latch, D-pad Up steer latch,
-	// Ctrl sink. All no-op unless a prototype scheme is selected.
+	// Ctrl sink. Shipped since T-062 (Scheme C default); legacy scheme 0
+	// keeps the old map.
 	void HandleMoveStarted(const struct FInputActionValue& Value);
+	// [2026-11-03 T-062] Release edge for the remembered move axis (S-flare /
+	// A/D-turn below): a released key must stop flaring/turning.
+	void HandleMoveEnd();
 	void HandleRiseHeld(const struct FInputActionValue& Value);
 	void HandleRiseEnd();
 	void HandleFreeLook(const struct FInputActionValue& Value);
@@ -342,6 +346,9 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	bool bSinkHeld = false;
 	float LastRMBReleaseTime = -10.0f;
 	float LastSurgeTime = -10.0f;
+	// [2026-11-03 T-062] Last move-axis sample (see HandleMove): S-held
+	// (Y < -0.5) flares in the momentum band, A/D (X) yaws the nose there.
+	FVector2D LastMoveAxis = FVector2D::ZeroVector;
 
 	// [2026-11-03 T-075] Scripted course runner (utm.flight.course): the program
 	// owns nose/brake/assist while bCourseFlying; UpdatePrototypeFlight skips its

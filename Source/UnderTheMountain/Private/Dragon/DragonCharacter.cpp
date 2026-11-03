@@ -90,8 +90,8 @@ TAutoConsoleVariable<int32> CVarIntroEnabled(
 	TEXT("utm.intro.enabled"), 1,
 	TEXT("1 = play the intro wake-up sequence on spawn; 0 = straight to free play."));
 
-// [2026-11-03 T-075] Scripted course runner: 1 = fly the T-075 legs and quit.
-// Requires a non-zero utm.flight.scheme; off by default (shipped never arms).
+// [2026-11-03 T-062] Scripted course runner: 1 = fly the legs and quit.
+// Flies the current scheme's legs (default Scheme C hybrid); off by default.
 TAutoConsoleVariable<int32> CVarFlightCourse(
 	TEXT("utm.flight.course"), 0,
 	TEXT("1 = fly the scripted T-075 course legs in the live world, dump CSV, quit."));
@@ -163,6 +163,12 @@ ADragonCharacter::ADragonCharacter(const FObjectInitializer& ObjectInitializer)
 	}
 
 	// [2026-10-28 T-032] The real dragon: SK_Dragon_v4 (T-029 rig/walk)
+	// [2026-11-03 T-062] Still this path (v5 anatomy since the 2026-11-01
+	// [2026-11-03 T-062] re-import); the v6 source (dragon-wings-v6/) has no UE
+	// [2026-11-03 T-062] import yet — that import + hookup + clips ride with
+	// [2026-11-03 T-062] T-068 remainder. Flight integrates on the capsule +
+	// [2026-11-03 T-062] control rotation, so the mesh swap needs no flight-code
+	// [2026-11-03 T-062] change; T-068 re-measures capsule/mesh offsets then.
 	// replaces the greybox ball as the visible body. Probed bounds are
 	// 190 long (local Y, head at -Y in the source rig) x 48 wide x 72
 	// tall (cm), origin at body centre — so scale 2 gives a 380cm
@@ -551,6 +557,10 @@ void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 		// [2026-11-03 T-075] Press edge feeds W-tap Surge; movement itself
 		// stays on the Triggered HandleMove binding above.
 		EIC->BindAction(MoveAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleMoveStarted);
+		// [2026-11-03 T-062] Release clears the remembered axis (S-flare /
+		// A/D-turn in HandleMove): a released key stops flaring/turning.
+		EIC->BindAction(MoveAction, ETriggerEvent::Completed, this, &ADragonCharacter::HandleMoveEnd);
+		EIC->BindAction(MoveAction, ETriggerEvent::Canceled, this, &ADragonCharacter::HandleMoveEnd);
 	}
 	if (FreeLookAction != nullptr)
 	{
@@ -616,6 +626,11 @@ void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 void ADragonCharacter::HandleMove(const FInputActionValue& Value)
 {
 	const FVector2D Axis = Value.Get<FVector2D>();
+	// [2026-11-03 T-062] Every move sample is remembered for the flight model:
+	// S-held (Y < -0.5) flares/bleeds speed in the momentum band and A/D (X)
+	// yaws the nose there (bank/turn), while the precision band keeps every
+	// axis as thrust via the integrator's pending input vector.
+	LastMoveAxis = Axis;
 	if (!Controller || Axis.IsNearlyZero())
 	{
 		return;
@@ -714,8 +729,14 @@ void ADragonCharacter::HandleToggleFlight()
 		return;
 	}
 	const bool bWasFlying = IsFlying() || IsPrototypeFlying();
-	// [2026-11-03 T-075] Prototype chassis lands to walk like shipped flight;
-	// takeoff routing stays in HandleFlap (scheme-gated there).
+	if (!bWasFlying && UDragonMovementComponent::GetFlightScheme() != 0)
+	{
+		// [2026-11-03 T-062] Adopted map: grounded F is Tail Slam (takeoff is
+		// Space/Ascent). Legacy scheme 0 keeps the magic walk/fly toggle.
+		HandleTailSlam();
+		return;
+	}
+	// [2026-11-03 T-075] Legacy (scheme 0) keeps the magic walk/fly toggle.
 	GetCharacterMovement()->SetMovementMode(bWasFlying ? MOVE_Walking : MOVE_Flying);
 	// [2026-11-01 T-068] Leaving the ground plays the takeoff leap once;
 	// [2026-11-01 T-068] locomotion (Fly/Hover by speed) takes over after.
@@ -1612,7 +1633,10 @@ void ADragonCharacter::UpdatePrototypeFlight(float DeltaSeconds)
 		// (below keeps drain + CSV running for the legs).
 		if (!bCourseFlying)
 		{
-			Proto->bProtoBraking = bDiving;
+			// [2026-11-03 T-062] Shift (bDiving) brakes; S-held (remembered
+			// Y < -0.5, the adopted flare) brakes the same way. Bleeding speed
+			// IS the flare, and the Brake rule (forced precision) covers both.
+			Proto->bProtoBraking = bDiving || LastMoveAxis.Y < -0.5f;
 			Proto->bProtoRise = bRiseHeld;
 			Proto->bProtoSink = bSinkHeld;
 			if (!IsPrototypeFlying())
@@ -1629,6 +1653,20 @@ void ADragonCharacter::UpdatePrototypeFlight(float DeltaSeconds)
 			// program owns the nose while bCourseFlying.
 			if (!bFreeLook && !bCourseFlying)
 			{
+				// [2026-11-03 T-062] A/D yaws at the airspeed-limited rate in
+				// the momentum band (adopted bank/turn): the controller turns
+				// so camera and nose agree, and the nose follows below. The
+				// precision band keeps A/D as strafe thrust (integrator
+				// PendingInput), so no branch is needed there.
+				if (Controller != nullptr && FMath::Abs(LastMoveAxis.X) > 0.1f &&
+					UDragonMovementComponent::PrecisionAuthorityWeight(
+						Move->Velocity.Size(), Proto->FlightParams) < 0.5f)
+				{
+					AddControllerYawInput(LastMoveAxis.X *
+										  UDragonMovementComponent::YawRateForAirspeed(
+											  Move->Velocity.Size(), Proto->FlightParams) *
+										  DeltaSeconds);
+				}
 				if (bSteerLatch)
 				{
 					const float MaxTurn = UDragonMovementComponent::YawRateForAirspeed(
@@ -1719,6 +1757,13 @@ void ADragonCharacter::HandleMoveStarted(const FInputActionValue& Value)
 		UE_LOG(LogUnderTheMountain, Log, TEXT("Surge: +%.0f cm/s (stamina %.1f)"),
 			   Proto->FlightParams.SurgeDeltaV, Stats->Stamina);
 	}
+}
+
+void ADragonCharacter::HandleMoveEnd()
+{
+	// [2026-11-03 T-062] Stick release clears the remembered axis so a
+	// released S stops flaring and a released A/D stops turning.
+	LastMoveAxis = FVector2D::ZeroVector;
 }
 
 void ADragonCharacter::HandleRiseHeld(const FInputActionValue& Value)
@@ -2303,7 +2348,9 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 	// [2026-10-28 T-011] Flight mode name + drain rate for this tick, in
 	// one place so the debug readout below can never disagree with what
 	// was actually charged. GAMEPLAY.md section 2: dive 0/s (altitude
-	// pays), hover 8/s (priced out), glide 1/s (the travel mode).
+	// pays), hover 8/s (priced out), glide 0/s (unpowered travel).
+	// [2026-11-03 T-062] This legacy block runs only on scheme 0 now: the
+	// hybrid (default) drains in UpdatePrototypeFlight above.
 	const FVector Velocity = GetCharacterMovement()->Velocity;
 	const float HorizontalSpeed = Velocity.Size2D();
 	const bool bHovering = IsFlying() && !bDiving && HorizontalSpeed < Stats->HoverSpeedThreshold;

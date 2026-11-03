@@ -153,11 +153,14 @@ context):
 
 | Action | Keyboard/mouse | Gamepad |
 |---|---|---|
-| Move | W A S D | Left stick |
-| Look | Mouse | Right stick |
-| Flap (climb) | Space | Bottom face (B) |
-| Toggle flight | F | Top face (Y) |
-| Dive (speed) | Left Shift (hold) | Right trigger (hold) |
+| Move (S flares at speed, A/D turns at speed) | W A S D | Left stick |
+| Look (aims the nose in flight) | Mouse | Right stick |
+| Takeoff / climb (Ascent; hold to rise in hover) | Space | Bottom face |
+| Landing Assist (air) / Tail Slam (ground) | F | Top face |
+| Brake (S also flares at speed) | Left Shift (hold) | Right trigger (hold) |
+| Sink in hover | Left Ctrl (hold) | — (arrives with the trigger remap, T-102) |
+| Free-look (nose frozen, camera roams) | Right mouse (hold) | — (right stick already looks) |
+| Steer-to-look (latch; any move input cancels) | Double-click right mouse | D-pad Up |
 | True-sight (Seeing Stone) | T | Left face (X) |
 | Scent ribbons show/hide | N | D-pad Down |
 | Scale-colour picker | C | Right face (A) |

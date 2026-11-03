@@ -123,6 +123,22 @@ tag, choose the owing one.
 <!-- Real entries accumulate below, NEWEST AT THE TOP. The top entries are
      session-start required reading (count: AGENTS.md → Session ritual). -->
 
+## 2026-11-03 — Flight stays on the v4 pawn mesh path; v6 import remains T-068's  [decision]
+- Task: T-062 (owner steer mid-task: make sure the flight work uses the newer Meshy models)
+- What: No mesh-path change. The pawn still loads SK_Dragon_v4 (v5 anatomy since the 2026-11-01 re-import); the v6 source (Content/Meshy/Dragon/dragon-wings-v6/Dragon_v6.fbx + 4K textures) has no UE import, skeleton, material assignment, or clips yet.
+- Why: A mesh-only swap without T-068's import (skeleton/materials) and clips (none authored for v6 yet) would fly the new body in bind pose or break the T-068 anim driver that plays per-state clips. The flight integration itself is mesh-agnostic — verified by grep: DragonMovementComponent.cpp references no mesh, bone, or skeletal asset (capsule + control rotation + nose direction only); wing/bank math reads rates and speeds, and the T-058 span/sweep/bend tests pin the current rig explicitly. The in-code comment names T-068 as the hookup owner.
+- Where: Source/UnderTheMountain/Private/Dragon/DragonCharacter.cpp (mesh comment), TASKS.md (T-068 remainder unchanged)
+- Plan: T-062 Touches never listed Content/Meshy/ — keeping the v6 import inside T-068 matches the board as written. docs/PLAN.md not falsified.
+- Commit(s): this commit
+
+## 2026-11-03 — T-062 ships Scheme C as default; pad triggers + live feel-check deferred  [deferred]
+- Task: T-062 (Accept: hybrid flight, adopted KB+M/gamepad maps, stamina per amended GAMEPLAY.md §2, Dragon.Flight tests, owner feel-check)
+- What: Scheme C is the shipped default (utm.flight.scheme 2; 0 is now the legacy baseline) with the adopted keyboard map complete — W-tap Surge, S-flare (= brake), A/D turn at speed + strafe in precision, Space Ascent + hold-rise, Ctrl sink, Shift brake, F Landing Assist (air) / Tail Slam (ground), RMB free-look + double-click latch with WASD cancel. Two Accept strands are NOT proven this pass: (1) the gamepad trigger remap (RT Surge / LT Brake+precision / RB Fire) stays on the pre-hybrid combat layout (RT brake, LT fire); (2) no owner has flown the model (feel-check) and no chimney climb/descent has been played under C.
+- Why: (1) The adopted pad triggers collide with shipped bindings the board still owns elsewhere — RB is Eat (T-015), Right face is Tint (T-093 owns its pad path), Fire-on-LT/Roar-on-LB shipped with T-015/T-068. Remapping without T-093 coordination double-binds buttons, so it is filed as T-102 instead of guessed here. (2) Headless loop session with no GUI editor/PIE; T-030 already owns the PIE session slot, and T-075 set the precedent (provisional pick, owner veto reopens). Headless proof stands in: 33/33 automation incl. updated Dragon.Flight (glide free, 5-impulse economy, mercy) + Dragon.Movement (C default), and the T-075 course evidence the pick was measured on.
+- Where: Source/UnderTheMountain/Private/Dragon/DragonCharacter.cpp + Public/Dragon/DragonCharacter.h (axis memory, flare/turn, grounded-F), Source/UnderTheMountain/Private/Dragon/DragonMovementComponent.cpp (scheme default, touchdown keeps velocity), Source/UnderTheMountain/Public/Dragon/DragonStatsComponent.h (glide 0/s), Source/UnderTheMountain/Tests/DragonFlightTest.cpp + DragonMovementTest.cpp, TASKS.md (T-102 filed, T-030 note), README.md (controls table), CHANGELOG.md
+- Plan: T-062 Accept said "uses the adopted KB+M/gamepad maps" → KB+M met, pad triggers deferred to T-102 in this commit; "owner feel-check recorded" + T-063's live chimney climb → owed on T-030 in this commit. docs/PLAN.md states no input map; GAMEPLAY.md §2 numbers already said glide 0/s, so no number moved. T-019's gamepad parity checklist describes the pre-hybrid map and is superseded by the README table as of this commit (history untouched).
+- Commit(s): this commit
+
 ## 2026-11-03 — T-061 scent toggle proven by substitution; live N-press deferred to T-030  [approach]
 - Task: T-061 (TASKS.md Accept: N keypress hides/shows ribbons in PIE)
 - What: The toggle ships proven everywhere short of Slate delivering a live keypress: a mapping-table test pins IA_ScentToggle to N + D-pad Down, a state-machine test pins hide/show/default-on/true-sight-independence, and ribbons are hidden/shown (never destroyed) with spawn-while-hidden covered. No live N-press in PIE and no ribbon-hide visual capture were taken this session.

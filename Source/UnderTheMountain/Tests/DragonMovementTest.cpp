@@ -70,9 +70,9 @@ bool FDragonMovementTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("lag angle bounded at cruise"),
 			 FMath::DegreesToRadians(55.0f) / SteerCruise <= 0.30f);
 
-	// [2026-11-03 T-075] Prototype is inert by default: shipped flight runs
-	// until the course explicitly opts into a scheme.
-	TestEqual(TEXT("flight scheme defaults to shipped (0)"), UDragonMovementComponent::GetFlightScheme(), 0);
+	// [2026-11-03 T-062] Scheme C ships by default (T-075 course pick); 0 is
+	// now the legacy baseline the course/A-B legs opt into explicitly.
+	TestEqual(TEXT("flight scheme defaults to C hybrid (2)"), UDragonMovementComponent::GetFlightScheme(), 2);
 
 	// [2026-11-03 T-075] Authority blend endpoints: full precision at rest
 	// and at the 650 boundary, full momentum at 1600 and beyond.
