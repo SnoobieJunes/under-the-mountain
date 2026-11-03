@@ -283,6 +283,7 @@ bool ADragonCharacter::HasInputActions() const
 	// not report ready while a combat action is still null.
 	return MoveAction != nullptr && LookAction != nullptr && FlapAction != nullptr &&
 		   ToggleFlightAction != nullptr && DiveAction != nullptr && TrueSightAction != nullptr &&
+		   ScentToggleAction != nullptr &&
 		   TintAction != nullptr && FireAction != nullptr && RoarAction != nullptr &&
 		   EatAction != nullptr && WingBuffetAction != nullptr && TailSlamAction != nullptr &&
 		   FreeLookAction != nullptr && SinkAction != nullptr && SteerLatchAction != nullptr &&
@@ -437,6 +438,8 @@ void ADragonCharacter::BuildInputActions()
 	SinkAction = MakeAction(TEXT("IA_Sink"), EInputActionValueType::Boolean);
 	SteerLatchAction = MakeAction(TEXT("IA_SteerLatch"), EInputActionValueType::Boolean);
 	TrueSightAction = MakeAction(TEXT("IA_TrueSight"), EInputActionValueType::Boolean);
+	// [2026-11-03 T-061] Scent-layer toggle, press-edge like true-sight.
+	ScentToggleAction = MakeAction(TEXT("IA_ScentToggle"), EInputActionValueType::Boolean);
 	TintAction = MakeAction(TEXT("IA_TintPicker"), EInputActionValueType::Boolean);
 	// [2026-10-28 T-015] Combat verbs: Boolean like Flap — Fire reads
 	// the held value, Roar/Eat act on the press edge.
@@ -476,6 +479,10 @@ void ADragonCharacter::BuildInputActions()
 	// the prototype claims it; T-061 keeps D-pad Down.
 	Map(SteerLatchAction, EKeys::Gamepad_DPad_Up);
 	Map(TrueSightAction, EKeys::T);
+	// [2026-11-03 T-061] N (nose) is free in both the shipped map and
+	// the adopted flight map; D-pad Down was reserved for this toggle
+	// by the flight decisions (Up went to T-063 steer-to-camera).
+	Map(ScentToggleAction, EKeys::N);
 	Map(TintAction, EKeys::C);
 	// [2026-10-28 T-015] Combat keys: LMB hold = fire, R = roar, E = eat.
 	Map(FireAction, EKeys::LeftMouseButton);
@@ -493,6 +500,7 @@ void ADragonCharacter::BuildInputActions()
 	Map(ToggleFlightAction, EKeys::Gamepad_FaceButton_Top);
 	Map(DiveAction, EKeys::Gamepad_RightTrigger);
 	Map(TrueSightAction, EKeys::Gamepad_FaceButton_Left);
+	Map(ScentToggleAction, EKeys::Gamepad_DPad_Down);
 	Map(TintAction, EKeys::Gamepad_FaceButton_Right);
 	// [2026-10-28 T-015] Combat pad: left trigger hold = fire (right
 	// trigger is dive), left shoulder = roar, right shoulder = eat.
@@ -575,6 +583,10 @@ void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	if (TrueSightAction != nullptr)
 	{
 		EIC->BindAction(TrueSightAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleTrueSight);
+	}
+	if (ScentToggleAction != nullptr)
+	{
+		EIC->BindAction(ScentToggleAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleToggleScent);
 	}
 	if (TintAction != nullptr)
 	{
@@ -731,6 +743,16 @@ void ADragonCharacter::HandleTrueSight()
 	const bool bActive = Scent->ToggleTrueSight();
 	UE_LOG(LogUnderTheMountain, Log, TEXT("True-sight toggled: %s"),
 		   bActive ? TEXT("ACTIVE (scent dimmed, treasure markers on)") : TEXT("off"));
+}
+
+void ADragonCharacter::HandleToggleScent()
+{
+	// [2026-11-03 T-061] Forward-only like true-sight: the component
+	// owns the ribbon hide/show (never destroy/rebuild) and markers
+	// stay on the T layer regardless of this state.
+	const bool bVisible = Scent->ToggleScentVisible();
+	UE_LOG(LogUnderTheMountain, Log, TEXT("Scent ribbons toggled: %s"),
+		   bVisible ? TEXT("shown") : TEXT("HIDDEN (true-sight markers unaffected)"));
 }
 
 void ADragonCharacter::GatherCombatTargets(TArray<UThiefBrain*>& OutBrains, TArray<FVector>& OutLocations)
@@ -2341,11 +2363,14 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 			{
 				GEngine->AddOnScreenDebugMessage(
 					11012, 0.25f, FColor::Cyan,
-					FString::Printf(TEXT("Notoriety %d star (%d pts) | Hoard %lld/%lld | Wave %d state %d"),
+					FString::Printf(TEXT("Notoriety %d star (%d pts) | Hoard %lld/%lld | Wave %d state %d | Scent %s"),
 									Notoriety->GetStars(), Notoriety->GetPoints(),
 									Hoard->GetCurrentHoard(TreasureSub->Registry()->TotalGold()),
 									Hoard->GetStartingHoard(), Waves->GetCurrentWave(),
-									static_cast<int32>(Waves->GetWaveState())));
+									static_cast<int32>(Waves->GetWaveState()),
+									// [2026-11-03 T-061] The N-key scent-layer
+									// state, readable without opening the log.
+									Scent->IsScentVisible() ? TEXT("on") : TEXT("OFF")));
 			}
 		}
 	}

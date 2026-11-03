@@ -159,6 +159,7 @@ context):
 | Toggle flight | F | Top face (Y) |
 | Dive (speed) | Left Shift (hold) | Right trigger (hold) |
 | True-sight (Seeing Stone) | T | Left face (X) |
+| Scent ribbons show/hide | N | D-pad Down |
 | Scale-colour picker | C | Right face (A) |
 | Fire breath (hold) | Left mouse (hold) | Left trigger (hold) |
 | Roar | R | Left shoulder |

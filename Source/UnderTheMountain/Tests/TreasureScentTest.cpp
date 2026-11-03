@@ -10,6 +10,7 @@
 // location instead of leaving it stale at registration time.
 
 #include "Misc/AutomationTest.h"
+#include "Scent/ScentComponent.h"
 #include "Scent/ScentMath.h"
 #include "Scent/ScentRibbonActor.h"
 #include "Treasure/TreasureActor.h"
@@ -295,6 +296,40 @@ bool FTreasureActorLocationRefreshTest::RunTest(const FString& Parameters)
 			 Actor->RefreshRegisteredLocation(Registry));
 	TestFalse(TEXT("refresh against a null registry fails explicitly"),
 			  Actor->RefreshRegisteredLocation(nullptr));
+	return true;
+}
+
+// [2026-11-03 T-061] Scent-layer visibility: the N-key toggle flips a
+// flag (default on) and hides/shows ribbons without touching the
+// registry, the scent math, or the T-governed true-sight state.
+// Headless by design: with no world there are no ribbons, so this
+// pins the state machine while PIE proves the pixels.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScentToggleVisibilityTest,
+								 "UnderTheMountain.Scent.ToggleVisibility",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FScentToggleVisibilityTest::RunTest(const FString& Parameters)
+{
+	UScentComponent* Scent = NewObject<UScentComponent>();
+	TestNotNull(TEXT("scent component constructs headless"), Scent);
+	if (Scent == nullptr)
+	{
+		return false;
+	}
+
+	TestTrue(TEXT("scent layer defaults to visible"), Scent->IsScentVisible());
+
+	TestFalse(TEXT("set(false) hides and reports hidden"), Scent->SetScentVisible(false));
+	TestFalse(TEXT("hidden state reads back"), Scent->IsScentVisible());
+	TestTrue(TEXT("set(true) shows and reports shown"), Scent->SetScentVisible(true));
+	TestTrue(TEXT("shown state reads back"), Scent->IsScentVisible());
+
+	TestFalse(TEXT("first toggle hides"), Scent->ToggleScentVisible());
+	TestTrue(TEXT("second toggle shows again"), Scent->ToggleScentVisible());
+	TestTrue(TEXT("double toggle returns to visible"), Scent->IsScentVisible());
+
+	TestFalse(TEXT("toggling scent never activates true-sight"),
+			  Scent->IsTrueSightActive());
 	return true;
 }
 

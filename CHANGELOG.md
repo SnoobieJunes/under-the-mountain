@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-03 — T-061 — Scent ribbons can be hidden with N (gamepad D-pad Down) and shown again with a second press; the debug readout names the state, and true-sight markers stay on their own T-key layer either way
+
 2026-11-03 — T-100 — New raw assets staged in the repo (not in-game yet): dragon v6 wing/fold model with 4K textures, three foliage sets (broadleaf, bush, grass), and the animation script retargeted to the v6 rig; engine import and placement still to come (no user-visible change)
 
 2026-11-03 — T-075 — Flight-controls spike measured all three schemes on a scripted live-world course and provisionally picks Scheme C (hybrid) for the T-062 overhaul: real climbs, controlled turns, hover-hold and clean assisted landings, all behind a default-off console toggle (no user-visible change)

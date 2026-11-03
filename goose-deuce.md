@@ -123,6 +123,14 @@ tag, choose the owing one.
 <!-- Real entries accumulate below, NEWEST AT THE TOP. The top entries are
      session-start required reading (count: AGENTS.md → Session ritual). -->
 
+## 2026-11-03 — T-061 scent toggle proven by substitution; live N-press deferred to T-030  [approach]
+- Task: T-061 (TASKS.md Accept: N keypress hides/shows ribbons in PIE)
+- What: The toggle ships proven everywhere short of Slate delivering a live keypress: a mapping-table test pins IA_ScentToggle to N + D-pad Down, a state-machine test pins hide/show/default-on/true-sight-independence, and ribbons are hidden/shown (never destroyed) with spawn-while-hidden covered. No live N-press in PIE and no ribbon-hide visual capture were taken this session.
+- Why: Headless loop session with no GUI editor, and T-030 records that Slate key injection does not reach the pawn, so a scripted live press is not available. Same substitution standard as T-013's T-key (README's known-limits note) and T-012's traversal.
+- Where: Source/UnderTheMountain/Public/Scent/ScentComponent.h, Source/UnderTheMountain/Private/Scent/ScentComponent.cpp, Source/UnderTheMountain/Public/Dragon/DragonCharacter.h, Source/UnderTheMountain/Private/Dragon/DragonCharacter.cpp, Source/UnderTheMountain/Tests/TreasureScentTest.cpp, Source/UnderTheMountain/Tests/DragonInputTest.cpp, TASKS.md (T-030 note)
+- Plan: T-061 Accept said "One N keypress (and gamepad D-pad Down) hides/shows all scent ribbons in PIE" → met by substitution above; the live-press + visual check is recorded on T-030 in this commit. docs/PLAN.md unaffected.
+- Commit(s): this commit
+
 ## 2026-11-03 — Asset ingest with the gate deferred and a dirty-tree start  [process]
 - Task: T-100 (sprint asset pull-in: dragon v6, foliage, anim script)
 - What: (1) Session started on a dirty tree — ~145 untracked files (prior sessions' editor-import .uasset flood plus this sprint's sources) against the ritual's clean-tree rule; proceeded at owner direction since the pull-in was the assigned work. (2) Committed without running Scripts/gate.sh (Definition of Done gate item waived once, at owner token directive). (3) v6 UE import/material hookup not run (the asset author's own caveat); Blender-side bone/weight numbers taken as reported, file-level integrity only.

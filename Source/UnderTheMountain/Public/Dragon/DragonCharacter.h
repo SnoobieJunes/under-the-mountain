@@ -275,6 +275,10 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	TObjectPtr<UInputAction> SteerLatchAction;
 	UPROPERTY()
 	TObjectPtr<UInputAction> TrueSightAction;
+	// [2026-11-03 T-061] Scent-layer show/hide (N / D-pad Down) — the
+	// ribbons only; true-sight markers answer to T alone.
+	UPROPERTY()
+	TObjectPtr<UInputAction> ScentToggleAction;
 	UPROPERTY()
 	TObjectPtr<UInputAction> TintAction;
 	// [2026-10-28 T-015] Combat actions, code-created like the rest:
@@ -358,6 +362,8 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	void CourseLog(const TCHAR* Fmt, ...);
 	// [2026-10-28 T-013] Seeing Stone toggle (key T / gamepad left face).
 	void HandleTrueSight();
+	// [2026-11-03 T-061] Scent-ribbon show/hide (key N / gamepad D-pad Down).
+	void HandleToggleScent();
 	// [2026-10-28 T-027] Scale-colour picker toggle (key C / gamepad right face).
 	void HandleToggleTintPicker();
 	// [2026-10-28 T-015] Fire breath hold (LMB / gamepad left trigger):

@@ -106,6 +106,37 @@ bool UScentComponent::ToggleTrueSight()
 	return SetTrueSightActive(!bTrueSightActive);
 }
 
+bool UScentComponent::SetScentVisible(bool bVisible)
+{
+	bScentVisible = bVisible;
+	ApplyScentVisibility();
+	return bScentVisible;
+}
+
+bool UScentComponent::IsScentVisible() const
+{
+	return bScentVisible;
+}
+
+bool UScentComponent::ToggleScentVisible()
+{
+	return SetScentVisible(!bScentVisible);
+}
+
+void UScentComponent::ApplyScentVisibility()
+{
+	// [2026-11-03 T-061] Hide/show only — the ribbon map keeps every
+	// entry, so toggling never respawns and the registry/scent math
+	// path is untouched. Headless-safe: an empty map is a no-op.
+	for (TPair<FName, TObjectPtr<AScentRibbonActor>>& Pair : Ribbons)
+	{
+		if (IsValid(Pair.Value.Get()))
+		{
+			Pair.Value->SetActorHiddenInGame(!bScentVisible);
+		}
+	}
+}
+
 void UScentComponent::BeginPlay()
 {
 	Super::BeginPlay();
@@ -284,6 +315,10 @@ void UScentComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 			{
 				bWarnedRibbonSpawnFailure = false;
 				Ribbons.Add(Entry->Id, Ribbon);
+				// [2026-11-03 T-061] A ribbon born while the scent layer
+				// is hidden starts hidden — otherwise every new treasure
+				// would punch a visible hole through the hidden layer.
+				Ribbon->SetActorHiddenInGame(!bScentVisible);
 			}
 		}
 		if (Ribbon != nullptr)

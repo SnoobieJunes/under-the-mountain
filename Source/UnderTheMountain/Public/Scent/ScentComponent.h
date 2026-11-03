@@ -62,6 +62,18 @@ class UNDERTHEMOUNTAIN_API UScentComponent : public UActorComponent
 	// resulting state.
 	bool ToggleTrueSight();
 
+	// [2026-11-03 T-061] Scent-layer visibility (N key / gamepad D-pad
+	// Down). Hiding the scent hides the ribbons only — true-sight
+	// markers are a separate layer governed solely by T, so a player
+	// can declutter ribbons and still true-sight. Ribbon actors are
+	// hidden/shown, never destroyed/rebuilt per toggle. Defaults to
+	// visible, matching every build before this task.
+	bool SetScentVisible(bool bVisible);
+
+	bool IsScentVisible() const;
+
+	bool ToggleScentVisible();
+
 	// [2026-10-28 T-013] Caches the world's UTreasureSubsystem.
 	virtual void BeginPlay() override;
 
@@ -100,6 +112,11 @@ class UNDERTHEMOUNTAIN_API UScentComponent : public UActorComponent
 
 	void DestroyAllVisuals();
 
+	// [2026-11-03 T-061] Pushes bScentVisible onto every live ribbon
+	// (SetActorHiddenInGame). Markers are deliberately untouched —
+	// the T layer answers to nothing but true-sight.
+	void ApplyScentVisibility();
+
 	UPROPERTY()
 	TMap<FName, TObjectPtr<AScentRibbonActor>> Ribbons;
 
@@ -123,6 +140,12 @@ class UNDERTHEMOUNTAIN_API UScentComponent : public UActorComponent
 
 	UPROPERTY(VisibleAnywhere, Category = "Dragon|Scent")
 	bool bTrueSightActive = false;
+
+	// [2026-11-03 T-061] Scent-layer visibility; true matches every
+	// build before the toggle existed. Read by the pawn's debug
+	// readout and pushed onto ribbons by ApplyScentVisibility.
+	UPROPERTY(VisibleAnywhere, Category = "Dragon|Scent")
+	bool bScentVisible = true;
 
 	// [2026-10-28 T-013] One-shot latch so the ribbon-cap warning
 	// logs once per overflow episode instead of every tick.

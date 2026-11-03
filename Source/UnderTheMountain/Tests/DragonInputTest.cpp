@@ -8,6 +8,9 @@
 
 #include "Misc/AutomationTest.h"
 #include "Dragon/DragonCharacter.h"
+#include "InputAction.h"
+#include "InputCoreTypes.h"
+#include "InputMappingContext.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -45,11 +48,70 @@ bool FDragonInputTest::RunTest(const FString& Parameters)
 		 {TEXT("MoveAction"), TEXT("LookAction"), TEXT("FlapAction"), TEXT("ToggleFlightAction"),
 		  TEXT("DiveAction"), TEXT("TrueSightAction"), TEXT("TintAction"), TEXT("TintWidget"),
 		  TEXT("FreeLookAction"), TEXT("SinkAction"), TEXT("SteerLatchAction"),
+		  TEXT("ScentToggleAction"), // [2026-11-03 T-061] N-key scent toggle joins the GC contract.
 		  TEXT("MappingContext")})
 	{
 		TestNotNull(FString::Printf(TEXT("%s is a reflected UPROPERTY"), Member),
 					PawnClass->FindPropertyByName(FName(Member)));
 	}
+	return true;
+}
+
+// [2026-11-03 T-061] The N / D-pad-Down wiring, proven headless: the
+// private action and mapping-context members are read through
+// reflection (the T-035 precedent — no test-only accessors), and the
+// mapping table must bind IA_ScentToggle to exactly the decided keys.
+// This plus Scent.ToggleVisibility proves everything short of Slate
+// delivering a live keypress, which rides with the next PIE session.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDragonScentToggleBindingTest,
+								 "UnderTheMountain.Dragon.ScentToggleBinding",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDragonScentToggleBindingTest::RunTest(const FString& Parameters)
+{
+	ADragonCharacter* Pawn = NewObject<ADragonCharacter>();
+	TestNotNull(TEXT("pawn constructs for binding check"), Pawn);
+	if (Pawn == nullptr)
+	{
+		return false;
+	}
+	Pawn->EnsureInputActions();
+
+	UClass* PawnClass = ADragonCharacter::StaticClass();
+	const FObjectProperty* ActionProp =
+		FindFProperty<FObjectProperty>(PawnClass, TEXT("ScentToggleAction"));
+	const FObjectProperty* ContextProp =
+		FindFProperty<FObjectProperty>(PawnClass, TEXT("MappingContext"));
+	TestNotNull(TEXT("ScentToggleAction member reflects"), ActionProp);
+	TestNotNull(TEXT("MappingContext member reflects"), ContextProp);
+	if (ActionProp == nullptr || ContextProp == nullptr)
+	{
+		return false;
+	}
+
+	const UInputAction* ScentAction =
+		Cast<UInputAction>(ActionProp->GetObjectPropertyValue_InContainer(Pawn));
+	const UInputMappingContext* Context =
+		Cast<UInputMappingContext>(ContextProp->GetObjectPropertyValue_InContainer(Pawn));
+	TestNotNull(TEXT("ensured pawn owns the scent-toggle action"), ScentAction);
+	TestNotNull(TEXT("ensured pawn owns the mapping context"), Context);
+	if (ScentAction == nullptr || Context == nullptr)
+	{
+		return false;
+	}
+
+	bool bHasN = false;
+	bool bHasPadDown = false;
+	for (const FEnhancedActionKeyMapping& Mapping : Context->GetMappings())
+	{
+		if (Mapping.Action == ScentAction)
+		{
+			bHasN = bHasN || Mapping.Key == EKeys::N;
+			bHasPadDown = bHasPadDown || Mapping.Key == EKeys::Gamepad_DPad_Down;
+		}
+	}
+	TestTrue(TEXT("N key drives the scent toggle"), bHasN);
+	TestTrue(TEXT("gamepad D-pad Down drives the scent toggle"), bHasPadDown);
 	return true;
 }
 
