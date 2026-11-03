@@ -24,6 +24,16 @@ TAutoConsoleVariable<int32> CVarFlowAutostart(
 	TEXT("utm.gameflow.autostart"), 0,
 	TEXT("1 = skip the title screen and start the run immediately (automation)."));
 
+// [2026-11-03 T-110] Proof-capture cvars (see the header): delayed
+// one-shot HighResShot + optional delayed quit for scripted -game
+// captures. Both default off.
+TAutoConsoleVariable<float> CVarProofShotDelay(
+	TEXT("utm.proof.shotdelay"), 0.0f,
+	TEXT("Seconds after the first tick before taking one HighResShot (0 = off)."));
+TAutoConsoleVariable<float> CVarProofQuitDelay(
+	TEXT("utm.proof.quit"), 0.0f,
+	TEXT("Seconds after the proof shot before quitting (0 = stay running)."));
+
 AUnderTheMountainGameMode::AUnderTheMountainGameMode()
 {
 	DefaultPawnClass = ADragonCharacter::StaticClass();
@@ -46,6 +56,45 @@ void AUnderTheMountainGameMode::Tick(float DeltaSeconds)
 		CVarFlowAutostart.GetValueOnGameThread() != 0)
 	{
 		StartRun();
+	}
+	TickProofCapture();
+}
+
+void AUnderTheMountainGameMode::TickProofCapture()
+{
+	// [2026-11-03 T-110] One branch per frame while either cvar is armed;
+	// zero cost otherwise (both default 0). The shot fires through the
+	// player controller's console so it captures exactly the game view
+	// (UI included — title/HUD visibility is part of the proof).
+	const double Now = FPlatformTime::Seconds();
+	if (ProofFirstTickTime < 0.0)
+	{
+		ProofFirstTickTime = Now;
+	}
+	if (!bProofShotTaken)
+	{
+		const float Delay = CVarProofShotDelay.GetValueOnGameThread();
+		if (Delay > 0.0f && Now - ProofFirstTickTime >= Delay)
+		{
+			bProofShotTaken = true;
+			ProofShotTime = Now;
+			if (APlayerController* PC = GetFlowController())
+			{
+				PC->ConsoleCommand(TEXT("HighResShot 1"));
+			}
+			UE_LOG(LogUnderTheMountain, Log,
+				   TEXT("Proof capture: HighResShot fired %.1fs after first tick (state %d)"),
+				   Now - ProofFirstTickTime, static_cast<int32>(GetFlowState()));
+		}
+		return;
+	}
+	const float QuitAfter = CVarProofQuitDelay.GetValueOnGameThread();
+	if (QuitAfter > 0.0f && Now - ProofShotTime >= QuitAfter)
+	{
+		UE_LOG(LogUnderTheMountain, Log, TEXT("Proof capture: quitting %.1fs after the shot"), QuitAfter);
+		// One-shot: disarm before quitting so an ignored quit (PIE) cannot loop.
+		CVarProofQuitDelay->Set(0.0f);
+		QuitGame();
 	}
 }
 

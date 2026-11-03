@@ -55,4 +55,20 @@ class UNDERTHEMOUNTAIN_API AUnderTheMountainGameMode : public AGameModeBase
 	TObjectPtr<UGameFlowMachine> FlowMachine;
 	UPROPERTY()
 	TObjectPtr<UGameFlowWidget> FlowWidget;
+
+	// [2026-11-03 T-110] Proof capture (automation screenshots): when
+	// utm.proof.shotdelay is positive, the game takes one HighResShot
+	// that many wall-clock seconds after the first tick and, when
+	// utm.proof.quit is positive, quits that many seconds after the
+	// shot. Both default off — players never see it. T-110's -game
+	// captures ride on this because PIE-in-viewport is uninspectable
+	// (game viewport absent from the SlateInspector tree, full-window
+	// MCP captures exceed the stream) and OS window capture needed a
+	// Screen Recording grant mid-task (used as cross-check only).
+	// Wall clock, not tick delta: this mode ticks even while the title
+	// world, and paused delta is not to be trusted for countdowns.
+	void TickProofCapture();
+	double ProofFirstTickTime = -1.0;
+	double ProofShotTime = -1.0;
+	bool bProofShotTaken = false;
 };

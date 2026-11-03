@@ -10,6 +10,14 @@
 #include "UI/DragonTintWidget.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
+// [2026-11-03 T-110] Material-graph parameter pins (body exposes ScaleTint,
+// wing does not) enumerate the base materials' expressions directly.
+// Editor-only graph data: the game target strips expressions, so both
+// the includes and the pins below are WITH_EDITORONLY_DATA-guarded.
+#if WITH_EDITORONLY_DATA
+#include "Materials/Material.h"
+#include "Materials/MaterialExpressionVectorParameter.h"
+#endif
 #include "Engine/SkeletalMesh.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -78,19 +86,26 @@ bool FDragonTintTest::RunTest(const FString& Parameters)
 	// [2026-10-28 T-027] The actual parameter write: a mesh carrying
 	// M_DragonScales must report back the tint through its dynamic
 	// material instance. This is the seam the picker lives on.
-	UMaterialInterface* ScalesMaterial =
-		LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Meshy/Dragon/M_DragonScales.M_DragonScales"));
-	TestNotNull(TEXT("M_DragonScales loads"), ScalesMaterial);
-	if (ScalesMaterial != nullptr)
+	// [2026-11-03 T-110] V6 paths: body slot 0 carries M_DragonScalesV6
+	// [2026-11-03 T-110] (ScaleTint exposed), wing slot 1 carries
+	// [2026-11-03 T-110] M_DragonWingV6 (no tint — membranes stay authored).
+	UMaterialInterface* ScalesMaterial = LoadObject<UMaterialInterface>(
+		nullptr, TEXT("/Game/Meshy/Dragon/M_DragonScalesV6.M_DragonScalesV6"));
+	TestNotNull(TEXT("M_DragonScalesV6 loads"), ScalesMaterial);
+	UMaterialInterface* WingMaterial = LoadObject<UMaterialInterface>(
+		nullptr, TEXT("/Game/Meshy/Dragon/M_DragonWingV6.M_DragonWingV6"));
+	TestNotNull(TEXT("M_DragonWingV6 loads"), WingMaterial);
+	if (ScalesMaterial != nullptr && WingMaterial != nullptr)
 	{
 		// [2026-10-28 T-027] The real dragon mesh supplies slot 0;
 		// a bare component has no slots to write to.
 		USkeletalMesh* DragonMesh = LoadObject<USkeletalMesh>(
-			nullptr, TEXT("/Game/Meshy/Dragon/SK_Dragon_v4.SK_Dragon_v4"));
-		TestNotNull(TEXT("SK_Dragon_v4 loads"), DragonMesh);
+			nullptr, TEXT("/Game/Meshy/Dragon/SK_Dragon_v6.SK_Dragon_v6"));
+		TestNotNull(TEXT("SK_Dragon_v6 loads"), DragonMesh);
 		USkeletalMeshComponent* Mesh = NewObject<USkeletalMeshComponent>();
 		Mesh->SetSkeletalMeshAsset(DragonMesh);
 		Mesh->SetMaterial(0, ScalesMaterial);
+		Mesh->SetMaterial(1, WingMaterial);
 		Appearance->SetScaleTint(FLinearColor(0.2f, 0.4f, 0.6f, 1.0f), false);
 		Appearance->ApplyTintToMesh(Mesh);
 		UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(Mesh->GetMaterial(0));
@@ -102,6 +117,37 @@ bool FDragonTintTest::RunTest(const FString& Parameters)
 					 MID->GetVectorParameterValue(FName(TEXT("ScaleTint")), Written));
 			TestTrue(TEXT("MID tint equals component tint"), Written == Appearance->GetScaleTint());
 		}
+		UMaterialInstanceDynamic* WingMID = Cast<UMaterialInstanceDynamic>(Mesh->GetMaterial(1));
+		TestNotNull(TEXT("wing slot gets a dynamic instance too"), WingMID);
+		// [2026-11-03 T-110] MID readback cannot prove the wing ignores
+		// tint (a MID stores any value it is set, exposed or not — the
+		// first version of this pin failed on exactly that). The honest
+		// check is the material graphs: body exposes ScaleTint, wing does
+		// not, so only the body recolours at render. Editor-only (the
+		// game target strips expression graphs); the gate runs this in
+		// the editor, where the pins below execute.
+#if WITH_EDITORONLY_DATA
+		auto HasTintParam = [](UMaterialInterface* Material) -> bool
+		{
+			const UMaterial* Base = Cast<UMaterial>(Material);
+			if (Base == nullptr)
+			{
+				return false;
+			}
+			TArray<const UMaterialExpressionVectorParameter*> Params;
+			Base->GetAllExpressionsOfType(Params);
+			for (const UMaterialExpressionVectorParameter* Param : Params)
+			{
+				if (Param != nullptr && Param->ParameterName == TEXT("ScaleTint"))
+				{
+					return true;
+				}
+			}
+			return false;
+		};
+		TestTrue(TEXT("body material exposes ScaleTint"), HasTintParam(ScalesMaterial));
+		TestFalse(TEXT("wing material exposes no ScaleTint"), HasTintParam(WingMaterial));
+#endif
 	}
 
 	// [2026-11-01 T-060] Picker pad corners at hue 0 (the mapping the

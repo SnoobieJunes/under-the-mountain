@@ -123,6 +123,14 @@ tag, choose the owing one.
 <!-- Real entries accumulate below, NEWEST AT THE TOP. The top entries are
      session-start required reading (count: AGENTS.md → Session ritual). -->
 
+## 2026-11-03 — T-110: proof-capture cvars + v6 import leaves T-068  [decision]
+- Task: T-110 (import dragon v6 as the pawn mesh)
+- What: (1) New public automation interface: utm.proof.shotdelay / utm.proof.quit console cvars on the game mode (delayed one-shot HighResShot + delayed auto-quit, both default off). (2) T-100's "v6 import rides with T-068 remainder" superseded: import + pawn hookup shipped here; T-068 keeps clips/ABP/captures.
+- Why: (1) No working visual-proof vehicle existed when the captures came due: PIE-in-viewport is absent from the SlateInspector tree, full-window MCP captures exceed the SSE stream, and OS window capture needed Screen Recording permission (granted mid-task; used as cross-check only). The task's own capture Accept required a deterministic vehicle, so one was built. (2) Owner redirect 2026-11-03: replace the dragon model first, then retune cameras to it (T-111).
+- Where: Source/UnderTheMountain/Public+Private/Core/UnderTheMountainGameMode.h/.cpp (cvars + TickProofCapture), TASKS.md (T-110 close, T-111 + T-112 filed).
+- Plan: docs/PLAN.md states nothing about capture vehicles or which task imports v6 → not falsified, folded at the next sweep. TASKS.md carries the follow-ups in this commit: T-111 (camera rework) and T-112 (title widget never renders — found by the new captures).
+- Commit(s): this commit
+
 ## 2026-11-03 — T-066: notoriety bounds + rules pins follow the mountain  [extra]
 - Task: T-066 (lair overhaul: a mountain, not rooms)
 - What: Two files outside the task's listed Touches shipped in this commit: Source/UnderTheMountain/Private/Notoriety/NotorietySubsystem.cpp (IsInsideLair rewritten from chain rooms to mountain bounds) and Source/UnderTheMountain/Tests/GameLoopRulesTest.cpp (bounds pins moved to the new geometry).

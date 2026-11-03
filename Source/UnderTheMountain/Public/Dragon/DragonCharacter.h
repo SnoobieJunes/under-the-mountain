@@ -1,7 +1,8 @@
 // Copyright Under the Mountain contributors.
 // Purpose: the playable dragon (walking skeleton, T-003). Created 2026-10-27.
-// [2026-10-28 T-041] The visible body is SK_Dragon_v4 on the inherited
+// [2026-10-28 T-041] The visible body is SK_Dragon_v6 on the inherited
 // skeletal mesh (visible since T-032, set up in the constructor);
+// [2026-11-03 T-110] v6 replaced v4 (same 1.9 m scale, same offsets);
 // movement/collision stay on the capsule and movement component, so the
 // mesh is display only. There is no placeholder body any more.
 // [2026-10-28 T-011] Flight feel pass: per-mode stamina drain
@@ -234,6 +235,9 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// import step creates that asset; if it is missing FlyAnim stays
 	// null, BeginPlay logs one warning, and flight falls back to the
 	// bind pose in Tick (errors surfaced, never silent).
+	// [2026-11-03 T-110] Skeleton-gated to null against the v6 mesh
+	// [2026-11-03 T-110] until T-068 imports v6 clips (see the gate in
+	// [2026-11-03 T-110] the constructor); same for every clip below.
 	UPROPERTY(VisibleAnywhere, Category = "Dragon")
 	TObjectPtr<UAnimSequence> FlyAnim;
 

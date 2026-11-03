@@ -185,25 +185,25 @@ ADragonCharacter::ADragonCharacter(const FObjectInitializer& ObjectInitializer)
 		RainFX->SetAsset(RainSystem.Object);
 	}
 
-	// [2026-10-28 T-032] The real dragon: SK_Dragon_v4 (T-029 rig/walk)
-	// [2026-11-03 T-062] Still this path (v5 anatomy since the 2026-11-01
-	// [2026-11-03 T-062] re-import); the v6 source (dragon-wings-v6/) has no UE
-	// [2026-11-03 T-062] import yet — that import + hookup + clips ride with
-	// [2026-11-03 T-062] T-068 remainder. Flight integrates on the capsule +
-	// [2026-11-03 T-062] control rotation, so the mesh swap needs no flight-code
-	// [2026-11-03 T-062] change; T-068 re-measures capsule/mesh offsets then.
-	// replaces the greybox ball as the visible body. Probed bounds are
-	// 190 long (local Y, head at -Y in the source rig) x 48 wide x 72
-	// tall (cm), origin at body centre — so scale 2 gives a 380cm
-	// dragon whose feet (local z -72 after scaling) sit exactly on the
-	// capsule floor at pawn z -96 when the mesh is at z -24. Yaw -90
-	// turns the mesh's -Y head onto the pawn's +X forward; the PIE
-	// screenshot in this task is the evidence that sign is right.
-	// Collision stays on the capsule: the mesh is display only.
+	// [2026-11-03 T-110] The real dragon is SK_Dragon_v6 (39-bone rig, 7 wing
+	// [2026-11-03 T-110] bones/side + finger fan, decimated to 78,555 tris by
+	// [2026-11-03 T-110] Scripts/decimate_dragon_v6.py, imported by
+	// [2026-11-03 T-110] Scripts/import_dragon_v6.py). Measured v6 bounds match
+	// [2026-11-03 T-110] v4 (local Y extent 95.14 vs 95.10, head at -Y in both
+	// [2026-11-03 T-110] source rigs), so the T-032 offsets below transfer
+	// [2026-11-03 T-110] unchanged: scale 2, z -24, yaw -90. The v4 assets stay
+	// [2026-11-03 T-110] on disk for rollback; nothing loads them any more.
+	// [2026-10-28 T-032] Probed bounds are 190 long (local Y, head at -Y
+	// in the source rig) x 48 wide x 72 tall (cm), origin at body
+	// centre — so scale 2 gives a 380cm dragon whose feet (local z -72
+	// after scaling) sit exactly on the capsule floor at pawn z -96 when
+	// the mesh is at z -24. Yaw -90 turns the mesh's -Y head onto the
+	// pawn's +X forward. Collision stays on the capsule: the mesh is
+	// display only.
 	GetMesh()->SetVisibility(true);
 	GetMesh()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	static ConstructorHelpers::FObjectFinder<USkeletalMesh> DragonMesh(
-		TEXT("/Game/Meshy/Dragon/SK_Dragon_v4.SK_Dragon_v4"));
+		TEXT("/Game/Meshy/Dragon/SK_Dragon_v6.SK_Dragon_v6"));
 	if (DragonMesh.Succeeded())
 	{
 		GetMesh()->SetSkeletalMeshAsset(DragonMesh.Object);
@@ -211,7 +211,7 @@ ADragonCharacter::ADragonCharacter(const FObjectInitializer& ObjectInitializer)
 	else
 	{
 		UE_LOG(LogUnderTheMountain, Warning,
-			   TEXT("SK_Dragon_v4 not found; dragon pawn will be invisible (capsule only)"));
+			   TEXT("SK_Dragon_v6 not found; dragon pawn will be invisible (capsule only)"));
 	}
 	GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, -24.0f));
 	GetMesh()->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
@@ -252,6 +252,34 @@ ADragonCharacter::ADragonCharacter(const FObjectInitializer& ObjectInitializer)
 		LandAnim = LoadClip(TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_LandAnim.SK_Dragon_v4_LandAnim"));
 		RoarAnim = LoadClip(TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_RoarAnim.SK_Dragon_v4_RoarAnim"));
 		HitAnim = LoadClip(TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_HitAnim.SK_Dragon_v4_HitAnim"));
+	}
+	// [2026-11-03 T-110] Skeleton gate: a clip whose skeleton is not the
+	// [2026-11-03 T-110] mesh's skeleton would play garbage or nothing, so it
+	// [2026-11-03 T-110] is nulled and Tick holds bind pose instead (the same
+	// [2026-11-03 T-110] fallback as a missing import). Today that is all nine
+	// [2026-11-03 T-110] v4 clips against the v6 mesh. The gate self-heals:
+	// [2026-11-03 T-110] when T-068 imports v6 clips onto the v6 skeleton at
+	// [2026-11-03 T-110] these paths they start playing with no pawn change.
+	if (GetMesh()->GetSkeletalMeshAsset() != nullptr)
+	{
+		USkeleton* MeshSkeleton = GetMesh()->GetSkeletalMeshAsset()->GetSkeleton();
+		int32 SkippedClips = 0;
+		for (TObjectPtr<UAnimSequence>* Clip :
+			 {&WalkAnim, &FlyAnim, &GlideAnim, &HoverAnim, &IdleAnim, &TakeoffAnim, &LandAnim,
+			  &RoarAnim, &HitAnim})
+		{
+			if (*Clip != nullptr && (*Clip)->GetSkeleton() != MeshSkeleton)
+			{
+				*Clip = nullptr;
+				++SkippedClips;
+			}
+		}
+		if (SkippedClips > 0)
+		{
+			UE_LOG(LogUnderTheMountain, Log,
+				   TEXT("Dragon anims skipped: %d (skeleton mismatch vs %s — v6 clips owed to T-068)"),
+				   SkippedClips, *GetMesh()->GetSkeletalMeshAsset()->GetName());
+		}
 	}
 
 	// [2026-10-28 T-041] PlaceholderBody removed: the skeletal mesh
@@ -762,10 +790,13 @@ void ADragonCharacter::BeginPlay()
 	}
 	// [2026-10-28 T-043] Surface a missing flight clip once here;
 	// Tick's per-frame fallback to bind pose must stay silent.
+	// [2026-11-03 T-110] Today the v4 clip exists but is skeleton-gated to
+	// [2026-11-03 T-110] null in the constructor (see the gate there); either
+	// [2026-11-03 T-110] way a null FlyAnim means bind pose until T-068 clips.
 	if (FlyAnim == nullptr)
 	{
 		UE_LOG(LogUnderTheMountain, Warning,
-			   TEXT("SK_Dragon_v4_FlyAnim not found; flight will use bind pose"));
+			   TEXT("No compatible flight clip (v4 gated, v6 owed to T-068); flight will use bind pose"));
 	}
 	// [2026-11-03 T-073] Onboarding: load persisted progress and build
 	// the (hidden) prompt + help widget before the first tick evaluates.

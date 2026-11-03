@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-03 — T-110 — Playable dragon is now v6 (new 39-bone rig, 4K body/wing PBR, tint still recolours the body only); dragon holds bind pose until its animation clips land
+
 2026-11-03 — T-086 — Hoard mound visibly shrinks in 3 steps as thieves steal (75/50/20% of start)
 
 2026-11-03 — T-083 — XP pool: inside kills +10, lootless scares +5, wave gold +1/25, shown on the HUD, no levels yet
