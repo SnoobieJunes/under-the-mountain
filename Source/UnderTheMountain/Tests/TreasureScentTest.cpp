@@ -333,4 +333,52 @@ bool FScentToggleVisibilityTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// [2026-11-03 T-107] Marker-sync plan: markers exist exactly while
+// true-sight is active. Pure decision logic, headless — the tick block
+// that applies it only spawns/destroys what the plan names.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScentMarkerSyncTest, "UnderTheMountain.Scent.MarkerSync",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FScentMarkerSyncTest::RunTest(const FString& Parameters)
+{
+	const TSet<FName> Desired = {FName(TEXT("A")), FName(TEXT("B"))};
+	const TSet<FName> Live = {FName(TEXT("A")), FName(TEXT("X"))};
+
+	// Inactive: spawn nothing, destroy everything live.
+	{
+		const UScentComponent::FMarkerSync Plan =
+			UScentComponent::PlanMarkerSync(false, Desired, Live);
+		TestTrue(TEXT("inactive spawns nothing"), Plan.ToSpawn.IsEmpty());
+		TestEqual(TEXT("inactive destroys every live marker"), Plan.ToDestroy.Num(), 2);
+		TestTrue(TEXT("inactive destroys A"), Plan.ToDestroy.Contains(FName(TEXT("A"))));
+		TestTrue(TEXT("inactive destroys X"), Plan.ToDestroy.Contains(FName(TEXT("X"))));
+	}
+	// Active: spawn desired-but-missing, destroy live-but-undesired.
+	{
+		const UScentComponent::FMarkerSync Plan =
+			UScentComponent::PlanMarkerSync(true, Desired, Live);
+		TestEqual(TEXT("active spawns exactly the missing id"), Plan.ToSpawn.Num(), 1);
+		TestTrue(TEXT("active spawns B"), Plan.ToSpawn.Contains(FName(TEXT("B"))));
+		TestEqual(TEXT("active destroys exactly the stale id"), Plan.ToDestroy.Num(), 1);
+		TestTrue(TEXT("active destroys X"), Plan.ToDestroy.Contains(FName(TEXT("X"))));
+	}
+	// Steady active: nothing to do.
+	{
+		const TSet<FName> Steady = {FName(TEXT("A")), FName(TEXT("B"))};
+		const UScentComponent::FMarkerSync Plan =
+			UScentComponent::PlanMarkerSync(true, Desired, Steady);
+		TestTrue(TEXT("steady active spawns nothing"), Plan.ToSpawn.IsEmpty());
+		TestTrue(TEXT("steady active destroys nothing"), Plan.ToDestroy.IsEmpty());
+	}
+	// Steady inactive: nothing to do.
+	{
+		const TSet<FName> Empty;
+		const UScentComponent::FMarkerSync Plan =
+			UScentComponent::PlanMarkerSync(false, Desired, Empty);
+		TestTrue(TEXT("steady inactive spawns nothing"), Plan.ToSpawn.IsEmpty());
+		TestTrue(TEXT("steady inactive destroys nothing"), Plan.ToDestroy.IsEmpty());
+	}
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

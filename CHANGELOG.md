@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-03 — T-107 — True-sight markers now exist only while true-sight is active: no more one-hidden-actor-per-treasure while off (no user-visible change)
+
 2026-11-03 — T-106 — Content scripts back up the map before destroying anything and refuse to save duplicates (no user-visible change)
 
 2026-11-03 — T-105 — The landing-damage curve lives in Stats alone now: wall-impact severity and the integrator's floor-contact routing read the same numbers instead of a mirrored copy (no user-visible change)

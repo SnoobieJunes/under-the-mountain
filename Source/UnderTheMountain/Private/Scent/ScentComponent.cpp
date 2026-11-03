@@ -101,6 +101,36 @@ bool UScentComponent::IsTrueSightActive() const
 	return bTrueSightActive;
 }
 
+UScentComponent::FMarkerSync UScentComponent::PlanMarkerSync(bool bActive, const TSet<FName>& Desired,
+															 const TSet<FName>& Live)
+{
+	// [2026-11-03 T-107] See header: off destroys everything live and
+	// spawns nothing; on spawns desired-but-missing and destroys
+	// live-but-undesired (stale entries and deactivation share the
+	// destroy path, so neither can leak a marker actor).
+	FMarkerSync Plan;
+	if (!bActive)
+	{
+		Plan.ToDestroy = Live;
+		return Plan;
+	}
+	for (const FName& Id : Desired)
+	{
+		if (!Live.Contains(Id))
+		{
+			Plan.ToSpawn.Add(Id);
+		}
+	}
+	for (const FName& Id : Live)
+	{
+		if (!Desired.Contains(Id))
+		{
+			Plan.ToDestroy.Add(Id);
+		}
+	}
+	return Plan;
+}
+
 bool UScentComponent::ToggleTrueSight()
 {
 	return SetTrueSightActive(!bTrueSightActive);
@@ -280,7 +310,41 @@ void UScentComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	for (const FTreasureEntry* Entry : Sorted)
 	{
 		DesiredIds.Add(Entry->Id);
+	}
 
+	// [2026-11-03 T-107] Marker actors exist only while true-sight is
+	// active — no bloat while it is off, spawn on activation, destroy
+	// on deactivation. Dead slots (GC'd/externally destroyed actors)
+	// are pruned first so they come back through the spawn set, exactly
+	// like the old null-slot path did. The pure plan is headless-tested;
+	// this block only applies it.
+	for (auto It = Markers.CreateIterator(); It; ++It)
+	{
+		if (!IsValid(It->Value.Get()))
+		{
+			It.RemoveCurrent();
+		}
+	}
+	TSet<FName> LiveIds;
+	for (const auto& Pair : Markers)
+	{
+		LiveIds.Add(Pair.Key);
+	}
+	const FMarkerSync MarkerPlan = PlanMarkerSync(bTrueSightActive, DesiredIds, LiveIds);
+	for (const FName& Id : MarkerPlan.ToDestroy)
+	{
+		if (TObjectPtr<ATrueSightMarkerActor>* Slot = Markers.Find(Id))
+		{
+			if (IsValid(Slot->Get()))
+			{
+				(*Slot)->Destroy();
+			}
+			Markers.Remove(Id);
+		}
+	}
+
+	for (const FTreasureEntry* Entry : Sorted)
+	{
 		// [2026-10-28 T-013] Appearance comes from value/carried/
 		// true-sight only (FScentMath); Entry->Location is used here
 		// solely as the ribbon's far endpoint — geometry, not a cue.
@@ -333,7 +397,7 @@ void UScentComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 
 		TObjectPtr<ATrueSightMarkerActor>* MarkerSlot = Markers.Find(Entry->Id);
 		ATrueSightMarkerActor* Marker = MarkerSlot != nullptr ? MarkerSlot->Get() : nullptr;
-		if (Marker == nullptr)
+		if (Marker == nullptr && MarkerPlan.ToSpawn.Contains(Entry->Id))
 		{
 			FActorSpawnParameters SpawnParams;
 			SpawnParams.Owner = Owner;
@@ -380,15 +444,15 @@ void UScentComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 			It.RemoveCurrent();
 		}
 	}
-	for (auto It = Markers.CreateIterator(); It; ++It)
+	// [2026-11-03 T-107] Marker-count transitions log like ribbons do,
+	// so a -game log proves marker actors exist exactly while
+	// true-sight is active. The old stale-marker second sweep is gone:
+	// the plan above already destroys every live-but-undesired id (and
+	// everything live while inactive), so there is nothing left for a
+	// second pass to catch.
+	if (Markers.Num() != LastLoggedMarkerCount)
 	{
-		if (!DesiredIds.Contains(It->Key))
-		{
-			if (It->Value != nullptr)
-			{
-				It->Value->Destroy();
-			}
-			It.RemoveCurrent();
-		}
+		UE_LOG(LogUnderTheMountain, Log, TEXT("True-sight markers active: %d"), Markers.Num());
+		LastLoggedMarkerCount = Markers.Num();
 	}
 }

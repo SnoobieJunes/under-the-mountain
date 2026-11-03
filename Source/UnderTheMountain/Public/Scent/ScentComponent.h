@@ -53,6 +53,20 @@ class UNDERTHEMOUNTAIN_API UScentComponent : public UActorComponent
 	// true-sight without its stone must never half-work).
 	// Deactivating always succeeds. Returns whether true-sight is
 	// active after the call.
+	// [2026-11-03 T-107] Marker-sync plan: which marker actors to spawn
+	// and destroy this tick. Pure and headless-tested (UnderTheMountain.
+	// Scent.MarkerSync): bActive off means no marker actors at all
+	// (spawn none, destroy every live one); bActive on means spawn every
+	// desired id missing an actor and destroy every actor whose id is
+	// no longer desired. Public so the test can call it; production
+	// callers go through TickComponent.
+	struct FMarkerSync
+	{
+		TSet<FName> ToSpawn;
+		TSet<FName> ToDestroy;
+	};
+	static FMarkerSync PlanMarkerSync(bool bActive, const TSet<FName>& Desired, const TSet<FName>& Live);
+
 	bool SetTrueSightActive(bool bActive);
 
 	bool IsTrueSightActive() const;
@@ -160,4 +174,9 @@ class UNDERTHEMOUNTAIN_API UScentComponent : public UActorComponent
 	// [2026-10-28 T-013] Last ribbon count written to the log; -1 so
 	// the first tick with any treasure always logs once.
 	int32 LastLoggedRibbonCount = -1;
+
+	// [2026-11-03 T-107] Last marker count written to the log, same
+	// transition-only contract as ribbons: the -game log proves marker
+	// actors exist exactly while true-sight is active.
+	int32 LastLoggedMarkerCount = -1;
 };
