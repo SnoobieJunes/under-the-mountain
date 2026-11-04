@@ -45,9 +45,15 @@ def require(value, action):
     return value
 
 
-skeleton = require(eal.load_asset(DST + "/SK_Dragon_v4_Skeleton"), "load SK_Dragon_v4_Skeleton")
+skeleton = require(eal.load_asset(DST + "/SK_Dragon_v6_Skeleton"), "load SK_Dragon_v6_Skeleton")
 
 for fbx_name, asset_name in CLIPS:
+    # [2026-11-04 T-126] Never delete a live clip for an FBX that is not
+    # on disk (the 8 shipped clips have no FBX in the repo root set).
+    import os as _os
+    if not _os.path.exists(unreal.Paths.project_dir() + "Content/Meshy/Dragon/" + fbx_name):
+        print("DRAGON_ANIM_SKIP missing FBX", fbx_name)
+        continue
     dest = DST + "/" + asset_name
     if eal.does_asset_exist(dest):
         # [2026-11-01 T-068] A loaded CDO (the pawn constructor finds these
