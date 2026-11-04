@@ -448,7 +448,15 @@ def clip_firepose():
         set_rot(chest, x=8.0 + 1.5 * s)
         set_rot(neck, x=10.0)
         set_rot(head, x=8.0 + 1.0 * s)
-        key(keyed + [chest, neck, head], frame)
+        keyed = keyed + [chest, neck, head]
+        # Optional jaw (dragon_v6_jaw rig): open ~25 deg while the fire pose
+        # holds. Guarded so this no-ops on rigs without a 'jaw' bone.
+        jaw = arm.pose.bones.get("jaw")
+        if jaw is not None:
+            jaw.rotation_mode = "XYZ"
+            set_rot(jaw, x=0.0 if frame == 1 else 25.0)
+            keyed = keyed + [jaw]
+        key(keyed, frame)
     export(arm, action, "dragon_v4_firepose.fbx")
 
 
