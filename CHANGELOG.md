@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-04 — T-116 — Proof-fps readout fixed (%lld frame count) + short-window runs warn instead of reporting 0.0 fps (no user-visible change)
+
 2026-11-04 — T-112 — Title screen renders again (gold title + START RUN + QUIT, focus error gone); START RUN reaches gameplay with the full HUD (no user-visible change beyond the restored title)
 
 2026-11-04 — T-109 — Deviation-log sweep #3: audits folded, 13 adversarial findings filed as T-116–T-119 (plus 1 inline README fix), successor T-120 filed (no user-visible change)

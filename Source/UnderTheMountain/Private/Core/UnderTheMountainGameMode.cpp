@@ -119,21 +119,40 @@ void AUnderTheMountainGameMode::TickProofCapture()
 			UE_LOG(LogUnderTheMountain, Log,
 				   TEXT("Proof capture: HighResShot fired %.1fs after first tick (state %d)"),
 				   Now - ProofFirstTickTime, static_cast<int32>(GetFlowState()));
-			UE_LOG(LogUnderTheMountain, Log,
-				   TEXT("Proof fps: avg %.1f over %d frames (%.2f ms avg, %.2f ms worst)"),
-				   AvgFps, ProofFrames, AvgMs, 1000.0 * ProofFrameWorst);
+			// [2026-11-04 T-116] The int64 frame count needs %lld (a %d here
+			// [2026-11-04 T-116] reads half the value on LP64 — the stdout
+			// [2026-11-04 T-116] twin below already casts correctly).
+			// [2026-11-04 T-116] A shot inside the 10 s warmup skip leaves
+			// [2026-11-04 T-116] zero measured frames: say insufficient-window
+			// [2026-11-04 T-116] instead of printing avg=0.0 as a measurement.
+			if (ProofFrames == 0)
+			{
+				UE_LOG(LogUnderTheMountain, Warning,
+					   TEXT("PROOF fps: insufficient window (shot fired %.1fs after first tick, before warmup end)"),
+					   Now - ProofFirstTickTime);
+				printf("PROOF fps insufficient-window (shot %.1fs after first tick)\n",
+					   Now - ProofFirstTickTime);
+				fflush(stdout);
+			}
+			else
+			{
+				UE_LOG(LogUnderTheMountain, Log,
+					   TEXT("Proof fps: avg %.1f over %lld frames (%.2f ms avg, %.2f ms worst)"),
+					   AvgFps, static_cast<long long>(ProofFrames), AvgMs,
+					   1000.0 * ProofFrameWorst);
+				printf("PROOF fps avg=%.1f frames=%lld avgms=%.2f worstms=%.2f\n", AvgFps,
+					   static_cast<long long>(ProofFrames), AvgMs, 1000.0 * ProofFrameWorst);
+				fflush(stdout);
+				printf("PROOF fpsbuckets at60=%lld at30=%lld slow=%lld\n",
+					   static_cast<long long>(ProofFrames60), static_cast<long long>(ProofFrames30),
+					   static_cast<long long>(ProofFramesSlow));
+				fflush(stdout);
+			}
 			// [2026-11-04 T-113] Dual channel like CourseLog (T-075):
 			// [2026-11-04 T-113] headless -game runs never materialise a log
 			// [2026-11-04 T-113] file, so the shot needs stdout proof too.
 			printf("PROOF HighResShot fired %.1fs after first tick (state %d)\n", Now - ProofFirstTickTime,
 				   static_cast<int32>(GetFlowState()));
-			fflush(stdout);
-			printf("PROOF fps avg=%.1f frames=%lld avgms=%.2f worstms=%.2f\n", AvgFps,
-				   static_cast<long long>(ProofFrames), AvgMs, 1000.0 * ProofFrameWorst);
-			fflush(stdout);
-			printf("PROOF fpsbuckets at60=%lld at30=%lld slow=%lld\n",
-				   static_cast<long long>(ProofFrames60), static_cast<long long>(ProofFrames30),
-				   static_cast<long long>(ProofFramesSlow));
 			fflush(stdout);
 		}
 		return;
