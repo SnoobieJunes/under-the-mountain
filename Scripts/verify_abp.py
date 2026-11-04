@@ -72,9 +72,17 @@ def main() -> int:
         ):
             if not contains(raw, token):
                 blocked.append(f"asset: no '{token}' string ({label}) in ABP_Dragon.uasset")
+        # [2026-11-04 T-139] One-shot clips (Takeoff/Land/Roar/Hit) are
+        # played by C++ as dynamic montages through the slots (build
+        # sheet S3) — the graph must NOT reference them. Only the 5
+        # locomotion clips are graph references.
         for clip in CLIPS:
+            if clip in ("SK_Dragon_v4_TakeoffAnim", "SK_Dragon_v4_LandAnim",
+                        "SK_Dragon_v4_RoarAnim", "SK_Dragon_v4_HitAnim"):
+                infos.append(f"asset: one-shot clip via C++ slot montage (not graph): {clip}")
+                continue
             if not contains(raw, clip):
-                blocked.append(f"asset: locomotion/one-shot clip not referenced: {clip}")
+                blocked.append(f"asset: locomotion clip not referenced: {clip}")
         for clip in T126_CLIPS:
             infos.append(f"asset: T-126 clip {'referenced' if contains(raw, clip) else 'not yet referenced (ok until imported)'}: {clip}")
         for var in ("LocomotionState", "FlapPlayRate", "MeshPitchDegrees", "BankDegrees",

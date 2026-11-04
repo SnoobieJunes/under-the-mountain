@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-04 — T-139/T-126/T-114 — ABP_Dragon graph authored in-editor by the ABPAuthor commandlet (6-state locomotion, 30 transitions, FullBody/UpperBody slots, chest layered blend, root-bone bank/pitch): the dragon now animates through the graph in-game (course log clip=ABP, states cycling, zero bind frames); 10 new animation families imported (hit-heavy, defeat, sleep/wake, fire pose, claw, bite/eat, tail whip, wing buffet); nat-broadleaf/bush/grass foliage imported and placed (120 props)
+
 2026-11-04 — T-138/T-135/T-131 — Sandbox mode (title + utm.sandbox, SANDBOX badge, no spawns/audit/notoriety), distinct PYRRHIC WIN end screen with inside/outside resolution score, and incursion cadence (90–150 s gaps, 20 s wave warning, 4-min wave cap)
 
 2026-11-04 — T-128/T-088 — Graphics quality presets (Ultra default, Low/Medium/High relief) + settings model/widget (volume, sensitivity, inverts, camera, infinite-stamina toggle) with persisted config

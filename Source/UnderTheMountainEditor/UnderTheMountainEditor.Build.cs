@@ -24,7 +24,18 @@ public class UnderTheMountainEditor : ModuleRules
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
 			"UnrealEd",
-			"Landscape"
+			"Landscape",
+			// [2026-11-04 T-139] ABPAuthor commandlet: AnimGraph node
+			// classes + AnimBlueprint factory/compile/save plumbing,
+			// K2 variable/enum nodes for transition rules, and the
+			// runtime module for UDragonAnimInstance / EDragonAnimState.
+			"AnimGraph",
+			"AnimGraphRuntime",
+			"AnimationBlueprintEditor",
+			"AssetRegistry",
+			"BlueprintGraph",
+			"KismetCompiler",
+			"UnderTheMountain"
 		});
 	}
 }
