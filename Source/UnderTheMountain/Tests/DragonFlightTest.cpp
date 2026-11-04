@@ -144,6 +144,18 @@ bool FDragonFlightTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("ten impulses exactly empty a full pool"), Stats->Stamina, 0.0f);
 	TestFalse(TEXT("no eleventh impulse on an empty pool"),
 			  Stats->TryConsumeStamina(Stats->ImpulseReserveCost));
+
+	// [2026-11-04 FLIGHT-PHYSICS] Vigor bands untouched by the flight
+	// physics rework: hover -3/s, slow -1/s, cruise 1200-1800 free,
+	// fast >=1800 +3/s (Stats seam, same pins as DragonStatsTest).
+	TestEqual(TEXT("vigor: hover still drains 3/s"),
+			  UDragonStatsComponent::FlightStaminaRatePerSecond(0.0f, true), -3.0f);
+	TestEqual(TEXT("vigor: slow flight still drains 1/s"),
+			  UDragonStatsComponent::FlightStaminaRatePerSecond(1199.0f, false), -1.0f);
+	TestEqual(TEXT("vigor: cruise band still free"),
+			  UDragonStatsComponent::FlightStaminaRatePerSecond(1600.0f, false), 0.0f);
+	TestEqual(TEXT("vigor: fast line still refills 3/s"),
+			  UDragonStatsComponent::FlightStaminaRatePerSecond(1800.0f, false), 3.0f);
 	return true;
 }
 

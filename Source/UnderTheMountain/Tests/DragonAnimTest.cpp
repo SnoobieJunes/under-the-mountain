@@ -5,7 +5,9 @@
 // statics, UDragonCombatComponent, UThiefBrain). Created 2026-11-01 (T-068).
 
 #include "Misc/AutomationTest.h"
+#include "Animation/AnimSequence.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
 #include "Dragon/DragonAnimInstance.h"
 #include "Dragon/DragonCharacter.h"
 #include "Dragon/DragonCombatComponent.h"
@@ -100,6 +102,106 @@ bool FDragonAnimCurvesTest::RunTest(const FString& Parameters)
 			 FMath::Abs(Anim::ComputeSlitherBoneRotation(0, 0.0f, 6.0f, 0.0f, 0.0f).Yaw) < 0.01f);
 	TestTrue(TEXT("slither bone yaw lags with segment index"),
 			 Anim::ComputeSlitherBoneRotation(3, 0.0f, 6.0f, 0.0f, 0.0f).Yaw < 0.0f);
+	return true;
+}
+
+// [2026-11-04 WALKFIX] Walk-stride pin: the clip bound to the ABP Walk state
+// (SK_Dragon_v4_Anim, the pawn's WalkAnim) must actually swing the leg
+// bones through a stride. A clip whose leg tracks sit at bind reads
+// in-game as a sliding statue — state=Walk, speed 600, feet planted —
+// which is the owner-reported "dragon does NOT walk at all". Samples the
+// raw clip (no world, no graph), so a red here isolates clip vs graph.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDragonWalkClipStrideTest, "UnderTheMountain.Dragon.WalkClipStride",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDragonWalkClipStrideTest::RunTest(const FString& Parameters)
+{
+	ADragonCharacter* Pawn = NewObject<ADragonCharacter>();
+	TestNotNull(TEXT("pawn constructs for walk-clip check"), Pawn);
+	if (Pawn == nullptr)
+	{
+		return false;
+	}
+	UAnimSequence* WalkAnim = Pawn->WalkAnim;
+	TestNotNull(TEXT("walk clip is live on the pawn"), WalkAnim);
+	USkeletalMesh* DragonMesh = Pawn->GetMesh()->GetSkeletalMeshAsset();
+	TestNotNull(TEXT("pawn mesh loads for walk-clip check"), DragonMesh);
+	if (WalkAnim == nullptr || DragonMesh == nullptr)
+	{
+		return false;
+	}
+	const USkeleton* Skeleton = DragonMesh->GetSkeleton();
+	TestNotNull(TEXT("dragon skeleton loads"), Skeleton);
+	if (Skeleton == nullptr)
+	{
+		return false;
+	}
+	const FReferenceSkeleton& RefSkeleton = Skeleton->GetReferenceSkeleton();
+	const float Length = WalkAnim->GetPlayLength();
+	// [2026-11-04 WALKFIX] Diagnostic: which bones DOES this clip move?
+	{
+		TArray<TPair<double, FString>> Movers;
+		for (int32 BoneIndex = 0; BoneIndex < RefSkeleton.GetNum(); ++BoneIndex)
+		{
+			FQuat First;
+			double Swing = 0.0;
+			for (int32 Sample = 0; Sample < 8; ++Sample)
+			{
+				FTransform BoneTransform;
+				WalkAnim->GetBoneTransform(BoneTransform, FSkeletonPoseBoneIndex(BoneIndex),
+										   FAnimExtractContext(Length * Sample / 8.0f), true);
+				if (Sample == 0)
+				{
+					First = BoneTransform.GetRotation();
+				}
+				Swing = FMath::Max(Swing, First.AngularDistance(BoneTransform.GetRotation()));
+			}
+			Movers.Add(TPair<double, FString>(Swing, RefSkeleton.GetBoneName(BoneIndex).ToString()));
+		}
+		Movers.Sort([](const TPair<double, FString>& A, const TPair<double, FString>& B)
+					{ return A.Key > B.Key; });
+		for (int32 Index = 0; Index < FMath::Min(10, Movers.Num()); ++Index)
+		{
+			UE_LOG(LogTemp, Display, TEXT("WALKCLIP mover %s swing=%.3f"), *Movers[Index].Value,
+				   Movers[Index].Key);
+		}
+	}
+	TestTrue(FString::Printf(TEXT("walk clip has length (%.2fs)"), Length), Length > 0.2f);
+	int32 StridingLegs = 0;
+	for (const TCHAR* LegBone :
+		 {TEXT("frontleg_upper_L"), TEXT("frontleg_upper_R"), TEXT("hindleg_upper_L"),
+		  TEXT("hindleg_upper_R")})
+	{
+		const int32 LegIndex = RefSkeleton.FindBoneIndex(LegBone);
+		TestTrue(FString::Printf(TEXT("%s bone exists"), LegBone), LegIndex != INDEX_NONE);
+		if (LegIndex == INDEX_NONE)
+		{
+			continue;
+		}
+		// Swing = widest rotation spread across 8 samples of the cycle.
+		FQuat First;
+		double MaxSwing = 0.0;
+		for (int32 Sample = 0; Sample < 8; ++Sample)
+		{
+			FTransform BoneTransform;
+			WalkAnim->GetBoneTransform(BoneTransform, FSkeletonPoseBoneIndex(LegIndex),
+									   FAnimExtractContext(Length * Sample / 8.0f), true);
+			if (Sample == 0)
+			{
+				First = BoneTransform.GetRotation();
+			}
+			MaxSwing = FMath::Max(MaxSwing, First.AngularDistance(BoneTransform.GetRotation()));
+		}
+		TestTrue(FString::Printf(TEXT("%s swings through the walk cycle (%.3f rad)"), LegBone,
+								 MaxSwing),
+				 MaxSwing > 0.15);
+		if (MaxSwing > 0.15)
+		{
+			++StridingLegs;
+		}
+	}
+	TestTrue(FString::Printf(TEXT("at least two legs stride (%d)"), StridingLegs),
+			 StridingLegs >= 2);
 	return true;
 }
 

@@ -34,6 +34,13 @@ bool FDragonMovementTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("stall sink default is 300 cm/s"), Params.StallSinkRate, 300.0f);
 	TestEqual(TEXT("precision thrust default is 650 cm/s"), Params.PrecisionThrustSpeed, 650.0f);
 	TestEqual(TEXT("impulse window default is 1.5 s"), Params.ImpulseAuthorityWindow, 1.5f);
+	// [2026-11-04 FLIGHT-PHYSICS] Lift/turn command defaults.
+	TestEqual(TEXT("cruise lift reference is 1600 cm/s"), Params.CruiseLiftSpeed, 1600.0f);
+	TestEqual(TEXT("lift clamp is 2450 cm/s^2"), Params.MaxLiftAccel, 2450.0f);
+	TestEqual(TEXT("turn authority zero speed is 200 cm/s"), Params.TurnAuthorityZeroSpeed, 200.0f);
+	TestEqual(TEXT("turn authority full speed is 600 cm/s"), Params.TurnAuthorityFullSpeed, 600.0f);
+	TestEqual(TEXT("bank roll rate is 90 deg/s"), Params.BankRollRateDegPerSec, 90.0f);
+	TestEqual(TEXT("pitch command rate is 60 deg/s"), Params.PitchCommandRateDegPerSec, 60.0f);
 
 	// [2026-11-03 T-075] Impulse latch: fresh impulses read momentum (0) at
 	// any airspeed; expired latches read the airspeed smoothstep.
@@ -235,32 +242,33 @@ bool FDragonMovementTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("grazing dive entry is free"),
 			  UDragonMovementComponent::LandingSeverity(3200.0f, 10.0f, *Stats), 0.0f);
 
-	// [2026-11-04 FLIGHT-VIGOR] Causal bank: input commands bank, yaw
-	// derives from it. Full input banks to the 35 cap, wings-level
-	// never turns, and full bank recovers exactly the airspeed yaw
-	// rate at both ends of the blend (sign: positive turn input yaws
-	// positive, banked negative like the old derivative bank).
+	// [2026-11-04 FLIGHT-PHYSICS] Causal bank: input commands bank to
+	// the +-40 cap, yaw derives from it by the coordinated-turn law
+	// (g*tan(bank)/v). Full bank at cruise earns ~29.5 deg/s, at dive
+	// speed only ~11.8 deg/s (faster = wider), and at rest exactly
+	// nothing — the old linear bank/35 x yaw-rate pins are replaced
+	// by the physics, not weakened.
 	TestEqual(TEXT("no turn input is wings-level"), UDragonMovementComponent::CommandedBankDegrees(0.0f), 0.0f);
-	TestEqual(TEXT("full turn input banks to the cap"), UDragonMovementComponent::CommandedBankDegrees(1.0f), -35.0f);
+	TestEqual(TEXT("full turn input banks to the cap"), UDragonMovementComponent::CommandedBankDegrees(1.0f), -40.0f);
 	TestEqual(TEXT("full opposite input banks to the opposite cap"),
-			  UDragonMovementComponent::CommandedBankDegrees(-1.0f), 35.0f);
-	TestEqual(TEXT("half input banks half"), UDragonMovementComponent::CommandedBankDegrees(0.5f), -17.5f);
-	TestEqual(TEXT("over-input clamps to the cap"), UDragonMovementComponent::CommandedBankDegrees(2.0f), -35.0f);
+			  UDragonMovementComponent::CommandedBankDegrees(-1.0f), 40.0f);
+	TestEqual(TEXT("half input banks half"), UDragonMovementComponent::CommandedBankDegrees(0.5f), -20.0f);
+	TestEqual(TEXT("over-input clamps to the cap"), UDragonMovementComponent::CommandedBankDegrees(2.0f), -40.0f);
 	TestEqual(TEXT("wings-level never yaws"),
 			  UDragonMovementComponent::YawRateForBank(0.0f, 2400.0f, Params), 0.0f);
-	TestEqual(TEXT("full bank at dive speed yaws at the dive rate"),
-			  UDragonMovementComponent::YawRateForBank(-35.0f, 4000.0f, Params), 55.0f);
-	TestEqual(TEXT("full bank at hover yaws at the precision rate"),
-			  UDragonMovementComponent::YawRateForBank(-35.0f, 0.0f, Params), 90.0f);
-	TestEqual(TEXT("half bank yaws at half rate"),
-			  UDragonMovementComponent::YawRateForBank(-17.5f, 4000.0f, Params), 27.5f);
-	TestEqual(TEXT("opposite bank yaws opposite"),
-			  UDragonMovementComponent::YawRateForBank(35.0f, 4000.0f, Params), -55.0f);
-	// Bank -> yaw round-trips the input at any airspeed.
-	TestEqual(TEXT("bank-derived yaw round-trips full input"),
+	TestTrue(TEXT("full bank at dive speed yaws at the coordinated rate (~11.8 deg/s)"),
+			 FMath::Abs(UDragonMovementComponent::YawRateForBank(-40.0f, 4000.0f, Params) - 11.8f) < 0.2f);
+	TestEqual(TEXT("full bank at rest yaws nothing (no spin in place)"),
+			  UDragonMovementComponent::YawRateForBank(-40.0f, 0.0f, Params), 0.0f);
+	TestTrue(TEXT("half bank at dive speed yaws at the half-bank coordinated rate (~5.1 deg/s)"),
+			 FMath::Abs(UDragonMovementComponent::YawRateForBank(-20.0f, 4000.0f, Params) - 5.1f) < 0.2f);
+	TestTrue(TEXT("opposite bank yaws opposite"),
+			 FMath::Abs(UDragonMovementComponent::YawRateForBank(40.0f, 4000.0f, Params) + 11.8f) < 0.2f);
+	// Bank -> yaw round-trips the input through the coordinated law.
+	TestEqual(TEXT("bank-derived yaw round-trips full input through the coordinated law"),
 			  UDragonMovementComponent::YawRateForBank(UDragonMovementComponent::CommandedBankDegrees(1.0f),
 													   4000.0f, Params),
-			  UDragonMovementComponent::YawRateForAirspeed(4000.0f, Params));
+			  UDragonMovementComponent::CoordinatedYawRateDeg(-40.0f, 4000.0f, Params));
 
 	// [2026-11-04 FLIGHT-VIGOR] RMB sailing step: demand consumes at
 	// the rate budget per tick, never overshoots, never runs on
@@ -275,6 +283,141 @@ bool FDragonMovementTest::RunTest(const FString& Parameters)
 			  0.0f);
 	TestEqual(TEXT("zero rate steers nothing"), UDragonMovementComponent::SteerStepDegrees(10.0f, 0.0f, 1.0f),
 			  0.0f);
+
+	// [2026-11-04 FLIGHT-PHYSICS] Lift law: k = 980/1600^2, so lift
+	// equals gravity exactly at cruise, is far under it at 600 (the
+	// wing cannot hold slow flight), and clamps at dive speeds.
+	TestEqual(TEXT("lift at cruise equals gravity"), UDragonMovementComponent::LiftAccel(1600.0f), 980.0f);
+	TestEqual(TEXT("lift at half cruise is quarter gravity"), UDragonMovementComponent::LiftAccel(800.0f), 245.0f);
+	TestTrue(TEXT("lift at 600 is far under gravity (stall)"),
+			 UDragonMovementComponent::LiftAccel(600.0f) > 100.0f && UDragonMovementComponent::LiftAccel(600.0f) < 200.0f);
+	TestEqual(TEXT("lift at rest is zero"), UDragonMovementComponent::LiftAccel(0.0f), 0.0f);
+	TestEqual(TEXT("lift clamps at dive speed"), UDragonMovementComponent::LiftAccel(4000.0f), 2450.0f);
+	TestTrue(TEXT("banked lift keeps only cos(bank) against gravity"),
+			 FMath::Abs(UDragonMovementComponent::LiftAccel(1600.0f, -30.0f, Params) - 848.7f) < 0.5f);
+	TestEqual(TEXT("level cruise lift nets zero vertical accel"),
+			  UDragonMovementComponent::LiftVerticalAccel(1600.0f, 0.0f, Params), 0.0f);
+	TestTrue(TEXT("slow flight lift nets a sink accel"),
+			 UDragonMovementComponent::LiftVerticalAccel(500.0f, 0.0f, Params) < -800.0f);
+	TestTrue(TEXT("fast flight lift nets a climb accel the pilot trims with pitch"),
+			 UDragonMovementComponent::LiftVerticalAccel(2400.0f, 0.0f, Params) > 1000.0f);
+
+	// [2026-11-04 FLIGHT-PHYSICS] Turn authority: zero at/below 200,
+	// near zero at 300, full at/above 600, monotone between.
+	TestEqual(TEXT("turn authority is zero at rest"), UDragonMovementComponent::TurnAuthority(0.0f), 0.0f);
+	TestEqual(TEXT("turn authority is zero at 200 cm/s"), UDragonMovementComponent::TurnAuthority(200.0f), 0.0f);
+	TestTrue(TEXT("turn authority at 300 cm/s is near zero (<0.05)"),
+			 UDragonMovementComponent::TurnAuthority(300.0f) < 0.05f);
+	TestEqual(TEXT("turn authority is full at 600 cm/s"), UDragonMovementComponent::TurnAuthority(600.0f), 1.0f);
+	TestEqual(TEXT("turn authority stays full at cruise"), UDragonMovementComponent::TurnAuthority(1600.0f), 1.0f);
+	{
+		float PrevA = UDragonMovementComponent::TurnAuthority(200.0f);
+		for (float V = 250.0f; V <= 600.0f; V += 50.0f)
+		{
+			const float A = UDragonMovementComponent::TurnAuthority(V);
+			TestTrue(TEXT("turn authority never falls as speed rises"), A >= PrevA);
+			PrevA = A;
+		}
+	}
+
+	// [2026-11-04 FLIGHT-PHYSICS] Coordinated turn at cruise: a 30 deg
+	// bank at 1600 cm/s earns g*tan(30)/1600 = 20.26 deg/s. Honest
+	// geometry: radius = v/omega = 4525 cm, diameter ~9049 cm (the
+	// 500-2500 guess does not survive the formula; this pins the
+	// computed range). Faster flight turns wider, never tighter.
+	{
+		const float YawDeg = UDragonMovementComponent::CoordinatedYawRateDeg(-30.0f, 1600.0f, Params);
+		TestTrue(TEXT("30 deg bank at 1600 yaws ~20.3 deg/s"), YawDeg > 20.0f && YawDeg < 20.6f);
+		const float Diameter = 2.0f * 1600.0f / FMath::DegreesToRadians(YawDeg);
+		TestTrue(FString::Printf(TEXT("30 deg bank at 1600 turn diameter is %.0f cm"), Diameter),
+				 Diameter > 8000.0f && Diameter < 10000.0f);
+		TestTrue(TEXT("full bank at 600 stays under the feel cap"),
+				 UDragonMovementComponent::CoordinatedYawRateDeg(-40.0f, 600.0f, Params) <=
+					 UDragonMovementComponent::YawRateForAirspeed(600.0f, Params));
+		TestEqual(TEXT("coordinated yaw at 200 cm/s is exactly zero"),
+				  UDragonMovementComponent::CoordinatedYawRateDeg(-40.0f, 200.0f, Params), 0.0f);
+		TestTrue(TEXT("coordinated yaw at 300 cm/s is near zero (<10 deg/s)"),
+				 UDragonMovementComponent::CoordinatedYawRateDeg(-40.0f, 300.0f, Params) < 10.0f);
+		TestTrue(TEXT("dive-speed turn is wider than cruise turn at the same bank"),
+				 UDragonMovementComponent::CoordinatedYawRateDeg(-30.0f, 4000.0f, Params) < YawDeg);
+	}
+
+	// [2026-11-04 FLIGHT-PHYSICS] Full-step sims: the exact momentum
+	// core PhysCustom integrates (energy step -> steer lag onto the
+	// nose -> lift-vs-gravity Z, momentum weight 1), at 60 Hz.
+	{
+		auto MomentumStep = [&Params](FVector Vel, const FVector& NoseDir, float BankDeg, float Dt) -> FVector
+		{
+			const float Speed = UDragonMovementComponent::IntegrateEnergyStep(
+				Vel.Size(), FMath::Asin(FMath::Clamp(NoseDir.Z, -1.0f, 1.0f)), Dt, Params);
+			const float Steer = UDragonMovementComponent::ComputeSteerResponsiveness(Vel.Size(), 0.0f, Params);
+			FVector Out = Vel + (NoseDir * Speed - Vel) * FMath::Min(1.0f, Dt * Steer);
+			Out.Z += UDragonMovementComponent::LiftVerticalAccel(Speed, BankDeg, Params) * Dt;
+			return Out;
+		};
+		const float Dt = 1.0f / 60.0f;
+		// Level cruise: 10 s, altitude and speed hold without thrust.
+		{
+			FVector Vel(1600.0f, 0.0f, 0.0f);
+			FVector Pos = FVector::ZeroVector;
+			for (int32 Step = 0; Step < 600; ++Step)
+			{
+				Vel = MomentumStep(Vel, FVector(1.0f, 0.0f, 0.0f), 0.0f, Dt);
+				Pos += Vel * Dt;
+			}
+			TestTrue(FString::Printf(TEXT("level cruise holds altitude over 10 s (dz=%.1f cm)"), Pos.Z),
+					 FMath::Abs(Pos.Z) < 50.0f);
+			TestTrue(TEXT("level cruise holds speed over 10 s"), FMath::Abs(Vel.Size() - 1600.0f) < 50.0f);
+		}
+		// Slow momentum flight: the wing cannot hold it, it sinks.
+		{
+			FVector Vel(500.0f, 0.0f, 0.0f);
+			FVector Pos = FVector::ZeroVector;
+			for (int32 Step = 0; Step < 600; ++Step)
+			{
+				Vel = MomentumStep(Vel, FVector(1.0f, 0.0f, 0.0f), 0.0f, Dt);
+				Pos += Vel * Dt;
+			}
+			TestTrue(FString::Printf(TEXT("slow flight sinks in momentum (dz=%.1f cm over 10 s)"), Pos.Z),
+					 Pos.Z < -200.0f && Vel.Z < -50.0f);
+		}
+		// Dive still gains speed through the lift model (energy owns
+		// speed along the nose; lift only bends the vertical).
+		{
+			const FVector DiveNose = FVector(0.866f, 0.0f, -0.5f).GetSafeNormal();
+			FVector Vel = DiveNose * 1500.0f;
+			FVector Pos = FVector::ZeroVector;
+			for (int32 Step = 0; Step < 120; ++Step)
+			{
+				Vel = MomentumStep(Vel, DiveNose, 0.0f, Dt);
+				Pos += Vel * Dt;
+			}
+			TestTrue(FString::Printf(TEXT("dive gains speed in the full-step sim (%.0f cm/s)"), Vel.Size()),
+					 Vel.Size() > 1500.0f && Pos.Z < 0.0f);
+		}
+		// Banked turn, flown: heading follows the coordinated yaw for
+		// one full turn at cruise; the flown diameter matches the
+		// analytic ~9049 cm range above.
+		{
+			const float YawRateRad =
+				FMath::DegreesToRadians(UDragonMovementComponent::CoordinatedYawRateDeg(-30.0f, 1600.0f, Params));
+			FVector Pos = FVector::ZeroVector;
+			FVector MinP = Pos;
+			FVector MaxP = Pos;
+			float Heading = 0.0f;
+			const int32 Steps = FMath::CeilToInt(2.0f * PI / FMath::Max(YawRateRad, 0.001f) / Dt);
+			for (int32 Step = 0; Step < Steps; ++Step)
+			{
+				Heading += YawRateRad * Dt;
+				Pos += FVector(FMath::Cos(Heading), FMath::Sin(Heading), 0.0f) * 1600.0f * Dt;
+				MinP = FVector(FMath::Min(MinP.X, Pos.X), FMath::Min(MinP.Y, Pos.Y), 0.0f);
+				MaxP = FVector(FMath::Max(MaxP.X, Pos.X), FMath::Max(MaxP.Y, Pos.Y), 0.0f);
+			}
+			const float FlownDiameter = FMath::Max(MaxP.X - MinP.X, MaxP.Y - MinP.Y);
+			TestTrue(FString::Printf(TEXT("flown 30 deg bank turn diameter is %.0f cm"), FlownDiameter),
+					 FlownDiameter > 8000.0f && FlownDiameter < 10000.0f);
+		}
+	}
 
 	return true;
 }

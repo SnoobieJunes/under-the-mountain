@@ -17,6 +17,7 @@
 #include "SettingsWidget.generated.h"
 
 class UButton;
+class UScrollBox;
 class UTextBlock;
 class UWidget;
 
@@ -43,6 +44,28 @@ class UNDERTHEMOUNTAIN_API USettingsWidget : public UUserWidget
 	void ShowSettings();
 	void HideSettings();
 
+	// [2026-11-04] True while the panel is Visible (Show/Hide own
+	// this flag; the game mode's Back arbitration reads it first).
+	bool IsOpen() const
+	{
+		return bSettingsOpen;
+	}
+
+	// [2026-11-04] Back chain, step 1: when settings is open it
+	// consumes Back (Esc / DualSense Circle) before pause or the
+	// pawn ever see it — close, broadcast OnClosed (the opener
+	// restores its panel + focus), consume the press. Closed:
+	// not ours, return false so the chain continues.
+	bool HandleBack();
+
+	// [2026-11-04] The row scroll area (fixed-height panel; rows
+	// scroll inside it). Exposed so tests can pin the scrollbox
+	// instead of trusting the layout arithmetic.
+	UScrollBox* GetScrollBox() const
+	{
+		return SettingsScrollBox.Get();
+	}
+
 	// [2026-11-04] Close notification (see delegate above).
 	FOnUtmSettingsClosed OnClosed;
 
@@ -65,6 +88,12 @@ class UNDERTHEMOUNTAIN_API USettingsWidget : public UUserWidget
 	// [2026-11-04 T-088] Public like UGameFlowWidget (T-112) so the
 	// automation test can build the code-built tree headless.
 	virtual void NativeOnInitialized() override;
+
+  protected:
+	// [2026-11-04] Esc / Circle close settings from any focused
+	// row button (keys bubble from the focused control to here).
+	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry,
+								   const FKeyEvent& InKeyEvent) override;
 
   private:
 	UFUNCTION()
@@ -110,6 +139,11 @@ class UNDERTHEMOUNTAIN_API USettingsWidget : public UUserWidget
 
 	UPROPERTY(Transient)
 	TObjectPtr<UWidget> Panel = nullptr;
+	// [2026-11-04] Rows live inside this scrollbox (fixed panel
+	// height; the box, not the panel, grows past the fold).
+	UPROPERTY(Transient)
+	TObjectPtr<UScrollBox> SettingsScrollBox = nullptr;
+	bool bSettingsOpen = false;
 	// [2026-11-04] First control on the panel: ShowSettings points pad
 	// keyboard focus here so D-pad navigation starts somewhere sane.
 	UPROPERTY(Transient)

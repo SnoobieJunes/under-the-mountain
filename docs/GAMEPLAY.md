@@ -133,12 +133,24 @@ the HUD and DataAsset exist from day one.
 
 ### Flight model (target model — T-075 prototype decisions, 2026-10-31)
 
-The target model is a speed-blended hybrid. At speed the dragon flies by
-momentum: nose direction is the flight path, pitching down converts altitude
-to airspeed, pitching up spends airspeed to climb, and **dive is a posture,
-not a powered button**. At low airspeed the model fades to precision thrust:
-camera-relative translation, rise/sink, strafe, and hover-hold for the lair,
-caves, landings, and eating. Brake explicitly forces the precision band.
+The flight model is a speed-blended hybrid with a fixed-wing core
+(**[2026-11-04 FLIGHT-PHYSICS]**). At speed the dragon flies by lift
+and momentum: lift `L = 980 × (v/1600)² cm/s²` (clamped at
+2450 cm/s², only `cos(bank)` of it opposing gravity) holds level
+cruise at 1400–1800 cm/s altitude-neutral with no thrust, pitching
+down converts altitude to airspeed, pitching up spends airspeed to
+climb, and **dive is a posture, not a powered button**. Below
+600 cm/s lift cannot hold the dragon — slow momentum flight
+genuinely stalls and sinks — but it also cannot turn: turn
+authority fades to zero below 600 cm/s, so flight never yaws or
+spins in place. Steering is a coordinated banked turn: the left
+stick (X = bank to ±40° at 90°/s roll rate, Y = pitch command at
+60°/s) commands bank/pitch, yaw follows from
+`g·tan(bank)/max(v,600)` capped at the yaw-rate target, and
+velocity weathervanes onto the nose. At low airspeed the model
+fades to precision thrust: camera-relative translation, rise/sink,
+strafe, and hover-hold for the lair, caves, landings, and eating.
+Brake explicitly forces the precision band.
 **[2026-11-04 FLIGHT-VIGOR, owner override — supersedes the previous
 no-regen rule and the FLIGHT-SPIKE.md rejection it came from:] speed at
 or above 1800 cm/s DOES regenerate stamina (+3/s, the vigor band
@@ -155,10 +167,13 @@ pilot-skill loop, not a food stop.
 | Level terminal speed | 2400 cm/s | `[tuning: PT-STAM]` |
 | Surge ceiling | 3200 cm/s while Surging | `[tuning: PT-STAM]` |
 | Steep-dive terminal | 4000 cm/s starting value; test 3200/4000/4800 | `[tuning: PT-STAM]` `[derived: docs/FLIGHT-SPIKE.md turn-radius/world-crossing calculation]` |
-| Yaw-rate target | 90°/s precision fading to 55°/s at dive speed | `[tuning: PT-STAM]` |
+| Yaw-rate target | 90°/s precision fading to 55°/s at dive speed — now a **cap** on the coordinated-turn rate, not the turn law itself | `[tuning: PT-STAM]` |
+| Lift | `L = 980 × (v/1600)² cm/s²`, clamp 2450 cm/s²; vertical component `L·cos(bank)` vs gravity in `PhysCustom` (momentum weight only; precision/hover and Landing Assist unchanged) | `[2026-11-04 FLIGHT-PHYSICS]` `[derived: coefficient from gravity at the 1600 cruise reference — level cruise is altitude-neutral by construction, proven by the 10 s full-step sim in `UnderTheMountain.Dragon.Movement` (|Δalt| < 50 cm, in fact 0)]` |
+| Coordinated turn | Yaw rate `= 980·tan(bank)/max(v, 600)` in deg/s, × turn authority, capped at the yaw-rate target. 30° bank at 1600 cm/s → 20.3°/s, radius 4525 cm, **diameter ≈9049 cm** (flown-sim pinned 8000–10000 cm) | `[2026-11-04 FLIGHT-PHYSICS]` `[derived: real coordinated-turn formula; faster flight turns wider]` |
+| Turn authority | Smoothstep (squared) 0 at ≤200 cm/s → 1 at ≥600 cm/s (~0.02 at 300); below 600 flight cannot yaw-spin; precision/hover band is the separate unchanged model | `[2026-11-04 FLIGHT-PHYSICS]` |
 | Stall sink | 300 cm/s max (was 600) | `[2026-11-04 FLIGHT-VIGOR]` a stall sags, not drops, while the pilot dives or spends an impulse to recover |
-| RMB hold (sailing) | Mouse steers the nose pitch/yaw, rate-limited by the yaw-rate target; release keeps the nose (no camera snap-back); double-click RMB still latches steer-to-look, D-pad Up is its pad twin | `[2026-11-04 FLIGHT-VIGOR]` replaces RMB free-look (frozen nose) |
-| Bank | Commanded by turn input (A/D, pad left-stick X, RMB mouse-X) to ±35°; yaw rate derives from bank (`bank/35 × yaw-rate target`, sign per visual roll), bank is published to animation from the command, not the yaw derivative | `[2026-11-04 FLIGHT-VIGOR]` causal bank: lean first, turn second |
+| RMB hold (sailing) | Mouse steers through the same bank/pitch commands: queued mouse-X commands bank, mouse-Y commands pitch, both consumed at the bank/yaw and pitch rates; release keeps the nose (no camera snap-back); double-click RMB still latches steer-to-look (which now banks toward the view), L3 is its pad twin | `[2026-11-04 FLIGHT-PHYSICS]` replaces both RMB free-look (frozen nose) and direct rate-limited nose yaw |
+| Bank | Commanded by turn input (A/D, pad left-stick X, RMB mouse-X) to **±40°**, rolled at 90°/s; yaw rate derives from bank by the coordinated-turn law above, bank is published to animation from the command, not the yaw derivative; right stick remains camera only, left-stick Y is a pitch command (60°/s), never direct velocity | `[2026-11-04 FLIGHT-PHYSICS]` causal bank: lean first, turn second — no input yaws the dragon directly |
 | Landing Assist | F / gamepad top face near ground: brake to precision, flare, cap descent/drift, settle only inside the safe speed/angle envelope; unsafe approaches brake and warn instead of landing safely by magic | `[derived: owner feedback — a close-to-ground slow/land button is required UX]` |
 
 ### Drain / regen (per second unless stated) — all `[tuning: PT-STAM]`

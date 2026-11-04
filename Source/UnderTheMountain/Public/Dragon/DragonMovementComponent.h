@@ -133,6 +133,36 @@ struct FDragonFlightParams
 	// precision cap so the blend hands off with no step.
 	UPROPERTY(EditAnywhere, Category = "Dragon|Flight")
 	float PrecisionThrustSpeed = 650.0f;
+
+	// [2026-11-04 FLIGHT-PHYSICS] Fixed-wing lift reference: lift equals
+	// gravity (980 cm/s^2) at this airspeed, so level cruise at
+	// 1400-1800 cm/s is altitude-neutral with no thrust. Lift grows
+	// with airspeed squared from here (LiftAccel).
+	UPROPERTY(EditAnywhere, Category = "Dragon|Flight")
+	float CruiseLiftSpeed = 1600.0f;
+
+	// [2026-11-04 FLIGHT-PHYSICS] Lift clamp (2.5 x gravity): dive-speed
+	// lift cannot balloon the dragon skyward; excess speed is spent by
+	// pitching, per the energy model, not by raw vertical acceleration.
+	UPROPERTY(EditAnywhere, Category = "Dragon|Flight")
+	float MaxLiftAccel = 2450.0f;
+
+	// [2026-11-04 FLIGHT-PHYSICS] Coordinated-turn authority fade: zero
+	// at/below the zero speed, full at/above the full speed. Below
+	// 600 cm/s the dragon cannot yaw-spin in place while flying; the
+	// precision/hover band below that is a separate, unchanged model.
+	UPROPERTY(EditAnywhere, Category = "Dragon|Flight")
+	float TurnAuthorityZeroSpeed = 200.0f;
+	UPROPERTY(EditAnywhere, Category = "Dragon|Flight")
+	float TurnAuthorityFullSpeed = 600.0f;
+
+	// [2026-11-04 FLIGHT-PHYSICS] Command rates for the flight stick:
+	// bank rolls toward its target at this rate, stick-Y pitches the
+	// nose at this rate. Neither ever snaps the nose.
+	UPROPERTY(EditAnywhere, Category = "Dragon|Flight")
+	float BankRollRateDegPerSec = 90.0f;
+	UPROPERTY(EditAnywhere, Category = "Dragon|Flight")
+	float PitchCommandRateDegPerSec = 60.0f;
 };
 
 UCLASS(ClassGroup = (Dragon), meta = (BlueprintSpawnableComponent))
@@ -170,16 +200,46 @@ class UNDERTHEMOUNTAIN_API UDragonMovementComponent : public UCharacterMovementC
 	// full precision fading to 55 deg/s at dive speed.
 	static float YawRateForAirspeed(float Airspeed, const FDragonFlightParams& Params);
 
-	// [2026-11-04 FLIGHT-VIGOR] Causal bank: the turn input commands the
-	// bank first and yaw derives from it (never the reverse). MaxBank is
-	// the same 35-degree cap ComputeBankDegrees always clamped to.
-	// CommandedBankDegrees maps a [-1,1] turn input onto that cap
-	// (visual roll sign: positive yaw turns bank negative, matching the
-	// old yaw-derivative sign); YawRateForBank recovers the signed yaw
-	// rate as -Bank/MaxBank * YawRateForAirspeed. SteerStepDegrees is
-	// one rate-limited nose-steer step for RMB sailing: a pending
-	// mouse demand (degrees) clamped to the per-tick rate budget.
-	static constexpr float MaxBankDegrees = 35.0f;
+	// [2026-11-04 FLIGHT-PHYSICS] Fixed-wing lift, pure statics.
+	// LiftAccel(Airspeed) = GravityCM * (Airspeed / CruiseLiftSpeed)^2,
+	// clamped to MaxLiftAccel: exactly gravity at 1600 cm/s (level
+	// cruise 1400-1800 is altitude-neutral unpowered), ~138 cm/s^2 at
+	// 600 (genuine stall/sink), clamped at dive speeds. The banked
+	// overload folds in cos(bank) — only that fraction of lift opposes
+	// gravity in a turn. LiftVerticalAccel is the signed net vertical
+	// acceleration (lift*cos(bank) - gravity) PhysCustom integrates.
+	static float LiftAccel(float Airspeed);
+	static float LiftAccel(float Airspeed, const FDragonFlightParams& Params);
+	static float LiftAccel(float Airspeed, float BankDegrees, const FDragonFlightParams& Params);
+	static float LiftVerticalAccel(float Airspeed, float BankDegrees, const FDragonFlightParams& Params);
+
+	// [2026-11-04 FLIGHT-PHYSICS] Coordinated-turn authority in [0,1]:
+	// smoothstepped (squared) 0 at TurnAuthorityZeroSpeed to 1 at
+	// TurnAuthorityFullSpeed (600 cm/s). Below that band turn authority
+	// fades to near zero — no yaw-spin in place while flying.
+	static float TurnAuthority(float Airspeed);
+	static float TurnAuthority(float Airspeed, const FDragonFlightParams& Params);
+
+	// [2026-11-04 FLIGHT-PHYSICS] Coordinated banked-turn yaw rate
+	// (deg/s): GravityCM * tan(Bank) / max(Airspeed, 600), scaled by
+	// TurnAuthority and capped at YawRateForAirspeed so the shipped
+	// feel ceiling still bounds every turn. Sign follows the bank
+	// convention below (negative bank yaws positive). Pure.
+	static float CoordinatedYawRateDeg(float BankDegrees, float Airspeed);
+	static float CoordinatedYawRateDeg(float BankDegrees, float Airspeed,
+									   const FDragonFlightParams& Params);
+
+	// [2026-11-04 FLIGHT-PHYSICS] Causal bank: the turn input commands
+	// the bank first (target +-40 deg) and yaw derives from it via the
+	// coordinated-turn formula (never the reverse, never direct axis
+	// yaw). MaxBank is the commanded cap. CommandedBankDegrees maps a
+	// [-1,1] turn input onto that cap (visual roll sign: positive yaw
+	// turns bank negative, matching the old yaw-derivative sign);
+	// YawRateForBank is the coordinated rate for a bank (kept as the
+	// pawn/anim seam). SteerStepDegrees is one rate-limited step for
+	// RMB sailing / pitch commands: a pending demand (degrees) clamped
+	// to the per-tick rate budget.
+	static constexpr float MaxBankDegrees = 40.0f;
 	static float CommandedBankDegrees(float TurnInput);
 	static float YawRateForBank(float BankDegrees, float Airspeed, const FDragonFlightParams& Params);
 	static float SteerStepDegrees(float PendingDegrees, float MaxRateDegPerSec, float DeltaSeconds);

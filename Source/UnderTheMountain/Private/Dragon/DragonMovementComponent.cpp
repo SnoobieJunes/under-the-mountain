@@ -106,6 +106,80 @@ float UDragonMovementComponent::YawRateForAirspeed(float Airspeed, const FDragon
 	return Params.DiveYawRateDeg + (Params.PrecisionYawRateDeg - Params.DiveYawRateDeg) * W;
 }
 
+float UDragonMovementComponent::LiftAccel(float Airspeed, const FDragonFlightParams& Params)
+{
+	// [2026-11-04 FLIGHT-PHYSICS] Coefficient derived, not tuned: lift
+	// must equal gravity at CruiseLiftSpeed, so k = 980 / 1600^2 and
+	// Lift = k * v^2. Clamped so dive speeds cannot balloon.
+	const float V = FMath::Max(0.0f, Airspeed);
+	const float Ref = FMath::Max(1.0f, Params.CruiseLiftSpeed);
+	const float Raw = Params.GravityCM * FMath::Square(V / Ref);
+	return FMath::Min(Raw, FMath::Max(0.0f, Params.MaxLiftAccel));
+}
+
+float UDragonMovementComponent::LiftAccel(float Airspeed)
+{
+	return LiftAccel(Airspeed, FDragonFlightParams());
+}
+
+float UDragonMovementComponent::LiftAccel(float Airspeed, float BankDegrees,
+										  const FDragonFlightParams& Params)
+{
+	// [2026-11-04 FLIGHT-PHYSICS] Only cos(bank) of lift opposes
+	// gravity; the rest is what turns the flight path (coordinated
+	// turn below). Bank past 90 deg earns no vertical lift.
+	const float CosBank = FMath::Cos(FMath::DegreesToRadians(FMath::Clamp(BankDegrees, -90.0f, 90.0f)));
+	return LiftAccel(Airspeed, Params) * CosBank;
+}
+
+float UDragonMovementComponent::LiftVerticalAccel(float Airspeed, float BankDegrees,
+												  const FDragonFlightParams& Params)
+{
+	return LiftAccel(Airspeed, BankDegrees, Params) - Params.GravityCM;
+}
+
+float UDragonMovementComponent::TurnAuthority(float Airspeed, const FDragonFlightParams& Params)
+{
+	// [2026-11-04 FLIGHT-PHYSICS] Smoothstep fade 200 -> 600 cm/s,
+	// squared so the low end is genuinely near zero: zero at/below
+	// 200, ~0.02 at 300, ~0.25 at 400, 1 at/above 600.
+	const float Lo = Params.TurnAuthorityZeroSpeed;
+	const float Hi = FMath::Max(Lo + 1.0f, Params.TurnAuthorityFullSpeed);
+	const float T = FMath::Clamp((FMath::Max(0.0f, Airspeed) - Lo) / (Hi - Lo), 0.0f, 1.0f);
+	const float S = T * T * (3.0f - 2.0f * T);
+	return S * S;
+}
+
+float UDragonMovementComponent::TurnAuthority(float Airspeed)
+{
+	return TurnAuthority(Airspeed, FDragonFlightParams());
+}
+
+float UDragonMovementComponent::CoordinatedYawRateDeg(float BankDegrees, float Airspeed,
+													  const FDragonFlightParams& Params)
+{
+	// [2026-11-04 FLIGHT-PHYSICS] Real coordinated-turn law:
+	// yaw (rad/s) = g * tan(bank) / v. The denominator floor (600)
+	// plus TurnAuthority mean slow flight cannot spin; the cap keeps
+	// the shipped YawRateForAirspeed feel ceiling. Sign: the bank
+	// convention banks negative for a positive (yaw-increasing) turn.
+	const float Authority = TurnAuthority(Airspeed, Params);
+	if (Authority <= 0.0f)
+	{
+		return 0.0f;
+	}
+	const float V = FMath::Max(FMath::Max(0.0f, Airspeed), Params.TurnAuthorityFullSpeed);
+	const float RawDeg = -FMath::RadiansToDegrees(Params.GravityCM *
+												  FMath::Tan(FMath::DegreesToRadians(BankDegrees)) / V);
+	const float Cap = YawRateForAirspeed(Airspeed, Params);
+	return FMath::Clamp(RawDeg * Authority, -Cap, Cap);
+}
+
+float UDragonMovementComponent::CoordinatedYawRateDeg(float BankDegrees, float Airspeed)
+{
+	return CoordinatedYawRateDeg(BankDegrees, Airspeed, FDragonFlightParams());
+}
+
 float UDragonMovementComponent::CommandedBankDegrees(float TurnInput)
 {
 	// [2026-11-04 FLIGHT-VIGOR] Full stick/mouse demand banks to the cap;
@@ -117,9 +191,11 @@ float UDragonMovementComponent::CommandedBankDegrees(float TurnInput)
 float UDragonMovementComponent::YawRateForBank(float BankDegrees, float Airspeed,
 											   const FDragonFlightParams& Params)
 {
-	// [2026-11-04 FLIGHT-VIGOR] Yaw is the consequence of bank: full bank
-	// turns at the full airspeed yaw rate, wings-level does not turn.
-	return -BankDegrees / MaxBankDegrees * YawRateForAirspeed(Airspeed, Params);
+	// [2026-11-04 FLIGHT-PHYSICS] Yaw is the consequence of bank via
+	// the coordinated-turn law (g*tan(bank)/v, authority-faded and
+	// feel-capped), not a linear bank fraction. Wings-level never
+	// turns; slow flight barely turns at any bank.
+	return CoordinatedYawRateDeg(BankDegrees, Airspeed, Params);
 }
 
 float UDragonMovementComponent::SteerStepDegrees(float PendingDegrees, float MaxRateDegPerSec,
@@ -299,6 +375,13 @@ void UDragonMovementComponent::PhysCustom(float deltaTime, int32 Iterations)
 	}
 	const FVector NoseDir = NoseRot.Vector();
 	const float PitchRad = FMath::DegreesToRadians(NoseRot.Pitch);
+	// [2026-11-04 FLIGHT-PHYSICS] Commanded bank (pawn-owned, anim
+	// reads the same value): only cos(bank) of lift holds altitude.
+	float BankDegrees = 0.0f;
+	if (const ADragonCharacter* Dragon = Cast<ADragonCharacter>(CharacterOwner))
+	{
+		BankDegrees = Dragon->GetProtoBankDegrees();
+	}
 
 	float NewSpeed = IntegrateEnergyStep(Velocity.Size(), PitchRad, deltaTime, FlightParams);
 	// [2026-11-03 T-075] System-identification record (see CaptureFlightCsvRow).
@@ -367,6 +450,17 @@ void UDragonMovementComponent::PhysCustom(float deltaTime, int32 Iterations)
 		Desired = NoseDir * NewSpeed * (1.0f - AuthorityW) + PrecisionVel * AuthorityW;
 	}
 	Velocity = Velocity + (Desired - Velocity) * FMath::Min(1.0f, deltaTime * Steer);
+
+	// [2026-11-04 FLIGHT-PHYSICS] Lift vs gravity, momentum band only
+	// (weight 1 - AuthorityW: Scheme B / precision / Landing Assist
+	// keep their unchanged hover model, Scheme A/C flight must earn
+	// altitude with airspeed). At 1600 cm/s level this nets zero; at
+	// <600 the wing cannot hold the dragon (stall sink below adds its
+	// sag in pure momentum); at high speed the steer lag above turns
+	// excess lift into a climb the pilot trims with pitch. Energy is
+	// untouched: IntegrateEnergyStep still owns speed along the nose,
+	// so pitching up bleeds speed and diving gains it.
+	Velocity.Z += LiftVerticalAccel(NewSpeed, BankDegrees, FlightParams) * deltaTime * (1.0f - AuthorityW);
 
 	if (NewSpeed < FlightParams.StallSpeed && FlightParams.StallSpeed > 0.0f)
 	{

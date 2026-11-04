@@ -283,6 +283,42 @@ def clip_idle():
     export(arm, action, "dragon_v4_idle.fbx")
 
 
+def clip_walk():
+    # [2026-11-04 T-068 walk fix] The shipped Meshy walk clip is a statue
+    # (0.000 rad leg swing, proven by Dragon.WalkClipStride). This is a
+    # real diagonal gait: front-left + hind-right in phase, the other
+    # pair half a cycle out; upper swing 20 deg (0.35 rad), lower lifts
+    # during the swing half, foot compensates; wings folded, pelvis
+    # bobs twice per cycle. 24 frames at 24 fps, authored for ~300 cm/s
+    # (WalkPlayRate scales 0.5-1.5 with ground speed).
+    span, end = 23, 24
+    arm, action = open_rig("Walk", end)
+    pelvis, chest = pb(arm, "pelvis"), pb(arm, "chest")
+    pbind = tuple(pelvis.location)
+    phases = {("frontleg", "L"): 0.0, ("hindleg", "R"): 0.0,
+              ("frontleg", "R"): 0.5, ("hindleg", "L"): 0.5}
+    for frame in range(1, 25):
+        keyed = wing_pose(arm, 0, 0.0)
+        for (kind, side), phase in phases.items():
+            t = 2 * math.pi * ((frame - 1) / span + phase)
+            swing = math.sin(t)
+            lift = max(0.0, math.cos(t))
+            upper = pb(arm, f"{kind}_upper.{side}")
+            lower = pb(arm, f"{kind}_lower.{side}")
+            foot = pb(arm, f"{kind}_foot.{side}")
+            set_rot(upper, x=20.0 * swing)
+            set_rot(lower, x=-8.0 - 16.0 * lift)
+            set_rot(foot, x=-20.0 * swing + 8.0 + 10.0 * lift)
+            keyed += [upper, lower, foot]
+        keyed += tail_wave(arm, frame, span, 2.0)
+        bob = -0.015 * math.sin(4 * math.pi * (frame - 1) / span)
+        pelvis.location = (pbind[0], pbind[1], pbind[2] + bob)
+        set_rot(chest, x=1.0 * math.sin(2 * math.pi * (frame - 1) / span))
+        key(keyed + [chest], frame)
+        key([pelvis], frame, ("location",))
+    export(arm, action, "dragon_v4_walk.fbx")
+
+
 def clip_takeoff():
     arm, action = open_rig("Takeoff", 24)
     pelvis, chest = pb(arm, "pelvis"), pb(arm, "chest")
@@ -526,7 +562,7 @@ def clip_wingbuffet():
     export(arm, action, "dragon_v4_wingbuffet.fbx")
 
 
-CLIPS = (clip_fly, clip_glide, clip_hover, clip_idle, clip_takeoff, clip_land, clip_roar, clip_hit,
+CLIPS = (clip_fly, clip_glide, clip_hover, clip_idle, clip_walk, clip_takeoff, clip_land, clip_roar, clip_hit,
          clip_hitheavy, clip_defeat, clip_sleepidle, clip_wake, clip_liedown, clip_firepose,
          clip_claw, clip_biteeat, clip_tailwhip, clip_wingbuffet)
 

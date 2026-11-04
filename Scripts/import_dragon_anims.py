@@ -17,6 +17,8 @@ DST = "/Game/Meshy/Dragon"
 STAGE = DST + "/AnimImport"
 
 CLIPS = [
+    # [2026-11-04 walk fix] Authored gait replaces the statue Meshy walk.
+    ("dragon_v4_walk.fbx", "SK_Dragon_v4_Anim"),
     ("dragon_v4_flight.fbx", "SK_Dragon_v4_FlyAnim"),
     ("dragon_v4_glide.fbx", "SK_Dragon_v4_GlideAnim"),
     ("dragon_v4_hover.fbx", "SK_Dragon_v4_HoverAnim"),

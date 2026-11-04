@@ -10,10 +10,13 @@
 #include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
 #include "Components/CanvasPanel.h"
+#include "Components/ScrollBox.h"
 #include "Components/TextBlock.h"
 #include "Core/GameFlowMachine.h"
 #include "Hoard/HoardSubsystem.h"
+#include "InputCoreTypes.h"
 #include "UI/GameFlowWidget.h"
+#include "UI/MenuStyle.h"
 #include "UI/SettingsWidget.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -361,6 +364,11 @@ bool FFlowWidgetRenderTest::RunTest(const FString& Parameters)
 		{
 			TestTrue(*FString::Printf(TEXT("%s click is bound"), Buttons[I]),
 					 Button->OnClicked.IsBound());
+			// [2026-11-04] Hover-focus pin: mouse hover must take
+			// keyboard focus so a first-frame click works without
+			// an arrow-key warm-up (owner bug c).
+			TestTrue(*FString::Printf(TEXT("%s hover-focus is bound"), Buttons[I]),
+					 Button->OnHovered.IsBound());
 		}
 	}
 
@@ -372,14 +380,14 @@ bool FFlowWidgetRenderTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("title shows its panel"),
 			 Panels[0]->GetVisibility() == ESlateVisibility::Visible);
 	TestTrue(TEXT("title hides pause + end"),
-			 Panels[1]->GetVisibility() == ESlateVisibility::Hidden &&
-				 Panels[2]->GetVisibility() == ESlateVisibility::Hidden);
+			 Panels[1]->GetVisibility() == ESlateVisibility::Collapsed &&
+				 Panels[2]->GetVisibility() == ESlateVisibility::Collapsed);
 	Widget->ShowPause();
 	TestTrue(TEXT("pause shows its panel"),
 			 Panels[1]->GetVisibility() == ESlateVisibility::Visible);
 	TestTrue(TEXT("pause hides title + end"),
-			 Panels[0]->GetVisibility() == ESlateVisibility::Hidden &&
-				 Panels[2]->GetVisibility() == ESlateVisibility::Hidden);
+			 Panels[0]->GetVisibility() == ESlateVisibility::Collapsed &&
+				 Panels[2]->GetVisibility() == ESlateVisibility::Collapsed);
 	Widget->ShowEnd(EndedResult());
 	TestTrue(TEXT("end shows its panel"),
 			 Panels[2]->GetVisibility() == ESlateVisibility::Visible);
@@ -390,10 +398,70 @@ bool FFlowWidgetRenderTest::RunTest(const FString& Parameters)
 		TestFalse(TEXT("end outcome line renders text"), Outcome->GetText().IsEmpty());
 	}
 	Widget->HideAll();
-	TestTrue(TEXT("hide-all hides every panel"),
-			 Panels[0]->GetVisibility() == ESlateVisibility::Hidden &&
-				 Panels[1]->GetVisibility() == ESlateVisibility::Hidden &&
-				 Panels[2]->GetVisibility() == ESlateVisibility::Hidden);
+	TestTrue(TEXT("hide-all collapses every panel (collapsed-hidden invariant)"),
+			 Panels[0]->GetVisibility() == ESlateVisibility::Collapsed &&
+				 Panels[1]->GetVisibility() == ESlateVisibility::Collapsed &&
+				 Panels[2]->GetVisibility() == ESlateVisibility::Collapsed);
+	TestTrue(TEXT("hide-all tracks no visible panel"),
+			 Widget->GetVisiblePanel() == EGameFlowPanel::None);
+
+	// [2026-11-04] Title polish pins: Rainier subtitle + DualSense
+	// footer hint are rendered text, not intentions.
+	{
+		UTextBlock* Sub = Tree->FindWidget<UTextBlock>(FName(TEXT("FlowTitleSub")));
+		TestNotNull(TEXT("title subtitle exists"), Sub);
+		if (Sub != nullptr)
+		{
+			TestTrue(TEXT("title subtitle names Rainier"),
+					 Sub->GetText().ToString().Contains(TEXT("Rainier")));
+		}
+		UTextBlock* Footer = Tree->FindWidget<UTextBlock>(FName(TEXT("FlowTitleFooter")));
+		TestNotNull(TEXT("title footer hint exists"), Footer);
+		if (Footer != nullptr)
+		{
+			const FString Hint = Footer->GetText().ToString();
+			TestTrue(TEXT("footer names Cross select"), Hint.Contains(TEXT("Cross select")));
+			TestTrue(TEXT("footer names Circle back"), Hint.Contains(TEXT("Circle back")));
+		}
+	}
+
+	// [2026-11-04] Back chain, pure: settings beats pause, title
+	// and end ignore Back, and the Back keys are exactly Esc +
+	// Circle (Cross is select, never back).
+	TestTrue(TEXT("back key: Esc"),
+			 UtmMenuStyle::IsMenuBackKey(EKeys::Escape));
+	TestTrue(TEXT("back key: Circle"),
+			 UtmMenuStyle::IsMenuBackKey(EKeys::Gamepad_FaceButton_Right));
+	TestFalse(TEXT("Cross is not back"),
+			  UtmMenuStyle::IsMenuBackKey(EKeys::Gamepad_FaceButton_Bottom));
+	TestTrue(TEXT("settings-from-title back closes to title"),
+			 UGameFlowWidget::ResolveBackAction(true, true, EGameFlowPanel::Pause) ==
+				 EMenuBackAction::CloseSettingsToTitle);
+	TestTrue(TEXT("settings-from-pause back closes to pause"),
+			 UGameFlowWidget::ResolveBackAction(true, false, EGameFlowPanel::Title) ==
+				 EMenuBackAction::CloseSettingsToPause);
+	TestTrue(TEXT("pause back resumes"),
+			 UGameFlowWidget::ResolveBackAction(false, false, EGameFlowPanel::Pause) ==
+				 EMenuBackAction::ResumeRun);
+	TestTrue(TEXT("title back is ignored"),
+			 UGameFlowWidget::ResolveBackAction(false, true, EGameFlowPanel::Title) ==
+				 EMenuBackAction::Ignored);
+	TestTrue(TEXT("end back is ignored by the widget chain"),
+			 UGameFlowWidget::ResolveBackAction(false, false, EGameFlowPanel::End) ==
+				 EMenuBackAction::Ignored);
+
+	// [2026-11-04] Back behaviour without a game mode bound (the
+	// mode only adds TogglePauseRun on top of this): pause back
+	// consumes and clears the panels; title back does nothing.
+	Widget->ShowTitle();
+	TestFalse(TEXT("title HandleBack is not consumed"), Widget->HandleBack());
+	TestTrue(TEXT("title still visible after ignored back"),
+			 Panels[0]->GetVisibility() == ESlateVisibility::Visible);
+	Widget->ShowPause();
+	TestTrue(TEXT("pause HandleBack is consumed"), Widget->HandleBack());
+	TestTrue(TEXT("pause back clears every panel"),
+			 Panels[1]->GetVisibility() == ESlateVisibility::Collapsed &&
+				 Widget->GetVisiblePanel() == EGameFlowPanel::None);
 
 	// [2026-11-04] Settings round-trip: SETTINGS from title opens the
 	// settings panel and hides the flow panels; its CLOSE returns to
@@ -410,12 +478,47 @@ bool FFlowWidgetRenderTest::RunTest(const FString& Parameters)
 			UWidget* SettingsPanel =
 				SettingsTree != nullptr ? SettingsTree->FindWidget(FName(TEXT("SettingsPanelBorder"))) : nullptr;
 			TestNotNull(TEXT("settings panel exists"), SettingsPanel);
+			// [2026-11-04] Scroll pin (owner bug a): rows live in a
+			// UScrollBox inside the fixed panel; Close stays pinned
+			// outside it so it can never scroll out of reach.
+			UScrollBox* Scroll = Settings->GetScrollBox();
+			TestNotNull(TEXT("settings scrollbox exists"), Scroll);
+			if (SettingsTree != nullptr && Scroll != nullptr)
+			{
+				TestTrue(TEXT("settings scrollbox is the named widget"),
+						 SettingsTree->FindWidget<UScrollBox>(FName(TEXT("SettingsScrollBox"))) == Scroll);
+				UWidget* Rows = SettingsTree->FindWidget(FName(TEXT("SettingsRows")));
+				TestNotNull(TEXT("settings rows box exists"), Rows);
+				if (Rows != nullptr)
+				{
+					TestTrue(TEXT("settings rows hang under the scrollbox"),
+							 Rows->GetParent() == Scroll);
+				}
+				UButton* LastRow = SettingsTree->FindWidget<UButton>(FName(TEXT("SettingsReset")));
+				TestNotNull(TEXT("settings last row button exists"), LastRow);
+				if (LastRow != nullptr && Rows != nullptr)
+				{
+					TestTrue(TEXT("bottom row hangs under the rows box (scrollable)"),
+							 LastRow->GetParent() == Rows);
+					TestTrue(TEXT("settings buttons hover-focus is bound"),
+							 LastRow->OnHovered.IsBound());
+				}
+			}
 			UButton* TitleSettings = Tree->FindWidget<UButton>(FName(TEXT("FlowTitleSettings")));
 			UButton* PauseSettings = Tree->FindWidget<UButton>(FName(TEXT("FlowPauseSettings")));
 			UButton* Close = SettingsTree != nullptr
 								 ? SettingsTree->FindWidget<UButton>(FName(TEXT("SettingsClose")))
 								 : nullptr;
 			TestNotNull(TEXT("settings close button exists"), Close);
+			if (Close != nullptr && SettingsTree != nullptr)
+			{
+				UWidget* Outer = SettingsTree->FindWidget(FName(TEXT("SettingsPanel")));
+				TestTrue(TEXT("settings Close is pinned outside the scrollbox"),
+						 Outer != nullptr && Close->GetParent() == Outer);
+				TestTrue(TEXT("settings Close hover-focus is bound"), Close->OnHovered.IsBound());
+				TestFalse(TEXT("settings starts closed"), Settings->IsOpen());
+				TestFalse(TEXT("closed settings does not consume back"), Settings->HandleBack());
+			}
 			if (SettingsPanel != nullptr && TitleSettings != nullptr && Close != nullptr)
 			{
 				Widget->ShowTitle();
@@ -423,10 +526,20 @@ bool FFlowWidgetRenderTest::RunTest(const FString& Parameters)
 				TestTrue(TEXT("title SETTINGS opens settings"),
 						 SettingsPanel->GetVisibility() == ESlateVisibility::Visible);
 				TestTrue(TEXT("opening settings hides the title panel"),
-						 Panels[0]->GetVisibility() == ESlateVisibility::Hidden);
+						 Panels[0]->GetVisibility() == ESlateVisibility::Collapsed);
+				// [2026-11-04] Back (Esc/Circle route) from settings
+				// returns to title, same as Close (owner bug b).
+				TestTrue(TEXT("settings reports open"), Settings->IsOpen());
+				TestTrue(TEXT("flow HandleBack consumes settings back"), Widget->HandleBack());
+				TestTrue(TEXT("settings back hides settings"),
+						 SettingsPanel->GetVisibility() == ESlateVisibility::Collapsed);
+				TestTrue(TEXT("settings back returns to title"),
+						 Panels[0]->GetVisibility() == ESlateVisibility::Visible);
+				// Re-open and leave via the Close button (both exits agree).
+				TitleSettings->OnClicked.Broadcast();
 				Close->OnClicked.Broadcast();
 				TestTrue(TEXT("settings close hides settings"),
-						 SettingsPanel->GetVisibility() == ESlateVisibility::Hidden);
+						 SettingsPanel->GetVisibility() == ESlateVisibility::Collapsed);
 				TestTrue(TEXT("settings close returns to title"),
 						 Panels[0]->GetVisibility() == ESlateVisibility::Visible);
 			}
@@ -436,10 +549,17 @@ bool FFlowWidgetRenderTest::RunTest(const FString& Parameters)
 				PauseSettings->OnClicked.Broadcast();
 				TestTrue(TEXT("pause SETTINGS opens settings"),
 						 SettingsPanel->GetVisibility() == ESlateVisibility::Visible);
+				// [2026-11-04] Settings' own Back entry point (the
+				// Esc/Circle NativeOnKeyDown route) returns to pause.
+				TestTrue(TEXT("settings HandleBack consumes back"), Settings->HandleBack());
+				TestTrue(TEXT("settings back returns to pause (origin remembered)"),
+						 Panels[1]->GetVisibility() == ESlateVisibility::Visible &&
+							 Panels[0]->GetVisibility() == ESlateVisibility::Collapsed);
+				PauseSettings->OnClicked.Broadcast();
 				Close->OnClicked.Broadcast();
 				TestTrue(TEXT("settings close returns to pause (origin remembered)"),
 						 Panels[1]->GetVisibility() == ESlateVisibility::Visible &&
-							 Panels[0]->GetVisibility() == ESlateVisibility::Hidden);
+							 Panels[0]->GetVisibility() == ESlateVisibility::Collapsed);
 			}
 		}
 	}

@@ -370,6 +370,50 @@ void AUnderTheMountainGameMode::TogglePauseRun()
 	}
 }
 
+bool AUnderTheMountainGameMode::HandleMenuBack()
+{
+	// [2026-11-04] Back arbitration (see header for the chain):
+	// settings consumes first, then the flow widget's pause rule.
+	// Returning false leaves title/end/playing to their owners
+	// (pawn IA_Pause toggles pause from play, end -> title).
+	if (SettingsWidget != nullptr && SettingsWidget->HandleBack())
+	{
+		return true;
+	}
+	return FlowWidget != nullptr && FlowWidget->HandleBack();
+}
+
+void AUnderTheMountainGameMode::OnMenuSettingsOpened()
+{
+	// [2026-11-04] UIOnly focus follows the topmost menu widget;
+	// leaving it on the (now Collapsed) flow widget starved the
+	// settings mouse clicks until a keypress rebuilt focus.
+	if (APlayerController* PC = GetFlowController())
+	{
+		if (SettingsWidget != nullptr && (FlowMachine == nullptr || !FlowMachine->IsPlaying()))
+		{
+			FInputModeUIOnly InputMode;
+			InputMode.SetWidgetToFocus(SettingsWidget->TakeWidget());
+			PC->SetInputMode(InputMode);
+			PC->bShowMouseCursor = true;
+		}
+	}
+}
+
+void AUnderTheMountainGameMode::OnMenuSettingsClosed()
+{
+	if (APlayerController* PC = GetFlowController())
+	{
+		if (FlowWidget != nullptr && (FlowMachine == nullptr || !FlowMachine->IsPlaying()))
+		{
+			FInputModeUIOnly InputMode;
+			InputMode.SetWidgetToFocus(FlowWidget->TakeWidget());
+			PC->SetInputMode(InputMode);
+			PC->bShowMouseCursor = true;
+		}
+	}
+}
+
 void AUnderTheMountainGameMode::RestartRun()
 {
 	// [2026-11-03 T-072] Restart = reload the map: a fresh world means

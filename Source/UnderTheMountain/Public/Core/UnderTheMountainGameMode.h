@@ -41,6 +41,23 @@ class UNDERTHEMOUNTAIN_API AUnderTheMountainGameMode : public AGameModeBase
 	// HUD read this, the machine remains the only writer.
 	bool IsSandboxRun() const;
 	void TogglePauseRun();
+	// [2026-11-04] Menu Back arbitration (Esc / DualSense Circle),
+	// the single chain every Back source funnels through:
+	//   1. settings open -> settings closes, origin panel returns
+	//   2. pause visible -> resume the run
+	//   3. title / end / playing -> not consumed here
+	// The widgets' NativeOnKeyDown and the pawn's IA_Pause both
+	// call this (widgets first at menus: input mode is UIOnly
+	// there, so the pawn never sees the press; the pawn path is
+	// the resume-from-play route and must not double-toggle).
+	// Returns true when the press was consumed.
+	bool HandleMenuBack();
+	// [2026-11-04] Settings opened/closed: move the UIOnly focus
+	// target to the topmost menu widget (a stale focus target on
+	// the hidden flow widget is what left mouse clicks dead until
+	// a keypress re-established focus).
+	void OnMenuSettingsOpened();
+	void OnMenuSettingsClosed();
 	void RestartRun();
 	void QuitToTitle();
 	void QuitGame();

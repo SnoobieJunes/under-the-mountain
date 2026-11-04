@@ -14,58 +14,26 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Core/UnderTheMountainGameMode.h"
+#include "UI/MenuStyle.h"
 #include "UI/SettingsWidget.h"
+#include "Input/Reply.h"
 #include "Styling/SlateBrush.h"
 #include "Styling/SlateColor.h"
 
 namespace
 {
-// [2026-11-03 T-072] Same code-built styling contract as the intro
-// choice: flat brushes, centred labels, no engine-default grey.
+// [2026-11-04] Menu buttons/text come from the shared menu style
+// (UtmMenuStyle) so flow and settings cannot drift apart.
 UButton* MakeFlowButton(UWidgetTree* Tree, const TCHAR* Name, const FString& Label,
 						FLinearColor Normal, int32 FontSize)
 {
-	UButton* Button = Tree->ConstructWidget<UButton>(UButton::StaticClass(), Name);
-	if (!Button)
-	{
-		return nullptr;
-	}
-	FButtonStyle Style = Button->GetStyle();
-	Style.Normal = FSlateColorBrush(Normal);
-	Style.Hovered = FSlateColorBrush(Normal * 1.15f);
-	Style.Pressed = FSlateColorBrush(Normal * 0.8f);
-	Style.NormalPadding = FMargin(18.0f, 12.0f);
-	Style.PressedPadding = FMargin(18.0f, 12.0f);
-	Button->SetStyle(Style);
-	UTextBlock* Text = Tree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(),
-														 *(FString(Name) + TEXT("Label")));
-	if (Text)
-	{
-		Text->SetText(FText::FromString(Label));
-		FSlateFontInfo Font = Text->GetFont();
-		Font.Size = FontSize;
-		Text->SetFont(Font);
-		Text->SetColorAndOpacity(FSlateColor(FLinearColor::White));
-		Text->SetJustification(ETextJustify::Center);
-		Button->AddChild(Text);
-	}
-	return Button;
+	return UtmMenuStyle::MakeButton(Tree, Name, Label, Normal, FontSize);
 }
 
 UTextBlock* MakeFlowText(UWidgetTree* Tree, const TCHAR* Name, const FString& Text, int32 Size,
-						 FLinearColor Color)
+						 FLinearColor Color, bool bBold = false)
 {
-	UTextBlock* Label = Tree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), Name);
-	if (Label)
-	{
-		Label->SetText(FText::FromString(Text));
-		FSlateFontInfo Font = Label->GetFont();
-		Font.Size = Size;
-		Label->SetFont(Font);
-		Label->SetColorAndOpacity(FSlateColor(Color));
-		Label->SetJustification(ETextJustify::Center);
-	}
-	return Label;
+	return UtmMenuStyle::MakeText(Tree, Name, Text, Size, Color, bBold);
 }
 
 // [2026-11-03 T-112] One screen panel: a dim Border holding the content
@@ -74,7 +42,7 @@ UTextBlock* MakeFlowText(UWidgetTree* Tree, const TCHAR* Name, const FString& Te
 // empty). Returns the Border (the widget ShowOnly toggles); the Box comes
 // back via OutBox for filling.
 UBorder* MakeFlowPanel(UWidgetTree* Tree, UCanvasPanel* Canvas, const TCHAR* Name,
-					   UVerticalBox*& OutBox)
+					   UVerticalBox*& OutBox, FVector2D Size = FVector2D(600.0f, 540.0f))
 {
 	OutBox = nullptr;
 	UBorder* Panel = Tree->ConstructWidget<UBorder>(UBorder::StaticClass(),
@@ -85,15 +53,19 @@ UBorder* MakeFlowPanel(UWidgetTree* Tree, UCanvasPanel* Canvas, const TCHAR* Nam
 		return nullptr;
 	}
 	Panel->SetContent(Box);
-	Panel->SetVisibility(ESlateVisibility::Hidden);
-	Panel->SetBrushColor(FLinearColor(0.0f, 0.0f, 0.0f, 0.62f));
-	Panel->SetPadding(FMargin(36.0f, 28.0f));
+	// [2026-11-04] Hidden panels are Collapsed, never Hidden or
+	// HitTestInvisible: Collapsed removes layout AND hit-testing,
+	// so a non-current panel can never intercept a mouse click
+	// meant for the visible one.
+	Panel->SetVisibility(ESlateVisibility::Collapsed);
+	Panel->SetBrushColor(UtmMenuStyle::PanelTint());
+	Panel->SetPadding(FMargin(44.0f, 34.0f));
 	if (UCanvasPanelSlot* Slot = Canvas->AddChildToCanvas(Panel))
 	{
 		Slot->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
 		Slot->SetAlignment(FVector2D(0.5f, 0.5f));
 		Slot->SetPosition(FVector2D(0.0f, 0.0f));
-		Slot->SetSize(FVector2D(560.0f, 480.0f));
+		Slot->SetSize(Size);
 	}
 	OutBox = Box;
 	return Panel;
@@ -132,6 +104,12 @@ void UGameFlowWidget::OpenSettings(bool bFromTitle)
 	{
 		HideAll();
 		BoundSettings->ShowSettings();
+		// [2026-11-04] Move the UIOnly focus target to the widget
+		// now on top, or clicks keep landing on this (hidden) one.
+		if (AUnderTheMountainGameMode* Mode = BoundMode.Get())
+		{
+			Mode->OnMenuSettingsOpened();
+		}
 	}
 }
 
@@ -157,16 +135,80 @@ void UGameFlowWidget::HandleSettingsClosed()
 	{
 		ShowPause();
 	}
+	if (AUnderTheMountainGameMode* Mode = BoundMode.Get())
+	{
+		Mode->OnMenuSettingsClosed();
+	}
+}
+
+bool UGameFlowWidget::IsSettingsOpen() const
+{
+	return BoundSettings != nullptr && BoundSettings->IsOpen();
+}
+
+EMenuBackAction UGameFlowWidget::ResolveBackAction(bool bSettingsOpen, bool bSettingsFromTitle,
+												   EGameFlowPanel VisiblePanel)
+{
+	// [2026-11-04] Pure chain (see header): settings first, then
+	// pause-resume; title and end deliberately ignore Back.
+	if (bSettingsOpen)
+	{
+		return bSettingsFromTitle ? EMenuBackAction::CloseSettingsToTitle
+								  : EMenuBackAction::CloseSettingsToPause;
+	}
+	return VisiblePanel == EGameFlowPanel::Pause ? EMenuBackAction::ResumeRun
+												 : EMenuBackAction::Ignored;
+}
+
+bool UGameFlowWidget::HandleBack()
+{
+	switch (ResolveBackAction(IsSettingsOpen(), bSettingsFromTitle, VisiblePanel))
+	{
+	case EMenuBackAction::CloseSettingsToTitle:
+	case EMenuBackAction::CloseSettingsToPause:
+		// Settings' HandleBack hides it and broadcasts OnClosed;
+		// HandleSettingsClosed above re-shows the origin panel.
+		return BoundSettings != nullptr && BoundSettings->HandleBack();
+	case EMenuBackAction::ResumeRun:
+		HideAll();
+		if (AUnderTheMountainGameMode* Mode = BoundMode.Get())
+		{
+			Mode->TogglePauseRun();
+		}
+		return true;
+	case EMenuBackAction::Ignored:
+	default:
+		return false;
+	}
+}
+
+FReply UGameFlowWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+{
+	// [2026-11-04] Back chain (widget step): Esc / Circle bubbling
+	// up from the focused button land here. Consumed only when
+	// HandleBack acts; otherwise fall through to normal UI keys.
+	if (UtmMenuStyle::IsMenuBackKey(InKeyEvent.GetKey()) && HandleBack())
+	{
+		return FReply::Handled();
+	}
+	return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
 }
 
 void UGameFlowWidget::ShowOnly(UWidget* Panel)
 {
+	// [2026-11-04] Collapsed-hidden invariant: exactly one panel
+	// Visible, the rest Collapsed (never Hidden/HitTestInvisible,
+	// so a hidden panel takes no layout and eats no clicks).
+	VisiblePanel = Panel == TitlePanel.Get()   ? EGameFlowPanel::Title
+				   : Panel == PausePanel.Get() ? EGameFlowPanel::Pause
+				   : Panel == EndPanel.Get()   ? EGameFlowPanel::End
+											   : EGameFlowPanel::None;
 	for (UWidget* Candidate : {TitlePanel.Get(), PausePanel.Get(), EndPanel.Get()})
 	{
 		if (Candidate != nullptr)
 		{
 			Candidate->SetVisibility(Candidate == Panel ? ESlateVisibility::Visible
-														: ESlateVisibility::Hidden);
+														: ESlateVisibility::Collapsed);
 		}
 	}
 }
@@ -262,20 +304,29 @@ void UGameFlowWidget::NativeOnInitialized()
 	}
 	WidgetTree->RootWidget = Canvas;
 
-	const FLinearColor Ember(0.75f, 0.25f, 0.08f);
-	const FLinearColor Slate(0.25f, 0.28f, 0.35f);
-	const FLinearColor Gold(1.0f, 0.78f, 0.3f);
-	const FLinearColor Muted(0.75f, 0.78f, 0.85f);
+	const FLinearColor Ember = UtmMenuStyle::Ember();
+	const FLinearColor Slate = UtmMenuStyle::Slate();
+	const FLinearColor Gold = UtmMenuStyle::Gold();
+	const FLinearColor Muted = UtmMenuStyle::Muted();
+	// [2026-11-04] Footer hint on every panel, DualSense names
+	// first (the showcase pad), keyboard alongside.
+	const FString FooterHint = TEXT("Cross select  /  Circle back  /  Esc back");
 
-	// Title: game name, Start (begin the run), Quit (leave).
+	// [2026-11-04] Title hierarchy: large gold name, Rainier
+	// subtitle, gold rule, generous spacing, then the actions.
 	UVerticalBox* TitleBox = nullptr;
-	TitlePanel = MakeFlowPanel(WidgetTree, Canvas, TEXT("FlowTitle"), TitleBox);
+	TitlePanel = MakeFlowPanel(WidgetTree, Canvas, TEXT("FlowTitle"), TitleBox,
+							   FVector2D(640.0f, 560.0f));
 	if (TitleBox != nullptr)
 	{
-		TitleBox->AddChild(MakeFlowText(WidgetTree, TEXT("FlowTitleHead"), TEXT("UNDER THE MOUNTAIN"),
-										40, Gold));
+		TitleBox->AddChild(MakeFlowText(WidgetTree, TEXT("FlowTitleHead"),
+										TEXT("UNDER THE MOUNTAIN"), 48, Gold, true));
+		UtmMenuStyle::AddSpacer(WidgetTree, TitleBox, TEXT("FlowTitleSpacerA"), 8.0f);
 		TitleBox->AddChild(MakeFlowText(WidgetTree, TEXT("FlowTitleSub"),
-										TEXT("You are the dragon. Guard your hoard."), 16, Muted));
+										TEXT("You are the dragon of Rainier. Guard your hoard."),
+										17, Muted));
+		UtmMenuStyle::AddDivider(WidgetTree, TitleBox, TEXT("FlowTitleDivider"));
+		UtmMenuStyle::AddSpacer(WidgetTree, TitleBox, TEXT("FlowTitleSpacerB"), 10.0f);
 		if (UButton* Start = MakeFlowButton(WidgetTree, TEXT("FlowStart"), TEXT("START RUN"),
 											Ember, 20))
 		{
@@ -307,13 +358,19 @@ void UGameFlowWidget::NativeOnInitialized()
 			Quit->OnClicked.AddDynamic(this, &UGameFlowWidget::HandleQuit);
 			TitleBox->AddChild(Quit);
 		}
+		UtmMenuStyle::AddSpacer(WidgetTree, TitleBox, TEXT("FlowTitleSpacerC"), 14.0f);
+		TitleBox->AddChild(
+			MakeFlowText(WidgetTree, TEXT("FlowTitleFooter"), FooterHint, 13, Muted));
 	}
 	// Pause: resume the run, restart it clean, back out, or leave.
 	UVerticalBox* PauseBox = nullptr;
 	PausePanel = MakeFlowPanel(WidgetTree, Canvas, TEXT("FlowPause"), PauseBox);
 	if (PauseBox != nullptr)
 	{
-		PauseBox->AddChild(MakeFlowText(WidgetTree, TEXT("FlowPauseHead"), TEXT("PAUSED"), 32, Gold));
+		PauseBox->AddChild(
+			MakeFlowText(WidgetTree, TEXT("FlowPauseHead"), TEXT("PAUSED"), 36, Gold, true));
+		UtmMenuStyle::AddDivider(WidgetTree, PauseBox, TEXT("FlowPauseDivider"));
+		UtmMenuStyle::AddSpacer(WidgetTree, PauseBox, TEXT("FlowPauseSpacerA"), 8.0f);
 		if (UButton* Resume = MakeFlowButton(WidgetTree, TEXT("FlowResume"), TEXT("RESUME"),
 											 Ember, 20))
 		{
@@ -346,14 +403,18 @@ void UGameFlowWidget::NativeOnInitialized()
 			Quit->OnClicked.AddDynamic(this, &UGameFlowWidget::HandleQuit);
 			PauseBox->AddChild(Quit);
 		}
+		UtmMenuStyle::AddSpacer(WidgetTree, PauseBox, TEXT("FlowPauseSpacerB"), 14.0f);
+		PauseBox->AddChild(
+			MakeFlowText(WidgetTree, TEXT("FlowPauseFooter"), FooterHint, 13, Muted));
 	}
 	// End: outcome line rewritten per run, then the ways back.
 	UVerticalBox* EndBox = nullptr;
 	EndPanel = MakeFlowPanel(WidgetTree, Canvas, TEXT("FlowEnd"), EndBox);
 	if (EndBox != nullptr)
 	{
-		EndBox->AddChild(
-			MakeFlowText(WidgetTree, TEXT("FlowEndHead"), TEXT("THE RUN IS OVER"), 32, Gold));
+		EndBox->AddChild(MakeFlowText(WidgetTree, TEXT("FlowEndHead"), TEXT("THE RUN IS OVER"), 36,
+									  Gold, true));
+		UtmMenuStyle::AddDivider(WidgetTree, EndBox, TEXT("FlowEndDivider"));
 		EndOutcomeText = MakeFlowText(WidgetTree, TEXT("FlowEndOutcome"), TEXT(""), 18, Muted);
 		EndBox->AddChild(EndOutcomeText);
 		if (UButton* Restart = MakeFlowButton(WidgetTree, TEXT("FlowEndRestart"),
@@ -375,6 +436,8 @@ void UGameFlowWidget::NativeOnInitialized()
 			Quit->OnClicked.AddDynamic(this, &UGameFlowWidget::HandleQuit);
 			EndBox->AddChild(Quit);
 		}
+		UtmMenuStyle::AddSpacer(WidgetTree, EndBox, TEXT("FlowEndSpacer"), 14.0f);
+		EndBox->AddChild(MakeFlowText(WidgetTree, TEXT("FlowEndFooter"), FooterHint, 13, Muted));
 	}
 	HideAll();
 }

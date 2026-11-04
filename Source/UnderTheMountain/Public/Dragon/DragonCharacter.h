@@ -682,6 +682,10 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	FVector CourseMinXY = FVector::ZeroVector;
 	FVector CourseMaxXY = FVector::ZeroVector;
 	float CourseTouchSpeed = 0.0f;
+	// [2026-11-04 WALKFIX] Ground-walk leg (phases 8/9, run before liftoff):
+	// max ground speed seen while W is fed, and its 0.5 s evidence cadence.
+	float CourseWalkMaxSpeed = 0.0f;
+	float CourseWalkLogTimer = 0.0f;
 	void TickFlightCourse(float DeltaSeconds);
 	void QuitCourseGame();
 	void RestoreCoursePool(const TCHAR* LegName);

@@ -10,58 +10,29 @@
 #include "Components/Button.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/ScrollBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
+#include "Components/VerticalBoxSlot.h"
+#include "Input/Reply.h"
+#include "UI/MenuStyle.h"
 #include "Styling/SlateBrush.h"
 #include "Styling/SlateColor.h"
 
 namespace
 {
-// [2026-11-04 T-088] Same code-built styling contract as GameFlowWidget.
+// [2026-11-04] Shared menu style with the flow screens (see
+// UtmMenuStyle): same buttons, same text, same hover-focus.
 UButton* MakeSettingsButton(UWidgetTree* Tree, const TCHAR* Name, const FString& Label,
 							FLinearColor Normal, int32 FontSize)
 {
-	UButton* Button = Tree->ConstructWidget<UButton>(UButton::StaticClass(), Name);
-	if (!Button)
-	{
-		return nullptr;
-	}
-	FButtonStyle Style = Button->GetStyle();
-	Style.Normal = FSlateColorBrush(Normal);
-	Style.Hovered = FSlateColorBrush(Normal * 1.15f);
-	Style.Pressed = FSlateColorBrush(Normal * 0.8f);
-	Style.NormalPadding = FMargin(18.0f, 12.0f);
-	Style.PressedPadding = FMargin(18.0f, 12.0f);
-	Button->SetStyle(Style);
-	UTextBlock* Text = Tree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(),
-														 *(FString(Name) + TEXT("Label")));
-	if (Text)
-	{
-		Text->SetText(FText::FromString(Label));
-		FSlateFontInfo Font = Text->GetFont();
-		Font.Size = FontSize;
-		Text->SetFont(Font);
-		Text->SetColorAndOpacity(FSlateColor(FLinearColor::White));
-		Text->SetJustification(ETextJustify::Center);
-		Button->AddChild(Text);
-	}
-	return Button;
+	return UtmMenuStyle::MakeButton(Tree, Name, Label, Normal, FontSize);
 }
 
 UTextBlock* MakeSettingsText(UWidgetTree* Tree, const TCHAR* Name, const FString& Text,
-							 int32 Size, FLinearColor Color)
+							 int32 Size, FLinearColor Color, bool bBold = false)
 {
-	UTextBlock* Label = Tree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), Name);
-	if (Label)
-	{
-		Label->SetText(FText::FromString(Text));
-		FSlateFontInfo Font = Label->GetFont();
-		Font.Size = Size;
-		Label->SetFont(Font);
-		Label->SetColorAndOpacity(FSlateColor(Color));
-		Label->SetJustification(ETextJustify::Center);
-	}
-	return Label;
+	return UtmMenuStyle::MakeText(Tree, Name, Text, Size, Color, bBold);
 }
 } // namespace
 
@@ -122,6 +93,7 @@ void USettingsWidget::SetSettingsForTesting(const FUtmSettings& InSettings)
 void USettingsWidget::ShowSettings()
 {
 	ReloadFromSaved();
+	bSettingsOpen = true;
 	if (Panel != nullptr)
 	{
 		Panel->SetVisibility(ESlateVisibility::Visible);
@@ -135,10 +107,36 @@ void USettingsWidget::ShowSettings()
 
 void USettingsWidget::HideSettings()
 {
+	bSettingsOpen = false;
 	if (Panel != nullptr)
 	{
-		Panel->SetVisibility(ESlateVisibility::Hidden);
+		// [2026-11-04] Collapsed, never Hidden/HitTestInvisible:
+		// a closed settings panel takes no layout and eats no
+		// clicks on the flow panel beneath it (viewport 101 > 100).
+		Panel->SetVisibility(ESlateVisibility::Collapsed);
 	}
+}
+
+bool USettingsWidget::HandleBack()
+{
+	// [2026-11-04] Back chain step 1 (see header / game mode).
+	if (!bSettingsOpen)
+	{
+		return false;
+	}
+	HandleClose();
+	return true;
+}
+
+FReply USettingsWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+{
+	// [2026-11-04] Esc / Circle from any focused row button bubble
+	// here; HandleBack closes and the opener restores its panel.
+	if (UtmMenuStyle::IsMenuBackKey(InKeyEvent.GetKey()) && HandleBack())
+	{
+		return FReply::Handled();
+	}
+	return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
 }
 
 void USettingsWidget::CommitAndRefresh()
@@ -200,9 +198,10 @@ void USettingsWidget::NativeOnInitialized()
 	}
 	WidgetTree->RootWidget = Canvas;
 
-	const FLinearColor Ember(0.75f, 0.25f, 0.08f);
-	const FLinearColor Slate(0.25f, 0.28f, 0.35f);
-	const FLinearColor Gold(1.0f, 0.78f, 0.3f);
+	const FLinearColor Ember = UtmMenuStyle::Ember();
+	const FLinearColor Slate = UtmMenuStyle::Slate();
+	const FLinearColor Gold = UtmMenuStyle::Gold();
+	const FLinearColor Muted = UtmMenuStyle::Muted();
 
 	UBorder* PanelBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(),
 																TEXT("SettingsPanelBorder"));
@@ -213,28 +212,56 @@ void USettingsWidget::NativeOnInitialized()
 		return;
 	}
 	PanelBorder->SetContent(Box);
-	PanelBorder->SetVisibility(ESlateVisibility::Hidden);
-	PanelBorder->SetBrushColor(FLinearColor(0.0f, 0.0f, 0.0f, 0.62f));
-	PanelBorder->SetPadding(FMargin(36.0f, 28.0f));
+	PanelBorder->SetVisibility(ESlateVisibility::Collapsed);
+	PanelBorder->SetBrushColor(UtmMenuStyle::PanelTint());
+	PanelBorder->SetPadding(FMargin(40.0f, 30.0f));
 	if (UCanvasPanelSlot* Slot = Canvas->AddChildToCanvas(PanelBorder))
 	{
 		Slot->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
 		Slot->SetAlignment(FVector2D(0.5f, 0.5f));
 		Slot->SetPosition(FVector2D(0.0f, 0.0f));
-		Slot->SetSize(FVector2D(640.0f, 720.0f));
+		// [2026-11-04] Fixed panel height (560, was 720 and still
+		// overflowing): the panel never grows — the scrollbox
+		// inside absorbs every row past the fold.
+		Slot->SetSize(FVector2D(680.0f, 560.0f));
 	}
 	Panel = PanelBorder;
 
-	Box->AddChild(MakeSettingsText(WidgetTree, TEXT("SettingsHead"), TEXT("SETTINGS"), 32, Gold));
+	Box->AddChild(MakeSettingsText(WidgetTree, TEXT("SettingsHead"), TEXT("SETTINGS"), 36, Gold, true));
+	Box->AddChild(MakeSettingsText(WidgetTree, TEXT("SettingsSub"),
+								   TEXT("Display, sound and dragon handling."), 14, Muted));
+	UtmMenuStyle::AddDivider(WidgetTree, Box, TEXT("SettingsDivider"));
+
+	// [2026-11-04] Rows scroll inside a UScrollBox that fills the
+	// fixed panel between the heading and the pinned Close row.
+	// Mouse wheel scrolls it (default consume-when-scrollable),
+	// the visible scrollbar drags, and pad navigation scrolls the
+	// focused row into view — the bottom rows are reachable by
+	// every input, which the bare 720-tall VerticalBox denied.
+	SettingsScrollBox = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(),
+																TEXT("SettingsScrollBox"));
+	UVerticalBox* RowsBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(),
+																	  TEXT("SettingsRows"));
+	if (SettingsScrollBox == nullptr || RowsBox == nullptr)
+	{
+		return;
+	}
+	SettingsScrollBox->SetScrollBarVisibility(ESlateVisibility::Visible);
+	SettingsScrollBox->AddChild(RowsBox);
+	if (UVerticalBoxSlot* ScrollSlot = Box->AddChildToVerticalBox(SettingsScrollBox))
+	{
+		ScrollSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		ScrollSlot->SetPadding(FMargin(0.0f, 6.0f, 0.0f, 6.0f));
+	}
 
 	// [2026-11-04 T-088] One value label + buttons per field; every
 	// handler mutates Current then CommitAndRefresh (GameFlow pattern:
 	// explicit AddDynamic per button, no generic delegate plumbing).
-	auto AddRow = [this, Box](TObjectPtr<UTextBlock>& OutLabel, const TCHAR* LabelName)
+	auto AddRow = [this, RowsBox](TObjectPtr<UTextBlock>& OutLabel, const TCHAR* LabelName)
 	{
 		OutLabel = MakeSettingsText(WidgetTree, LabelName, TEXT(""), 16,
 									FLinearColor(0.75f, 0.78f, 0.85f));
-		Box->AddChild(OutLabel);
+		RowsBox->AddChild(OutLabel);
 	};
 
 	AddRow(ResolutionText, TEXT("SettingsResolution"));
@@ -242,87 +269,91 @@ void USettingsWidget::NativeOnInitialized()
 	{
 		B->OnClicked.AddDynamic(this, &USettingsWidget::HandleCycleResolution);
 		FirstButton = B;
-		Box->AddChild(B);
+		RowsBox->AddChild(B);
 	}
 	if (UButton* B = MakeSettingsButton(WidgetTree, TEXT("SettingsToggleFullscreen"), TEXT("TOGGLE FULLSCREEN"), Slate, 16))
 	{
 		B->OnClicked.AddDynamic(this, &USettingsWidget::HandleToggleFullscreen);
-		Box->AddChild(B);
+		RowsBox->AddChild(B);
 	}
 	AddRow(QualityText, TEXT("SettingsQuality"));
 	if (UButton* B = MakeSettingsButton(WidgetTree, TEXT("SettingsCycleQuality"), TEXT("CYCLE QUALITY"), Slate, 16))
 	{
 		B->OnClicked.AddDynamic(this, &USettingsWidget::HandleCycleQuality);
-		Box->AddChild(B);
+		RowsBox->AddChild(B);
 	}
 	AddRow(VolumeText, TEXT("SettingsVolume"));
 	if (UButton* B = MakeSettingsButton(WidgetTree, TEXT("SettingsVolumeDown"), TEXT("VOLUME -"), Slate, 16))
 	{
 		B->OnClicked.AddDynamic(this, &USettingsWidget::HandleVolumeDown);
-		Box->AddChild(B);
+		RowsBox->AddChild(B);
 	}
 	if (UButton* B = MakeSettingsButton(WidgetTree, TEXT("SettingsVolumeUp"), TEXT("VOLUME +"), Slate, 16))
 	{
 		B->OnClicked.AddDynamic(this, &USettingsWidget::HandleVolumeUp);
-		Box->AddChild(B);
+		RowsBox->AddChild(B);
 	}
 	AddRow(LookSensitivityText, TEXT("SettingsLookSensitivity"));
 	if (UButton* B = MakeSettingsButton(WidgetTree, TEXT("SettingsLookDown"), TEXT("LOOK SENSITIVITY -"), Slate, 16))
 	{
 		B->OnClicked.AddDynamic(this, &USettingsWidget::HandleLookSensitivityDown);
-		Box->AddChild(B);
+		RowsBox->AddChild(B);
 	}
 	if (UButton* B = MakeSettingsButton(WidgetTree, TEXT("SettingsLookUp"), TEXT("LOOK SENSITIVITY +"), Slate, 16))
 	{
 		B->OnClicked.AddDynamic(this, &USettingsWidget::HandleLookSensitivityUp);
-		Box->AddChild(B);
+		RowsBox->AddChild(B);
 	}
 	AddRow(FlightSensitivityText, TEXT("SettingsFlightSensitivity"));
 	if (UButton* B = MakeSettingsButton(WidgetTree, TEXT("SettingsFlightDown"), TEXT("FLIGHT SENSITIVITY -"), Slate, 16))
 	{
 		B->OnClicked.AddDynamic(this, &USettingsWidget::HandleFlightSensitivityDown);
-		Box->AddChild(B);
+		RowsBox->AddChild(B);
 	}
 	if (UButton* B = MakeSettingsButton(WidgetTree, TEXT("SettingsFlightUp"), TEXT("FLIGHT SENSITIVITY +"), Slate, 16))
 	{
 		B->OnClicked.AddDynamic(this, &USettingsWidget::HandleFlightSensitivityUp);
-		Box->AddChild(B);
+		RowsBox->AddChild(B);
 	}
 	AddRow(InvertMouseText, TEXT("SettingsInvertMouse"));
 	if (UButton* B = MakeSettingsButton(WidgetTree, TEXT("SettingsToggleInvertMouse"), TEXT("TOGGLE MOUSE INVERT"), Slate, 16))
 	{
 		B->OnClicked.AddDynamic(this, &USettingsWidget::HandleToggleInvertMouse);
-		Box->AddChild(B);
+		RowsBox->AddChild(B);
 	}
 	AddRow(InvertPadFlightText, TEXT("SettingsInvertPadFlight"));
 	if (UButton* B = MakeSettingsButton(WidgetTree, TEXT("SettingsToggleInvertPadFlight"), TEXT("TOGGLE PAD FLIGHT INVERT"), Slate, 16))
 	{
 		B->OnClicked.AddDynamic(this, &USettingsWidget::HandleToggleInvertPadFlight);
-		Box->AddChild(B);
+		RowsBox->AddChild(B);
 	}
 	AddRow(InvertPadCameraText, TEXT("SettingsInvertPadCamera"));
 	if (UButton* B = MakeSettingsButton(WidgetTree, TEXT("SettingsToggleInvertPadCamera"), TEXT("TOGGLE PAD CAMERA INVERT"), Slate, 16))
 	{
 		B->OnClicked.AddDynamic(this, &USettingsWidget::HandleToggleInvertPadCamera);
-		Box->AddChild(B);
+		RowsBox->AddChild(B);
 	}
 	AddRow(CameraText, TEXT("SettingsCamera"));
 	if (UButton* B = MakeSettingsButton(WidgetTree, TEXT("SettingsCycleCamera"), TEXT("CYCLE CAMERA"), Slate, 16))
 	{
 		B->OnClicked.AddDynamic(this, &USettingsWidget::HandleCycleCamera);
-		Box->AddChild(B);
+		RowsBox->AddChild(B);
 	}
 	AddRow(InfiniteStaminaText, TEXT("SettingsInfiniteStamina"));
 	if (UButton* B = MakeSettingsButton(WidgetTree, TEXT("SettingsToggleStamina"), TEXT("TOGGLE INFINITE STAMINA"), Ember, 16))
 	{
 		B->OnClicked.AddDynamic(this, &USettingsWidget::HandleToggleInfiniteStamina);
-		Box->AddChild(B);
+		RowsBox->AddChild(B);
 	}
 	if (UButton* B = MakeSettingsButton(WidgetTree, TEXT("SettingsReset"), TEXT("RESET DEFAULTS"), Slate, 16))
 	{
 		B->OnClicked.AddDynamic(this, &USettingsWidget::HandleResetDefaults);
-		Box->AddChild(B);
+		RowsBox->AddChild(B);
 	}
+	// [2026-11-04] Close is pinned BELOW the scrollbox (never
+	// scrolled away) with the DualSense footer hint above it.
+	Box->AddChild(MakeSettingsText(WidgetTree, TEXT("SettingsFooter"),
+								   TEXT("Cross select  /  Circle back  /  Esc back"), 13, Muted));
 	if (UButton* B = MakeSettingsButton(WidgetTree, TEXT("SettingsClose"), TEXT("CLOSE"), Ember, 16))
 	{
 		B->OnClicked.AddDynamic(this, &USettingsWidget::HandleClose);

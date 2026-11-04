@@ -18,6 +18,28 @@ class USettingsWidget;
 class UTextBlock;
 class UWidget;
 
+// [2026-11-04] Which flow panel is on screen (Collapsed panels are
+// not on screen). Tracked so the Back chain can decide from state,
+// never from guessing at Slate visibility.
+enum class EGameFlowPanel : uint8
+{
+	None,
+	Title,
+	Pause,
+	End
+};
+
+// [2026-11-04] What one Back press (Esc / DualSense Circle) must do.
+// The pure ResolveBackAction below returns this; HandleBack acts on
+// it. Split so the whole chain is headless-testable without Slate.
+enum class EMenuBackAction : uint8
+{
+	Ignored,
+	CloseSettingsToTitle,
+	CloseSettingsToPause,
+	ResumeRun
+};
+
 UCLASS()
 class UNDERTHEMOUNTAIN_API UGameFlowWidget : public UUserWidget
 {
@@ -46,6 +68,27 @@ class UNDERTHEMOUNTAIN_API UGameFlowWidget : public UUserWidget
 	void ShowEnd(const FGameFlowResult& Result);
 	void HideAll();
 
+	// [2026-11-04] Back chain, step 2 (the game mode arbitrates
+	// step 1 — see AUnderTheMountainGameMode::HandleMenuBack):
+	//   settings open  -> close it, return to its origin panel
+	//   pause visible  -> resume the run
+	//   title / end    -> ignored (Start / end buttons own those)
+	// Returns true when the press was consumed. NativeOnKeyDown
+	// (Esc / Circle) and the pawn's IA_Pause both funnel here via
+	// the game mode, so no path can double-toggle pause.
+	bool HandleBack();
+	bool IsSettingsOpen() const;
+	EGameFlowPanel GetVisiblePanel() const
+	{
+		return VisiblePanel;
+	}
+
+	// [2026-11-04] The pure Back decision (see EMenuBackAction):
+	// settings beats pause beats nothing. No widget state read —
+	// callers pass the facts, tests pin every combination.
+	static EMenuBackAction ResolveBackAction(bool bSettingsOpen, bool bSettingsFromTitle,
+											 EGameFlowPanel VisiblePanel);
+
 	// [2026-11-04 T-135] Pure end-screen text, tested verbatim:
 	// the verdict word for one outcome (Won / PyrrhicWin / Lost
 	// read as three different endings, never two), the resolution
@@ -65,6 +108,14 @@ class UNDERTHEMOUNTAIN_API UGameFlowWidget : public UUserWidget
 	// headless: Initialize skips this without a player context.
 	// Production still reaches it only via Initialize.
 	virtual void NativeOnInitialized() override;
+
+  protected:
+	// [2026-11-04] Esc / Circle arrive here from whichever button
+	// holds focus (key events bubble up from the focused control);
+	// the game-mode focus widget is this widget at menus, so no
+	// Back press can fall through to the pawn while a menu is up.
+	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry,
+								   const FKeyEvent& InKeyEvent) override;
 
   private:
 	UFUNCTION()
@@ -118,6 +169,8 @@ class UNDERTHEMOUNTAIN_API UGameFlowWidget : public UUserWidget
 	// [2026-11-04] Which panel opened settings (its panel + focus are
 	// restored on close). True = title, false = pause.
 	bool bSettingsFromTitle = true;
+	// [2026-11-04] Panel currently Visible; all others Collapsed.
+	EGameFlowPanel VisiblePanel = EGameFlowPanel::None;
 
 	void ShowOnly(UWidget* Panel);
 

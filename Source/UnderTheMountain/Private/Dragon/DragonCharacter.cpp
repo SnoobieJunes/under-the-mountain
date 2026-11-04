@@ -548,6 +548,16 @@ void ADragonCharacter::HandlePause()
 		return;
 	}
 	const UGameFlowMachine::EState State = Mode->GetFlowState();
+	// [2026-11-04] Menu Back arbitration first: settings open or
+	// pause visible consume Esc/Circle here (settings closes to
+	// its origin panel; pause resumes once, never double-toggles
+	// through the state routing below). At menus the input mode
+	// is UIOnly, so the widgets' NativeOnKeyDown is the path that
+	// actually fires; this pawn route covers play and must agree.
+	if (Mode->HandleMenuBack())
+	{
+		return;
+	}
 	if (State == UGameFlowMachine::EState::Playing ||
 		State == UGameFlowMachine::EState::Paused)
 	{
@@ -3460,26 +3470,35 @@ void ADragonCharacter::UpdatePrototypeFlight(float DeltaSeconds)
 		}
 		if (IsPrototypeFlying())
 		{
-			// [2026-11-04 FLIGHT-VIGOR] Steering, in causal order: turn
-			// input commands ProtoBankDegrees first, yaw derives from
-			// the bank (YawRateForBank), and the nose follows. RMB-hold
-			// sails: mouse demand queued by HandleLook steers ProtoNose
-			// pitch/yaw rate-limited by YawRateForAirspeed, with the
-			// control rotation kept on the nose so release has nothing
-			// to snap back. Latched, the nose turns toward the view at
-			// the same limit (T-063 steer-to-look). The course program
-			// owns the nose while bCourseFlying.
+			// [2026-11-04 FLIGHT-PHYSICS] Steering, in causal order:
+			// turn input commands ProtoBankDegrees first (target
+			// +-40 deg, rolled at BankRollRateDegPerSec), yaw derives
+			// from the bank by the coordinated-turn law
+			// (CoordinatedYawRateDeg: g*tan(bank)/v, faded below
+			// 600 cm/s, capped at YawRateForAirspeed), and velocity
+			// weathervanes onto the nose in PhysCustom. No input yaws
+			// the dragon directly, so flight can never spin in place.
+			// Stick Y is a pitch COMMAND (nose moves at
+			// PitchCommandRateDegPerSec), never direct velocity.
+			// Right stick stays camera (HandlePadLook untouched).
+			// RMB-hold sails through the same bank/pitch commands:
+			// queued mouse-X commands bank, queued mouse-Y commands
+			// pitch, both consumed at their rate budgets. Latched
+			// steer-to-look banks toward the view the same way. The
+			// course program owns the nose while bCourseFlying.
 			if (!bCourseFlying)
 			{
 				const float AirspeedNow = Move->Velocity.Size();
-				const bool bMomentumBand =
-					UDragonMovementComponent::PrecisionAuthorityWeight(AirspeedNow, Proto->FlightParams) < 0.5f;
+				const bool bBankSteering =
+					UDragonMovementComponent::PrecisionAuthorityWeight(AirspeedNow, Proto->FlightParams) < 1.0f;
 				// Turn sources, in authority order: RMB mouse-X while
-				// sailing, A/D or pad left-stick X, latched mouse-X.
+				// sailing (queued degrees: 20 deg of queue = full
+				// bank), A/D or pad left-stick X, latched steer-to-look
+				// (bank toward the view, proportional to heading error).
 				float TurnInput = 0.0f;
 				if (bSteerHeld && !FMath::IsNearlyZero(PendingSteerDegrees.X))
 				{
-					TurnInput = FMath::Clamp(PendingSteerDegrees.X, -1.0f, 1.0f);
+					TurnInput = FMath::Clamp(PendingSteerDegrees.X / 20.0f, -1.0f, 1.0f);
 				}
 				else if (FMath::Abs(LastMoveAxis.X) > 0.1f)
 				{
@@ -3487,26 +3506,36 @@ void ADragonCharacter::UpdatePrototypeFlight(float DeltaSeconds)
 				}
 				else if (bSteerLatch)
 				{
-					TurnInput = LastMouseTurnInput;
+					TurnInput = FMath::Clamp(
+						FMath::FindDeltaAngleDegrees(ProtoNose.Yaw, GetControlRotation().Yaw) / 40.0f, -1.0f, 1.0f);
 				}
 				const float TargetBank = UDragonMovementComponent::CommandedBankDegrees(TurnInput);
-				ProtoBankDegrees =
-					FMath::FInterpConstantTo(ProtoBankDegrees, TargetBank, DeltaSeconds, 180.0f);
+				ProtoBankDegrees = FMath::FInterpConstantTo(ProtoBankDegrees, TargetBank, DeltaSeconds,
+															Proto->FlightParams.BankRollRateDegPerSec);
 				// [2026-11-03 T-103] Trap slow widens turns (bank yaw
 				// scales with the thrust factor, as the old direct yaw did).
 				const float DerivedYawRate =
-					UDragonMovementComponent::YawRateForBank(ProtoBankDegrees, AirspeedNow, Proto->FlightParams) *
+					UDragonMovementComponent::CoordinatedYawRateDeg(ProtoBankDegrees, AirspeedNow,
+																	Proto->FlightParams) *
 					Proto->TrapSlowFactor;
 				if (bSteerHeld)
 				{
-					const float SteerRate = UDragonMovementComponent::YawRateForAirspeed(
-												AirspeedNow, Proto->FlightParams) *
-											Proto->TrapSlowFactor;
-					const float StepYaw = UDragonMovementComponent::SteerStepDegrees(
-						PendingSteerDegrees.X, SteerRate, DeltaSeconds);
+					// [2026-11-04 FLIGHT-PHYSICS] Sailing consumes the
+					// queue through the bank/pitch commands: yaw only
+					// at the coordinated rate the current bank earns
+					// (queue dies at that rate, so a flick turns at
+					// the bank's pace, never faster), pitch at the
+					// pitch-command rate. Control rotation rides the
+					// nose so release has nothing to snap back.
+					float StepYaw = DerivedYawRate * DeltaSeconds;
+					if (!FMath::IsNearlyZero(PendingSteerDegrees.X))
+					{
+						StepYaw = UDragonMovementComponent::SteerStepDegrees(
+							PendingSteerDegrees.X, FMath::Abs(DerivedYawRate), DeltaSeconds);
+						PendingSteerDegrees.X -= StepYaw;
+					}
 					const float StepPitch = UDragonMovementComponent::SteerStepDegrees(
-						PendingSteerDegrees.Y, SteerRate, DeltaSeconds);
-					PendingSteerDegrees.X -= StepYaw;
+						PendingSteerDegrees.Y, Proto->FlightParams.PitchCommandRateDegPerSec, DeltaSeconds);
 					PendingSteerDegrees.Y -= StepPitch;
 					ProtoNose.Yaw = FMath::UnwindDegrees(ProtoNose.Yaw + StepYaw);
 					ProtoNose.Pitch = FMath::Clamp(ProtoNose.Pitch + StepPitch, -89.0f, 89.0f);
@@ -3518,44 +3547,53 @@ void ADragonCharacter::UpdatePrototypeFlight(float DeltaSeconds)
 				}
 				else if (bSteerLatch)
 				{
-					// [2026-11-03 T-103] Latch turns widen under trap slow too.
-					const float MaxTurn = UDragonMovementComponent::YawRateForAirspeed(
-											  Move->Velocity.Size(), Proto->FlightParams) *
-										  Proto->TrapSlowFactor;
-					ProtoNose = FMath::RInterpConstantTo(ProtoNose, GetControlRotation(), DeltaSeconds, MaxTurn);
+					// [2026-11-04 FLIGHT-PHYSICS] Latched steer-to-look
+					// banks toward the view (TurnInput above) and yaws
+					// only at the coordinated rate; pitch chases the
+					// view at the pitch-command rate. No RInterp snap
+					// at the old yaw ceiling, no spin at low speed.
+					ProtoNose.Yaw = FMath::UnwindDegrees(ProtoNose.Yaw + DerivedYawRate * DeltaSeconds);
+					const float PitchDelta =
+						FMath::FindDeltaAngleDegrees(ProtoNose.Pitch, GetControlRotation().Pitch);
+					const float PitchBudget = Proto->FlightParams.PitchCommandRateDegPerSec * DeltaSeconds;
+					ProtoNose.Pitch =
+						FMath::Clamp(ProtoNose.Pitch + FMath::Clamp(PitchDelta, -PitchBudget, PitchBudget),
+									 -89.0f, 89.0f);
+					ProtoNose.Roll = 0.0f;
+				}
+				else if (bBankSteering)
+				{
+					// [2026-11-04 FLIGHT-PHYSICS] Flight band: the
+					// bank (above) yaws the NOSE at the coordinated
+					// rate — the controller/camera is not yawed, so
+					// the right stick / mouse stay camera. Pad
+					// left-stick Y is a pitch command at the pitch
+					// rate (forward stick pitches down toward a dive,
+					// back stick up to climb, same sign the old
+					// controller-pitch path produced). The precision
+					// band below keeps A/D as strafe thrust and the
+					// nose on the view (integrator PendingInput).
+					ProtoNose.Yaw = FMath::UnwindDegrees(ProtoNose.Yaw + DerivedYawRate * DeltaSeconds);
+					if (bLastMoveFromGamepad && FMath::Abs(LastMoveAxis.Y) > 0.2f)
+					{
+						ProtoNose.Pitch = FMath::Clamp(
+							ProtoNose.Pitch + FMath::Clamp(LastMoveAxis.Y, -1.0f, 1.0f) *
+												  Proto->FlightParams.PitchCommandRateDegPerSec *
+												  (InvertPadFlightPitch() ? -1.0f : 1.0f) * DeltaSeconds,
+							-89.0f, 89.0f);
+					}
+					ProtoNose.Roll = 0.0f;
 				}
 				else
 				{
-					// [2026-11-03 T-062] A/D in the momentum band: bank
-					// (above) yaws the controller so camera and nose
-					// agree, and the nose follows below. The precision
-					// band keeps A/D as strafe thrust (integrator
-					// PendingInput), so no branch is needed there.
-					if (Controller != nullptr && FMath::Abs(LastMoveAxis.X) > 0.1f && bMomentumBand)
-					{
-						AddControllerYawInput(DerivedYawRate * DeltaSeconds);
-					}
-					// [2026-11-03 T-065] Pad left-stick aims the nose in the
-					// momentum band (adopted flight grammar): forward stick
-					// pitches down toward a dive, back stick pitches up to
-					// climb. Keyboard keeps mouse-aim (S never pitches).
-					// Runs before the nose-follow below so the nose picks
-					// up the pitched view the same tick.
-					if (bLastMoveFromGamepad && Controller != nullptr && FMath::Abs(LastMoveAxis.Y) > 0.2f &&
-						bMomentumBand)
-					{
-						AddControllerPitchInput(LastMoveAxis.Y *
-												UDragonMovementComponent::YawRateForAirspeed(
-													Move->Velocity.Size(), Proto->FlightParams) *
-												(InvertPadFlightPitch() ? -1.0f : 1.0f) * DeltaSeconds);
-					}
 					ProtoNose = GetControlRotation();
 				}
 				LastMouseTurnInput = 0.0f;
 			}
 			else
 			{
-				ProtoBankDegrees = FMath::FInterpConstantTo(ProtoBankDegrees, 0.0f, DeltaSeconds, 180.0f);
+				ProtoBankDegrees = FMath::FInterpConstantTo(ProtoBankDegrees, 0.0f, DeltaSeconds,
+															Proto->FlightParams.BankRollRateDegPerSec);
 			}
 			Proto->bProtoAutoThrust = bSteerLatch;
 			// [2026-11-04 FLIGHT-VIGOR] Signed speed-band stamina (owner
@@ -3753,7 +3791,9 @@ void ADragonCharacter::TickFlightCourse(float DeltaSeconds)
 		{
 			Stats->Stamina = Stats->MaxStamina;
 			bCourseFlying = true;
-			CoursePhase = 0;
+			// [2026-11-04 WALKFIX] Ground legs first (8 walk, 9 idle-return);
+			// the flight legs keep their numbers and start at phase 0.
+			CoursePhase = 8;
 			CoursePhaseTime = 0.0f;
 			CourseTotalTime = 0.0f;
 			CourseLog(TEXT("FlightCourse armed: full pool, scheme %d (legs: climb, turn, brake, hover, land)"),
@@ -3932,6 +3972,78 @@ void ADragonCharacter::TickFlightCourse(float DeltaSeconds)
 					  CourseTouchSpeed, Stats->HP,
 					  Move->MovementMode == MOVE_Walking ? TEXT("held") : TEXT("beat by timeout"));
 			CoursePhase = 7;
+			CoursePhaseTime = 0.0f;
+		}
+		break;
+	case 8: // [2026-11-04 WALKFIX] Ground walk: settle 1 s, then feed the
+		// exact player W path (HandleMoveAxis) for 5 s. Evidence is sampled
+		// from the AnimInstance's published state, not recomputed here, so a
+		// sustained ANIMSTATE state=1 line-set proves the whole chain
+		// (mode -> velocity -> GroundSpeed -> state -> ABP Walk).
+		if (CoursePhaseTime <= DeltaSeconds * 1.5f)
+		{
+			CourseMark = GetActorLocation();
+			CourseWalkMaxSpeed = 0.0f;
+			CourseWalkLogTimer = 0.0f;
+			CourseLog(TEXT("CourseLeg walk: start mode=%d speed2d=%.0f pos=%s"),
+					  static_cast<int32>(Move->MovementMode), Move->Velocity.Size2D(),
+					  *GetActorLocation().ToString());
+		}
+		if (CoursePhaseTime > 1.0f)
+		{
+			HandleMoveAxis(FVector2D(0.0f, 1.0f), false);
+			CourseWalkMaxSpeed = FMath::Max(CourseWalkMaxSpeed, Move->Velocity.Size2D());
+			CourseWalkLogTimer += DeltaSeconds;
+			if (CourseWalkLogTimer >= 0.5f)
+			{
+				CourseWalkLogTimer = 0.0f;
+				int32 AnimState = -1;
+				float AnimGroundSpeed = -1.0f;
+				float AnimWalkRate = -1.0f;
+				if (const UDragonAnimInstance* Anim =
+						Cast<UDragonAnimInstance>(GetMesh()->GetAnimInstance()))
+				{
+					AnimState = static_cast<int32>(Anim->LocomotionState);
+					AnimGroundSpeed = Anim->GroundSpeed;
+					AnimWalkRate = Anim->WalkPlayRate;
+				}
+				// [2026-11-04 WALKFIX] Leg-bone rotation at the sample: a
+				// stepping Walk cycle swings frontleg_upper_L through its
+				// stride; a graph stuck in Idle (or a clip with no stride)
+				// holds it constant while the pawn translates.
+				const FRotator LegRot =
+					GetMesh()->GetBoneQuaternion(TEXT("frontleg_upper_L"), EBoneSpaces::ComponentSpace).Rotator();
+				CourseLog(TEXT("ANIMSTATE state=%d mode=%d speed2d=%.0f animGround=%.0f walkRate=%.2f legP=%.1f legY=%.1f legR=%.1f pos=%s"),
+						  AnimState, static_cast<int32>(Move->MovementMode), Move->Velocity.Size2D(),
+						  AnimGroundSpeed, AnimWalkRate, LegRot.Pitch, LegRot.Yaw, LegRot.Roll,
+						  *GetActorLocation().ToString());
+			}
+		}
+		if (CoursePhaseTime >= 6.0f)
+		{
+			HandleMoveEnd();
+			CourseLog(TEXT("CourseLeg walk: dist=%.0fcm maxSpeed2d=%.0f endMode=%d"),
+					  (GetActorLocation() - CourseMark).Size2D(), CourseWalkMaxSpeed,
+					  static_cast<int32>(Move->MovementMode));
+			CoursePhase = 9;
+			CoursePhaseTime = 0.0f;
+			CourseMark = GetActorLocation();
+		}
+		break;
+	case 9: // [2026-11-04 WALKFIX] Idle return: no input for 1.5 s; the pawn
+		// must decelerate and the published state must fall back to Idle
+		// (state=0) before the takeoff leg reuses phase 0.
+		if (CoursePhaseTime >= 1.5f)
+		{
+			int32 AnimState = -1;
+			if (const UDragonAnimInstance* Anim =
+					Cast<UDragonAnimInstance>(GetMesh()->GetAnimInstance()))
+			{
+				AnimState = static_cast<int32>(Anim->LocomotionState);
+			}
+			CourseLog(TEXT("CourseLeg idle-return: speed2d=%.0f animstate=%d mode=%d"),
+					  Move->Velocity.Size2D(), AnimState, static_cast<int32>(Move->MovementMode));
+			CoursePhase = 0;
 			CoursePhaseTime = 0.0f;
 		}
 		break;
