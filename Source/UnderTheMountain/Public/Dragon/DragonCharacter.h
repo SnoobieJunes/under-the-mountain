@@ -39,17 +39,23 @@ class UAnimSequence;
 // [2026-11-01 T-068] EDragonAnimState is owned by DragonAnimInstance.h
 // [2026-11-01 T-068] (included above, before generated.h per UHT rules).
 
-// [2026-11-03 T-065] Camera set (T-065): head/eye-anchored close chase
-// (default), wide scenic chase, first-person from the head. The pawn
+// [2026-11-03 T-065] Camera set (T-065): near chase above the wings
+// (default), far scenic chase, first-person at the eyes. The pawn
 // cycles the set and persists the choice; T-088's Settings screen
 // surfaces the same value later. Global scope: UENUM cannot live inside
 // the pawn class.
+// [2026-11-04 T-111] Rework (T-111, owner spec): Eyes -> Near -> Far order
+// [2026-11-04 T-111] opening on Near, tuned to the T-113 v6 rig. Indices are
+// [2026-11-04 T-111] stable on purpose (Near 0 / Far 1 / Eyes 2): a T-065 save
+// [2026-11-04 T-111] slot migrates to its closest match (close chase -> Near,
+// [2026-11-04 T-111] wide -> Far, first-person -> Eyes) instead of stranding
+// [2026-11-04 T-111] the player in a hidden-mesh first-person view.
 UENUM(BlueprintType)
 enum class EDragonCameraMode : uint8
 {
-	HeadChase UMETA(DisplayName = "Head/eye-anchored close chase (default)"),
-	WideScenic UMETA(DisplayName = "Wide scenic chase"),
-	FirstPerson UMETA(DisplayName = "First-person from the head"),
+	Near UMETA(DisplayName = "Near chase above the wings (default)"),
+	Far UMETA(DisplayName = "Far scenic chase"),
+	Eyes UMETA(DisplayName = "First-person at the dragon's eyes"),
 };
 
 UCLASS()
@@ -194,15 +200,30 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// state only, never writes pools.
 	void FlightStateFlags(bool& bOutDiving, bool& bOutBraking, bool& bOutHovering) const;
 
-	// [2026-11-03 T-065] Camera set: steps HeadChase → WideScenic →
-	// FirstPerson and persists the choice (SaveGame slot below). World-free
-	// apart from the slot file itself, so the order + persistence round-trip
-	// is headless-testable.
+	// [2026-11-03 T-065] Camera set: steps Near → Far → Eyes
+	// [2026-11-04 T-111] (Eyes -> Near -> Far cyclic order, entered at the
+	// [2026-11-04 T-111] Near default) and persists the choice (SaveGame slot
+	// [2026-11-04 T-111] below). World-free apart from the slot file itself,
+	// [2026-11-04 T-111] so the order + persistence round-trip is
+	// [2026-11-04 T-111] headless-testable.
 	void CycleCamera();
+	// [2026-11-04 T-111] Pure rig decisions per mode (arm, mesh visibility,
+	// [2026-11-04 T-111] boom collision) — the headless-testable half of
+	// [2026-11-04 T-111] ApplyCameraRig. Pivots need live bones and ride the
+	// [2026-11-04 T-111] -game capture set instead.
+	static void CameraRigForMode(EDragonCameraMode Mode, float& OutArmLength, bool& bOutHideMesh,
+								 bool& bOutCollide);
 	EDragonCameraMode GetCameraMode() const;
 	void SetCameraSaveSlotForTesting(const FString& SlotName);
 	void LoadCameraChoice();
 	void SaveCameraChoice() const;
+	// [2026-11-04 T-111] Test hook: one rig tick headlessly. Arm/visibility/
+	// [2026-11-04 T-111] collision converge without live bones; pivots ride
+	// [2026-11-04 T-111] the -game capture set instead.
+	void ApplyCameraRigForTesting(float DeltaSeconds)
+	{
+		ApplyCameraRig(DeltaSeconds);
+	}
 
 	// [2026-11-03 T-065] Pitch-invert choices (Settings values until T-088's
 	// screen surfaces them; all default off = stick/mouse up is nose-up):
@@ -455,13 +476,17 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	bool bLastMoveFromGamepad = false;
 
 	// [2026-11-03 T-065] Camera rig state: active set member (persisted),
-	// head-anchor offset is recomputed every tick from the mesh head bone
-	// (null-safe: a missing bone keeps the last pivot). First-person hides
-	// the pawn mesh (head interior would fill the frame); fire/rain FX are
-	// capsule-attached and stay visible.
-	EDragonCameraMode CameraMode = EDragonCameraMode::HeadChase;
+	// pivots recomputed every tick from mesh bones (null-safe: a missing
+	// bone keeps the last pivot). Eyes hides the pawn mesh (head interior
+	// would fill the frame); fire/rain FX are capsule-attached and stay
+	// visible. Boom collision is on in the chase modes, off in Eyes.
+	// [2026-11-04 T-111] Default is Near (owner spec).
+	EDragonCameraMode CameraMode = EDragonCameraMode::Near;
 	FString CameraSaveSlotName = TEXT("DragonCameraChoice");
 	bool bMeshHiddenForCamera = false;
+	// [2026-11-04 T-111] One-shot latch for the utm.camera.mode capture
+	// [2026-11-04 T-111] forcing (see ApplyCameraRig).
+	bool bCameraModeForceApplied = false;
 
 	// [2026-11-03 T-075] Scripted course runner (utm.flight.course): the program
 	// owns nose/brake/assist while bCourseFlying; UpdatePrototypeFlight skips its

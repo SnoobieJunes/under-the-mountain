@@ -123,6 +123,14 @@ tag, choose the owing one.
 <!-- Real entries accumulate below, NEWEST AT THE TOP. The top entries are
      session-start required reading (count: AGENTS.md → Session ritual). -->
 
+## 2026-11-04 — T-111: camera 3-mode rework on the v6 rig; Exec unreachable, cvar instead  [decision]
+- Task: T-111 (camera 3-mode rework, tuned to T-113's shipped mesh)
+- What: Enum reordered Near(0, default)/Far(1)/Eyes(2) with stable indices (T-065 saves migrate by closest match); rig split into tested CameraRigForMode (arm/visibility/collision) + bone pivots (chest+45/arm 750 Near; head/arm 1200 Far; 70%-snout+8cm/arm 0 + hidden mesh + no collision Eyes); utm.camera.mode cvar forces+persists a mode per capture run; three -game captures reviewed (cam_near/cam_far/cam_eyes.png).
+- Why: (1) V/R3 stepping is undrivable headless and each capture needs one persisted mode; a UFUNCTION(Exec) setter was built first, then deleted after all three forced runs showed no "Dragon camera set" line — pawn Exec is unreachable from -ExecCmds, so the T-052/T-075 cvar pattern is the vehicle. (2) Near #1 (chest+80/arm 650) framed the dragon too low with tail cropped — lowered to +45/arm 750, whole animal centered. (3) White center bars in Near/Far are world-space scent ribbons end-on (absent in the Eyes view from the snout) — not near-plane clipping and not this task's system; left for the ribbon owner, not fixed here.
+- Where: Source/UnderTheMountain/Public+Private/Dragon/DragonCharacter.* (enum, rig, cvar, test hook), Source/UnderTheMountain/Tests/DragonInputTest.cpp (order + rig + applied-rig pins), Saved/Profiling/cam_*.png (ignored proof captures), CHANGELOG.md
+- Plan: T-111 Accept (Eyes->Near->Far order opening on Near; eye offset from measured head bone; Near above the wings tuned to v6 bounds; Far = old scenic 1200; boom collision per mode; automation updated; three reviewed captures; gate green) met as written. Player slot left at Near default by a restore run. docs/PLAN.md states no camera roster → not falsified, folded at the next sweep.
+- Commit(s): this commit
+
 ## 2026-11-04 — T-113: newest mesh proven identical, T-110 v6 assets stand  [decision]
 - Task: T-113 (newest owner dragon in-game)
 - What: Kept SK_Dragon_v6 + SK_Dragon_v6_Skeleton + M_DragonScalesV6 / M_DragonWingV6 + T_DragonV6_* as T-110 imported them and imported only the 9 newest anim clips onto the pawn's clip paths. The Accept's retire clause (which listed the T-110 v6 assets + dragon_v6_game.fbx next to the v4 set) narrows: dragon_v6_game.fbx (stale decimation intermediate) is retired, the live v6 assets stand.

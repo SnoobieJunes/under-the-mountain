@@ -118,6 +118,16 @@ TAutoConsoleVariable<int32> CVarInvertPadFlight(
 TAutoConsoleVariable<int32> CVarInvertPadCamera(
 	TEXT("utm.camera.invertPadCamera"), 0,
 	TEXT("1 = right-stick-up pitches the camera down."));
+// [2026-11-04 T-111] Dev/capture: force the starting camera mode. -1 =
+// [2026-11-04 T-111] off (the save slot decides, shipped behavior); 0/1/2 =
+// [2026-11-04 T-111] start in that mode AND save it, so a capture run's
+// [2026-11-04 T-111] persisted slot holds exactly what a player choosing the
+// [2026-11-04 T-111] mode would persist. Pawn Exec UFUNCTIONs are not
+// [2026-11-04 T-111] reachable from -ExecCmds, so a cvar (the T-052/T-075
+// [2026-11-04 T-111] headless pattern) is the vehicle, not an Exec setter.
+TAutoConsoleVariable<int32> CVarCameraMode(
+	TEXT("utm.camera.mode"), -1,
+	TEXT("-1 = saved choice; 0/1/2 = start in Near/Far/Eyes and persist it."));
 } // namespace
 
 // [2026-11-03 T-075] Swap the movement component class for the prototype
@@ -654,12 +664,15 @@ void ADragonCharacter::SaveCameraChoice() const
 
 void ADragonCharacter::LoadCameraChoice()
 {
-	// [2026-11-03 T-065] Missing slot = first run: keep the default head
+	// [2026-11-03 T-065] Missing slot = first run: keep the default near
 	// chase silently. A slot that exists but loads wrong is corruption —
 	// warn naming the slot (the T-039 tint-slot lesson).
+	// [2026-11-04 T-111] Default moved HeadChase -> Near (owner spec); a
+	// [2026-11-04 T-111] T-065 slot migrates by index (0 close -> Near,
+	// [2026-11-04 T-111] 1 wide -> Far, 2 first-person -> Eyes).
 	if (!UGameplayStatics::DoesSaveGameExist(CameraSaveSlotName, 0))
 	{
-		CameraMode = EDragonCameraMode::HeadChase;
+		CameraMode = EDragonCameraMode::Near;
 		return;
 	}
 	if (UDragonCameraSaveGame* Loaded = Cast<UDragonCameraSaveGame>(
@@ -673,55 +686,138 @@ void ADragonCharacter::LoadCameraChoice()
 		else
 		{
 			UE_LOG(LogUnderTheMountain, Warning,
-				   TEXT("Camera load: slot '%s' holds out-of-range index %d; keeping head chase"),
+				   TEXT("Camera load: slot '%s' holds out-of-range index %d; keeping near"),
 				   *CameraSaveSlotName, Index);
-			CameraMode = EDragonCameraMode::HeadChase;
+			CameraMode = EDragonCameraMode::Near;
 		}
 	}
 	else
 	{
 		UE_LOG(LogUnderTheMountain, Warning,
-			   TEXT("Camera load FAILED: slot '%s' exists but could not be loaded; keeping head chase"),
+			   TEXT("Camera load FAILED: slot '%s' exists but could not be loaded; keeping near"),
 			   *CameraSaveSlotName);
-		CameraMode = EDragonCameraMode::HeadChase;
+		CameraMode = EDragonCameraMode::Near;
+	}
+}
+
+void ADragonCharacter::CameraRigForMode(EDragonCameraMode Mode, float& OutArmLength, bool& bOutHideMesh,
+										bool& bOutCollide)
+{
+	// [2026-11-04 T-111] Starting arms; the T-111 capture set tunes them
+	// [2026-11-04 T-111] and the final numbers land here.
+	switch (Mode)
+	{
+	case EDragonCameraMode::Far:
+		OutArmLength = 1200.0f;
+		bOutHideMesh = false;
+		bOutCollide = true;
+		break;
+	case EDragonCameraMode::Eyes:
+		OutArmLength = 0.0f;
+		bOutHideMesh = true;
+		bOutCollide = false;
+		break;
+	case EDragonCameraMode::Near:
+	default:
+		OutArmLength = 750.0f;
+		bOutHideMesh = false;
+		bOutCollide = true;
+		break;
 	}
 }
 
 void ADragonCharacter::ApplyCameraRig(float DeltaSeconds)
 {
-	// [2026-11-03 T-065] Per-tick rig: pivot follows the head bone so the
-	// chase orbits the eyes (not the capsule); arm shortens in the
-	// precision band; first-person hides the pawn mesh (head interior would
-	// fill the frame — fire/rain FX are capsule-attached and stay visible).
-	// Stall needs no work here: the boom rides control rotation, which never
-	// follows the sinking mesh nose. Null-safe throughout: a missing bone
-	// keeps the last pivot instead of snapping anywhere.
+	// [2026-11-04 T-111] Per-tick rig, tuned to the T-113 v6 rig. Blender
+	// [2026-11-04 T-111] bind-pose measure (1 unit = 200 capsule-cm at the
+	// [2026-11-04 T-111] pawn's mesh scale 2): head origin 0.15u up; head ->
+	// [2026-11-04 T-111] head_end 0.15u (30 cm snout); head 0.08u (16 cm)
+	// [2026-11-04 T-111] above the chest/wing roots; mesh Y half-span 0.95u.
+	// - Near (default): pivot on the chest (wing-root center) raised above
+	//   the wing plane, arm 750 — frames wings + head, never in the mesh.
+	// - Far: pivot on the head (the T-065 anchor), arm 1200 (old scenic).
+	// - Eyes: pivot 70% down the head -> head_end line + 8 cm up (measured
+	//   eye line), arm 0, pawn mesh hidden, boom collision off (a colliding
+	//   boom at arm 0 punches through the skull on every pitch).
+	// Null-safe throughout: a missing bone keeps the last pivot instead of
+	// snapping anywhere. Stall needs no work here: the boom rides control
+	// rotation, which never follows the sinking mesh nose.
+	// [2026-11-04 T-111] Starting pivot heights; the T-111 capture set tunes
+	// [2026-11-04 T-111] them and the final numbers land here. Arms, mesh
+	// [2026-11-04 T-111] visibility and boom collision come from the tested
+	// [2026-11-04 T-111] CameraRigForMode so automation pins the same values
+	// [2026-11-04 T-111] the game runs.
+	// [2026-11-04 T-111, rev 2] cam_near #1 (chest+80/arm 650): dragon too
+	// [2026-11-04 T-111, rev 2] low in frame, tail cropped, white bar down
+	// [2026-11-04 T-111, rev 2] the spine (suspect scent ribbon end-on, not
+	// [2026-11-04 T-111, rev 2] clipping — Far will confirm). Lowering the
+	// [2026-11-04 T-111, rev 2] pivot and lengthening the arm to center the
+	// [2026-11-04 T-111, rev 2] whole animal.
+	constexpr float NearHeightAboveChest = 45.0f;
+	constexpr float EyeAlongSnout = 0.7f;
+	constexpr float EyeUp = 8.0f;
 	if (CameraBoom == nullptr || GetMesh() == nullptr || GetCapsuleComponent() == nullptr)
 	{
 		return;
 	}
-	if (GetMesh()->GetBoneIndex(TEXT("head")) != INDEX_NONE)
+	// [2026-11-04 T-111] Capture-run forcing (utm.camera.mode): applied here,
+	// [2026-11-04 T-111] not in LoadCameraChoice, because -ExecCmds land after
+	// [2026-11-04 T-111] BeginPlay — a spawn-time read would race them and
+	// [2026-11-04 T-111] silently keep the slot. One-shot latch: later V/R3
+	// [2026-11-04 T-111] presses stick (the cvar is launch-scoped, default -1).
+	if (!bCameraModeForceApplied)
 	{
-		const FVector HeadWorld = GetMesh()->GetBoneLocation(TEXT("head"));
-		const FVector HeadLocal =
-			GetCapsuleComponent()->GetComponentTransform().InverseTransformPosition(HeadWorld);
-		CameraBoom->SetRelativeLocation(HeadLocal);
+		const int32 ForcedMode = CVarCameraMode.GetValueOnGameThread();
+		if (ForcedMode >= 0 && ForcedMode <= 2)
+		{
+			CameraMode = static_cast<EDragonCameraMode>(ForcedMode);
+			SaveCameraChoice();
+			UE_LOG(LogUnderTheMountain, Log,
+				   TEXT("Camera forced to mode %d by utm.camera.mode (persisted)"), ForcedMode);
+			printf("CAMERA forced mode %d (persisted)\n", ForcedMode);
+			fflush(stdout);
+		}
+		bCameraModeForceApplied = true;
 	}
-	float DesiredArm = 500.0f;
+	const FTransform CapsuleInv = GetCapsuleComponent()->GetComponentTransform().Inverse();
+	auto BoneLocal = [&](const TCHAR* Name, FVector Fallback, bool& bFound) -> FVector
+	{
+		if (GetMesh()->GetBoneIndex(Name) == INDEX_NONE)
+		{
+			bFound = false;
+			return Fallback;
+		}
+		bFound = true;
+		return CapsuleInv.TransformPosition(GetMesh()->GetBoneLocation(Name));
+	};
+	bool bHeadFound = false;
+	const FVector HeadLocal = BoneLocal(TEXT("head"), CameraBoom->GetRelativeLocation(), bHeadFound);
+	bool bUnused = false;
+	const FVector ChestLocal = BoneLocal(TEXT("chest"), HeadLocal, bUnused);
+	const FVector SnoutLocal = BoneLocal(TEXT("head_end"), HeadLocal, bUnused);
+	FVector DesiredPivot = HeadLocal;
+	float DesiredArm = 0.0f;
+	bool bHideMesh = false;
+	bool bCollide = true;
+	CameraRigForMode(CameraMode, DesiredArm, bHideMesh, bCollide);
 	switch (CameraMode)
 	{
-	case EDragonCameraMode::WideScenic:
-		DesiredArm = 1200.0f;
+	case EDragonCameraMode::Far:
+		DesiredPivot = HeadLocal;
 		break;
-	case EDragonCameraMode::FirstPerson:
-		DesiredArm = 0.0f;
+	case EDragonCameraMode::Eyes:
+		DesiredPivot = FMath::Lerp(HeadLocal, SnoutLocal, EyeAlongSnout) + FVector(0.0f, 0.0f, EyeUp);
 		break;
-	case EDragonCameraMode::HeadChase:
+	case EDragonCameraMode::Near:
 	default:
-		DesiredArm = 500.0f;
+		DesiredPivot = ChestLocal + FVector(0.0f, 0.0f, NearHeightAboveChest);
 		break;
 	}
-	if (CameraMode != EDragonCameraMode::FirstPerson && IsPrototypeFlying())
+	if (bHeadFound)
+	{
+		CameraBoom->SetRelativeLocation(DesiredPivot);
+	}
+	if (CameraMode != EDragonCameraMode::Eyes && IsPrototypeFlying())
 	{
 		if (const UDragonMovementComponent* Proto =
 				Cast<UDragonMovementComponent>(GetCharacterMovement()))
@@ -733,12 +829,15 @@ void ADragonCharacter::ApplyCameraRig(float DeltaSeconds)
 	}
 	CameraBoom->TargetArmLength =
 		FMath::FInterpTo(CameraBoom->TargetArmLength, DesiredArm, DeltaSeconds, 6.0f);
-	const bool bHideMesh = (CameraMode == EDragonCameraMode::FirstPerson);
 	if (bHideMesh != bMeshHiddenForCamera)
 	{
 		bMeshHiddenForCamera = bHideMesh;
 		GetMesh()->SetVisibility(!bHideMesh);
 	}
+	// [2026-11-04 T-111] Chase modes keep boom collision on; Eyes turns it
+	// [2026-11-04 T-111] off (owner spec). Driven every tick so a mode switch
+	// [2026-11-04 T-111] can never leave the wrong flag behind.
+	CameraBoom->bDoCollisionTest = bCollide;
 }
 
 bool ADragonCharacter::HasInputActions() const

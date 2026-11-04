@@ -9,6 +9,7 @@
 #include "Misc/AutomationTest.h"
 #include "Dragon/DragonCharacter.h"
 #include "Dragon/DragonCameraSaveGame.h"
+#include "GameFramework/SpringArmComponent.h"
 #include "InputAction.h"
 #include "InputCoreTypes.h"
 #include "InputMappingContext.h"
@@ -292,11 +293,14 @@ bool FDragonCameraBindingTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-// [2026-11-03 T-065] Camera order + persistence, headless: HeadChase →
-// WideScenic → FirstPerson → HeadChase, saved to the slot on every step,
-// reloaded on a fresh pawn, missing slot means default, corrupt index
-// means default (never a bad mode). Uses a test slot like the tint test
-// so the player's DragonCameraChoice.sav is never touched.
+// [2026-11-04 T-111] Camera order + persistence, headless: Near (default)
+// → Far → Eyes → Near, saved to the slot on every step, reloaded on a
+// fresh pawn, missing/corrupt slot means Near. Uses a test slot like the
+// tint test so the player's DragonCameraChoice.sav is never touched.
+// [2026-11-04 T-111] Plus the pure rig decisions per mode (arm, mesh
+// [2026-11-04 T-111] visibility, boom collision) via CameraRigForMode — the
+// [2026-11-04 T-111] same values ApplyCameraRig runs, so the -game capture
+// [2026-11-04 T-111] set proves the pivots, not these numbers twice.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDragonCameraCycleTest,
 								 "UnderTheMountain.Dragon.CameraCycle",
 								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -314,17 +318,17 @@ bool FDragonCameraCycleTest::RunTest(const FString& Parameters)
 	}
 	Pawn->SetCameraSaveSlotForTesting(TestSlot);
 	Pawn->LoadCameraChoice();
-	TestEqual(TEXT("missing slot means head chase"), static_cast<int32>(Pawn->GetCameraMode()), 0);
+	TestEqual(TEXT("missing slot means near"), static_cast<int32>(Pawn->GetCameraMode()), 0);
 
 	Pawn->CycleCamera();
-	TestEqual(TEXT("first cycle steps to wide scenic"), static_cast<int32>(Pawn->GetCameraMode()), 1);
+	TestEqual(TEXT("first cycle steps to far"), static_cast<int32>(Pawn->GetCameraMode()), 1);
 	Pawn->CycleCamera();
-	TestEqual(TEXT("second cycle steps to first-person"), static_cast<int32>(Pawn->GetCameraMode()), 2);
+	TestEqual(TEXT("second cycle steps to eyes"), static_cast<int32>(Pawn->GetCameraMode()), 2);
 	Pawn->CycleCamera();
-	TestEqual(TEXT("third cycle wraps to head chase"), static_cast<int32>(Pawn->GetCameraMode()), 0);
+	TestEqual(TEXT("third cycle wraps to near"), static_cast<int32>(Pawn->GetCameraMode()), 0);
 
 	Pawn->CycleCamera();
-	TestEqual(TEXT("wide scenic persists"), static_cast<int32>(Pawn->GetCameraMode()), 1);
+	TestEqual(TEXT("far persists"), static_cast<int32>(Pawn->GetCameraMode()), 1);
 	ADragonCharacter* Fresh = NewObject<ADragonCharacter>();
 	TestNotNull(TEXT("fresh pawn constructs for reload check"), Fresh);
 	if (Fresh == nullptr)
@@ -333,7 +337,7 @@ bool FDragonCameraCycleTest::RunTest(const FString& Parameters)
 	}
 	Fresh->SetCameraSaveSlotForTesting(TestSlot);
 	Fresh->LoadCameraChoice();
-	TestEqual(TEXT("fresh pawn reloads wide scenic"), static_cast<int32>(Fresh->GetCameraMode()), 1);
+	TestEqual(TEXT("fresh pawn reloads far"), static_cast<int32>(Fresh->GetCameraMode()), 1);
 
 	UDragonCameraSaveGame* Corrupt = Cast<UDragonCameraSaveGame>(
 		UGameplayStatics::CreateSaveGameObject(UDragonCameraSaveGame::StaticClass()));
@@ -345,7 +349,48 @@ bool FDragonCameraCycleTest::RunTest(const FString& Parameters)
 	Corrupt->CameraModeIndex = 99;
 	TestTrue(TEXT("corrupt slot writes"), UGameplayStatics::SaveGameToSlot(Corrupt, TestSlot, 0));
 	Fresh->LoadCameraChoice();
-	TestEqual(TEXT("corrupt index falls back to head chase"), static_cast<int32>(Fresh->GetCameraMode()), 0);
+	TestEqual(TEXT("corrupt index falls back to near"), static_cast<int32>(Fresh->GetCameraMode()), 0);
+
+	// [2026-11-04 T-111] Rig decisions per mode: the exact arm / visibility /
+	// [2026-11-04 T-111] collision contract ApplyCameraRig runs.
+	for (const TTuple<EDragonCameraMode, float, bool, bool>& Rig :
+		 {MakeTuple(EDragonCameraMode::Near, 750.0f, false, true),
+		  MakeTuple(EDragonCameraMode::Far, 1200.0f, false, true),
+		  MakeTuple(EDragonCameraMode::Eyes, 0.0f, true, false)})
+	{
+		float Arm = -1.0f;
+		bool bHide = false;
+		bool bCollide = false;
+		ADragonCharacter::CameraRigForMode(Rig.Get<0>(), Arm, bHide, bCollide);
+		TestEqual(
+			FString::Printf(TEXT("mode %d arm"), static_cast<int32>(Rig.Get<0>())), Arm, Rig.Get<1>());
+		TestEqual(FString::Printf(TEXT("mode %d hides mesh"), static_cast<int32>(Rig.Get<0>())), bHide,
+				  Rig.Get<2>());
+		TestEqual(FString::Printf(TEXT("mode %d collides"), static_cast<int32>(Rig.Get<0>())), bCollide,
+				  Rig.Get<3>());
+	}
+
+	// [2026-11-04 T-111] Applied rig per mode on a fresh pawn (starts Near):
+	// [2026-11-04 T-111] arm converges, mesh visibility flips only in Eyes,
+	// [2026-11-04 T-111] boom collision off only in Eyes. Pivots need live
+	// [2026-11-04 T-111] bones — proven by the -game capture set, not here.
+	for (const TTuple<EDragonCameraMode, float, bool, bool>& Rig :
+		 {MakeTuple(EDragonCameraMode::Near, 750.0f, false, true),
+		  MakeTuple(EDragonCameraMode::Far, 1200.0f, false, true),
+		  MakeTuple(EDragonCameraMode::Eyes, 0.0f, true, false)})
+	{
+		while (Pawn->GetCameraMode() != Rig.Get<0>())
+		{
+			Pawn->CycleCamera();
+		}
+		Pawn->ApplyCameraRigForTesting(100.0f);
+		TestEqual(FString::Printf(TEXT("applied mode %d arm"), static_cast<int32>(Rig.Get<0>())),
+				  Pawn->CameraBoom->TargetArmLength, Rig.Get<1>());
+		TestEqual(FString::Printf(TEXT("applied mode %d mesh visible"), static_cast<int32>(Rig.Get<0>())),
+				  Pawn->GetMesh()->IsVisible(), !Rig.Get<2>());
+		TestEqual(FString::Printf(TEXT("applied mode %d boom collides"), static_cast<int32>(Rig.Get<0>())),
+				  Pawn->CameraBoom->bDoCollisionTest, Rig.Get<3>());
+	}
 
 	// Pitch-invert defaults: nose-up on every device until T-088 surfaces
 	// the Settings choice (adopted FLIGHT-SPIKE.md default).
