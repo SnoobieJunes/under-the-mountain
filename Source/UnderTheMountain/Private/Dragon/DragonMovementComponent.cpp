@@ -11,7 +11,10 @@
 #include "Dragon/DragonStatsComponent.h"
 #include "Dragon/DragonCharacter.h"
 #include "GameFramework/Character.h"
-#include "HAL/PlatformFilemanager.h"
+// [2026-11-04 T-020] Correct case (was PlatformFilemanager): the UAT
+// [2026-11-04 T-020] packaging build failed on the miscased include while
+// [2026-11-04 T-020] the gate's -NoUba builds pass — spell it exactly.
+#include "HAL/PlatformFileManager.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "UnderTheMountain.h"

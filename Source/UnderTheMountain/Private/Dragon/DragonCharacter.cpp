@@ -128,6 +128,17 @@ TAutoConsoleVariable<int32> CVarInvertPadCamera(
 TAutoConsoleVariable<int32> CVarCameraMode(
 	TEXT("utm.camera.mode"), -1,
 	TEXT("-1 = saved choice; 0/1/2 = start in Near/Far/Eyes and persist it."));
+// [2026-11-04 T-020] Capture-only spawn override (same vehicle class as
+// [2026-11-04 T-020] utm.camera.mode): "X=.. Y=.. Z=.." teleports the pawn
+// [2026-11-04 T-020] once after spawn + utm.proof.yaw faces it. Default off.
+// [2026-11-04 T-020] Exists so the packaged fps run can stand in the lair
+// [2026-11-04 T-020] AND the village with zero playable driving in between.
+TAutoConsoleVariable<FString> CVarProofSpawnPos(
+	TEXT("utm.proof.spawn"), TEXT(""),
+	TEXT("Capture-only spawn override, e.g. X=36000 Y=0 Z=1500 (default off)."));
+TAutoConsoleVariable<float> CVarProofSpawnYaw(
+	TEXT("utm.proof.yaw"), 1e9f,
+	TEXT("Capture-only facing yaw applied with utm.proof.spawn (default off)."));
 } // namespace
 
 // [2026-11-03 T-075] Swap the movement component class for the prototype
@@ -778,6 +789,37 @@ void ADragonCharacter::ApplyCameraRig(float DeltaSeconds)
 			fflush(stdout);
 		}
 		bCameraModeForceApplied = true;
+	}
+	// [2026-11-04 T-020] Capture-only spawn override (see the cvars above):
+	// [2026-11-04 T-020] teleport once, face on request. Yaw needs a
+	// [2026-11-04 T-020] controller, which may arrive after the first tick,
+	// [2026-11-04 T-020] so the latch waits for it instead of skipping.
+	if (!bProofSpawnApplied)
+	{
+		FVector Dest = FVector::ZeroVector;
+		const FString& Spec = CVarProofSpawnPos.GetValueOnGameThread();
+		if (!Spec.IsEmpty() && Dest.InitFromString(*Spec))
+		{
+			SetActorLocation(Dest, false, nullptr, ETeleportType::TeleportPhysics);
+			const float Yaw = CVarProofSpawnYaw.GetValueOnGameThread();
+			if (AController* Ctrl = GetController())
+			{
+				if (Yaw < 1e8f)
+				{
+					Ctrl->SetControlRotation(FRotator(0.0f, Yaw, 0.0f));
+				}
+				bProofSpawnApplied = true;
+				UE_LOG(LogUnderTheMountain, Log, TEXT("PROOF spawned at %s yaw %.0f"),
+					   *Dest.ToCompactString(), Yaw < 1e8f ? Yaw : -1.0f);
+				printf("PROOF spawned at %s yaw %.0f\n", TCHAR_TO_UTF8(*Dest.ToCompactString()),
+					   Yaw < 1e8f ? Yaw : -1.0);
+				fflush(stdout);
+			}
+		}
+		else
+		{
+			bProofSpawnApplied = true;
+		}
 	}
 	const FTransform CapsuleInv = GetCapsuleComponent()->GetComponentTransform().Inverse();
 	auto BoneLocal = [&](const TCHAR* Name, FVector Fallback, bool& bFound) -> FVector

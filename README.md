@@ -41,6 +41,7 @@ Scripts/setup.sh       # verify engine + toolchain (UE 5.8.4, Xcode 27.1)
 Scripts/build.sh       # build the editor target (compiles the game module)
 Scripts/run-editor.sh  # open the editor; pass /Game/Maps/Lair/Lair to open the lair
 Scripts/play.sh        # quick test: build the game target + standalone -game window (no editor)
+Scripts/package.sh     # T-020 packaged macOS build → Saved/Packaged/Mac/UnderTheMountain.app
 Scripts/test-fast.sh   # build + automation tests (inner loop)
 Scripts/gate.sh        # full pre-commit gate: setup, editor+game builds,
                        # clang-format check, tests, coverage-floor check
@@ -59,22 +60,33 @@ launches a standalone game window on the Lair running exactly the code you
 just built. Use this to test current code; use the editor when you need to
 inspect or change the level/assets, or drive it over MCP.
 
-**Do not launch `Binaries/Mac/UnderTheMountain.app` (or the loose
-`Binaries/Mac/UnderTheMountain` binary) directly** — that path is retired
-until the packaged build (T-020) stages it properly. Root cause, proven
-in T-057: an unstaged Development game binary launched directly cannot
-establish its project/engine roots (the descriptor open fails inside the
-engine's file layer in every invocation form), so it finds no project,
-then no ICU data (which lives under the engine tree), asserts in
-`FICUInternationalization::Initialize`, and segfaults on the Mac error
-path; the loose binary additionally expects a staged `@rpath` dylib
-layout that only packaging creates. `Scripts/play.sh` is the supported
-way to run the built game today.
+**Packaged build (T-020): `Scripts/package.sh`** — cooks Lair, builds the
+game target, and stages a runnable `.app` at
+`Saved/Packaged/Mac/UnderTheMountain.app` (1 GB, self-contained: engine +
+pak inside the bundle). Launch it windowed from a terminal:
+
+```bash
+Saved/Packaged/Mac/UnderTheMountain.app/Contents/MacOS/UnderTheMountain -windowed
+```
+
+The title screen opens first (world paused) — press **Start Run**, same as
+in-editor play. Fresh launch reaches gameplay (verified: title → playing,
+thieves stealing, newest-clip flight states, clean quit); measured on this
+Mac (M1 Max, 1280×720 windowed): ~59 fps lair, ~56 fps village — just under
+the 60 fps gate, so a dedicated performance pass is on the board (T-115);
+per the owner call 2026-11-04 the game ships at authored quality until then.
+**Do not launch the packaged app fullscreen / without `-windowed` yet:**
+the first no-flags launch wedged in the macOS fullscreen transition (sampled
+stuck in `FMacWindow::UpdateFullScreenState`); windowed is the supported
+path until the perf pass looks at it.
+**Do not launch the loose `Binaries/Mac/` binary directly** — only the
+packaged `.app` above is staged (engine + pak + dylib layout, T-057).
 
 Notes:
 
-- **The editor is the only play path for now.** A packaged `.app` arrives in
-  T-020, not here.
+- **Two ways to play:** the editor (inspect/MCP path) and the packaged
+  `.app` above (judge path). `Scripts/play.sh` remains the quick-test path
+  for current code without the editor.
 - **Restart the editor after any C++ build.** UE does not hot-swap C++; an
   editor left open across builds flies the old pawn (the cause of the
   "wings frozen in flight" report, T-047).

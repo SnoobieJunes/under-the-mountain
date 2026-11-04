@@ -71,4 +71,15 @@ class UNDERTHEMOUNTAIN_API AUnderTheMountainGameMode : public AGameModeBase
 	double ProofFirstTickTime = -1.0;
 	double ProofShotTime = -1.0;
 	bool bProofShotTaken = false;
+	// [2026-11-04 T-020] Proof fps accumulators: average + worst frame over
+	// [2026-11-04 T-020] the run (minus a 10 s first-launch warmup), printed
+	// [2026-11-04 T-020] with the shot. stat fps never logs, so the packaged
+	// [2026-11-04 T-020] perf gate needs its own numbers in stdout.
+	double ProofLastTickTime = -1.0;
+	double ProofFrameTotal = 0.0;
+	double ProofFrameWorst = 0.0;
+	int64 ProofFrames = 0;
+	int64 ProofFrames60 = 0;
+	int64 ProofFrames30 = 0;
+	int64 ProofFramesSlow = 0;
 };

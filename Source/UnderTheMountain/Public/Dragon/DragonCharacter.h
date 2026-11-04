@@ -487,6 +487,9 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// [2026-11-04 T-111] One-shot latch for the utm.camera.mode capture
 	// [2026-11-04 T-111] forcing (see ApplyCameraRig).
 	bool bCameraModeForceApplied = false;
+	// [2026-11-04 T-020] One-shot latch for the utm.proof.spawn / utm.proof.yaw
+	// [2026-11-04 T-020] capture forcing (see ApplyCameraRig).
+	bool bProofSpawnApplied = false;
 
 	// [2026-11-03 T-075] Scripted course runner (utm.flight.course): the program
 	// owns nose/brake/assist while bCourseFlying; UpdatePrototypeFlight skips its

@@ -74,6 +74,38 @@ void AUnderTheMountainGameMode::TickProofCapture()
 	if (!bProofShotTaken)
 	{
 		const float Delay = CVarProofShotDelay.GetValueOnGameThread();
+		// [2026-11-04 T-020] Fps window runs alongside the shot countdown
+		// [2026-11-04 T-020] (zero cost when the shot is off): skip the first
+		// [2026-11-04 T-020] 10 s so first-launch shader compile does not
+		// [2026-11-04 T-020] set the number. Buckets separate steady load
+		// [2026-11-04 T-020] (most frames in the first two) from hitches.
+		if (Delay > 0.0f)
+		{
+			if (ProofLastTickTime > 0.0 && Now - ProofFirstTickTime > 10.0)
+			{
+				const double Dt = Now - ProofLastTickTime;
+				if (Dt > 0.0)
+				{
+					++ProofFrames;
+					ProofFrameTotal += Dt;
+					ProofFrameWorst = FMath::Max(ProofFrameWorst, Dt);
+					const double Ms = Dt * 1000.0;
+					if (Ms <= 16.6)
+					{
+						++ProofFrames60;
+					}
+					else if (Ms <= 33.3)
+					{
+						++ProofFrames30;
+					}
+					else
+					{
+						++ProofFramesSlow;
+					}
+				}
+			}
+			ProofLastTickTime = Now;
+		}
 		if (Delay > 0.0f && Now - ProofFirstTickTime >= Delay)
 		{
 			bProofShotTaken = true;
@@ -82,14 +114,26 @@ void AUnderTheMountainGameMode::TickProofCapture()
 			{
 				PC->ConsoleCommand(TEXT("HighResShot 1"));
 			}
+			const double AvgMs = ProofFrames > 0 ? 1000.0 * ProofFrameTotal / static_cast<double>(ProofFrames) : 0.0;
+			const double AvgFps = AvgMs > 0.0 ? 1000.0 / AvgMs : 0.0;
 			UE_LOG(LogUnderTheMountain, Log,
 				   TEXT("Proof capture: HighResShot fired %.1fs after first tick (state %d)"),
 				   Now - ProofFirstTickTime, static_cast<int32>(GetFlowState()));
+			UE_LOG(LogUnderTheMountain, Log,
+				   TEXT("Proof fps: avg %.1f over %d frames (%.2f ms avg, %.2f ms worst)"),
+				   AvgFps, ProofFrames, AvgMs, 1000.0 * ProofFrameWorst);
 			// [2026-11-04 T-113] Dual channel like CourseLog (T-075):
 			// [2026-11-04 T-113] headless -game runs never materialise a log
 			// [2026-11-04 T-113] file, so the shot needs stdout proof too.
 			printf("PROOF HighResShot fired %.1fs after first tick (state %d)\n", Now - ProofFirstTickTime,
 				   static_cast<int32>(GetFlowState()));
+			fflush(stdout);
+			printf("PROOF fps avg=%.1f frames=%lld avgms=%.2f worstms=%.2f\n", AvgFps,
+				   static_cast<long long>(ProofFrames), AvgMs, 1000.0 * ProofFrameWorst);
+			fflush(stdout);
+			printf("PROOF fpsbuckets at60=%lld at30=%lld slow=%lld\n",
+				   static_cast<long long>(ProofFrames60), static_cast<long long>(ProofFrames30),
+				   static_cast<long long>(ProofFramesSlow));
 			fflush(stdout);
 		}
 		return;
