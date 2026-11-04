@@ -1,6 +1,6 @@
 # AGENTS.md — Under the Mountain agent operating manual
 
-> **Version 1.0 — last updated 2026-10-27.** This file is law for every agent
+> **Version 1.1 — last updated 2026-11-03.** This file is law for every agent
 > session in this repo. Re-stamp the date on any edit; bump the version when a rule
 > or gate changes (not for snapshot facts); log rule changes in goose-deuce.md.
 
@@ -54,10 +54,10 @@ green commit, record where the work lives on the task, and stop cleanly.
   Scripts/test-fast.sh                                  # inner loop while iterating
   Scripts/gate.sh                                       # the pre-commit gate (full)
   Scripts/coverage.sh                                   # measures against the floor
-  Scripts/build.sh                                      # build editor target; packaging arrives in T-020
+  Scripts/build.sh                                      # build editor target; packaged .app via Scripts/package.sh (T-020)
   ```
 
-- **Coverage floor:** 29% on Source/ lines — measured by the
+- **Coverage floor:** 37% on Source/ lines — measured by the
   coverage command above. [2026-10-28 T-022] First real llvm-cov measurement:
   31.1% of Source/UnderTheMountain product lines (Tests/ excluded) via
   Scripts/coverage.sh's module-only rsp-relink instrumentation; floor set
@@ -65,7 +65,7 @@ green commit, record where the work lives on the task, and stop cleanly.
   ratchets up; a task may not lower it. (Other sections point here; this line is
   the single owner of the number.)
 - **Foot-guns already paid for** *(append as they are discovered — this list is why
-  the next session doesn't pay twice)*: "unreal-mcp MCP server ships disabled in Hermes config — enable it and open the editor before any live-editor work", "UE Mac builds use Metal by default; there is no Metal 4 toggle in UE 5.8", "Meshy auto-rig is unreliable for winged quadrupeds — dragon rig is a Day-1 gate, not an assumption", "UBA cache can serve compile actions to a cold clone without materialising .o files (link fails, retry passes) — all gate builds use -NoUba (T-024)", "the editor appends an AndroidFileServer section with a machine SecurityToken to Config/DefaultEngine.ini on open — strip it before committing; DefaultInput.ini is editor-generated, not authored"
+  the next session doesn't pay twice)*: "unreal-mcp MCP server ships disabled in Hermes config — enable it and open the editor before any live-editor work", "UE Mac builds use Metal by default; there is no Metal 4 toggle in UE 5.8", "Meshy auto-rig is unreliable for winged quadrupeds — dragon rig is a Day-1 gate, not an assumption", "UBA cache can serve compile actions to a cold clone without materialising .o files (link fails, retry passes) — all gate builds use -NoUba (T-024)", "after a stash pop or bulk file adds, clean the module Intermediate dir and rebuild before Scripts/coverage.sh — stale split .rsp files fail its freshness check (T-034/T-042)", "the editor appends an AndroidFileServer section with a machine SecurityToken to Config/DefaultEngine.ini on open — strip it before committing; DefaultInput.ini is editor-generated, not authored"
 
 ## Session ritual
 

@@ -123,6 +123,14 @@ tag, choose the owing one.
 <!-- Real entries accumulate below, NEWEST AT THE TOP. The top entries are
      session-start required reading (count: AGENTS.md → Session ritual). -->
 
+## 2026-11-03 — Sandbox mode filed; T-102/T-042/music/Meshy decisions recorded  [decision]
+- Task: T-138 (filed); T-102, T-042, T-071 amended; meatsuite.md updated
+- What: Owner added sandbox mode (T-138: title/cvar-selectable free flight — no wave/incursion spawns, no win/lose audit, no notoriety; world life + verbs stay). Owner decisions applied same day: T-102 Option A (Right-face tap/hold multiplex) — task unblocked [!] -> [ ]; T-042 approved and applied (coverage floor 29% -> 37%, AGENTS.md v1.1 re-stamp, package.sh comment, coverage stale-rsp foot-gun); friend-music credit recorded verbatim in meatsuite.md S3 + on T-071 (Keith Vernon-Hutchinson / Hutchinson Music, PRS/MCPS/PPL-UK, five titles, Under the Mountain only) and owed to T-129's SUBMISSION.md; Meshy balance confirmed 2000 credits by owner (supersedes the unverified-balance note).
+- Why: Owner directives 2026-11-03 to unblock a fresh loop start; sandbox also serves T-021 capture (rules-off footage) without demo-only scripting.
+- Where: TASKS.md, AGENTS.md (T-042), meatsuite.md, goose-deuce.md (this entry), CHANGELOG.md. No product code.
+- Plan: docs/PLAN.md sandbox principle (2026-10-31 addendum) already blesses rules-off roaming; T-138 implements it as a mode — not falsified, no amendment. TASKS.md corrected in this commit.
+- Commit(s): this commit
+
 ## 2026-11-03 — Comprehensive review: submission + system gaps filed, meatsuite.md created  [decision]
 - Task: T-129–T-137 (filed in this commit); T-021, T-114, T-127 amended
 - What: Three parallel audits (board/docs, C++ systems, assets/packaging) against docs/PLAN.md + docs/GAMEPLAY.md. Filed: T-129 final freeze/repackage (the packaged .app predates the sprint; docs/SUBMISSION.md did not exist), T-130 judge double-click/Gatekeeper launch path, T-131 session cadence/incursions, T-132 notoriety gear scaling + raider loot, T-133 dwarf party roles + burglar crack routing, T-134 witness-based notoriety, T-135 Pyrrhic/resolution end screen, T-136 DataAsset migration + T-137 README honesty (Later). T-021 re-depended on the sprint + T-071 + T-129; T-114 promoted to ## Now behind T-122 with the corrected ≤5k foliage budget; T-127 now owns the end-on ribbon white-bar artifact. Owner-manual work split into meatsuite.md (decisions, Meshy batch, audio intake, T-030 playtest, sign-offs, submission day, generic loop prompt).

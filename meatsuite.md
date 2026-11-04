@@ -24,17 +24,12 @@
 
 ## 1. Decisions only you can make (5 minutes, unblocks the most)
 
-- [ ] **T-102 gamepad Right face:** Option A (recommended — tap=Tint,
-      hold=Eat/sink, Claw-tap when T-076 lands) or Option B (name Eat's
-      home). Write A/B here: ___
-- [ ] **T-042 AGENTS.md edits:** approve floor 29%→37%, version re-stamp,
-      packaging-line fix (or decline). Needed for an honest snapshot.
-- [ ] **Friend music:** confirm composer name + credit line + permission to
-      ship in the hackathon build. Write it here (goes into T-071 +
-      SUBMISSION credits): ___
-- [ ] **Meshy balance:** open Meshy, note the real credit balance here: ___
+- [x] **T-102 gamepad Right face: A** (2026-11-03 — tap=Tint, hold=Eat/sink, Claw-tap when T-076 lands). T-102 unblocked on the board.
+- [x] **T-042 AGENTS.md edits: approved + applied 2026-11-03** (floor 37%, v1.1, package.sh line, coverage foot-gun). T-042 closed.
+- [x] **Friend music credit (2026-11-03, verbatim below in S3).** Ships in T-071 ingestion + T-129 SUBMISSION.md + in-game credits.
+- [x] **Meshy balance: 2000 credits confirmed by owner 2026-11-03.**
       (last *proven* balance was 500 on 2026-10-28 — the "2000 credits"
-      figure is unverified; no batch starts until this box is ticked.)
+      figure was unverified — now confirmed.)
 
 ## 2. Meshy generation batch (web app, parallel-safe)
 
@@ -61,6 +56,19 @@ Agent side (not yours): T-114 imports + places these, fixes the goat
 texture holes, and proves it in a capture.
 
 ## 3. Audio intake (10 minutes, unblocks T-071)
+
+**Music credit (owner-supplied 2026-11-03 — reproduce verbatim in
+SUBMISSION.md and in-game credits):**
+
+> The works listed are for use only in the Game: Under the Mountain —
+> Created & Designed by Auston Leroy. The following titles are original
+> compositions by Keith Vernon-Hutchinson and published by Hutchinson
+> Music. Registered with PRS-UK, MCPS-UK, PPL-UK. All Rights Reserved.
+> Titles: Desert Winds · The Ancient One · Ryze of the Darkness ·
+> Drooon & Drooon Dark Wizard · Vikings Sounds & Samples.
+> Contact: Keith Vernon-Hutchinson, Composer, Orchestrator & Producer —
+> www.HutchinsonMusic.com — kvhutch@gmail.com
+
 
 Current state: music/SFX sit **untracked** (`Content/Audio/` + 3 MP3s at
 repo root) — a fresh clone loses them and nothing is licensed on record.

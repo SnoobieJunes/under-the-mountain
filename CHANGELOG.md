@@ -3,6 +3,7 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-03 — T-138 — Sandbox mode (rules-off free flight) tasked; gamepad remap unblocked (Option A), music credit recorded (no user-visible change)
 2026-11-03 — T-129 — Comprehensive review filed: final freeze, judge launch path, cadence/notoriety/witness tasks added; owner manual suite in meatsuite.md (no user-visible change)
 
 2026-11-03 — T-124 — Final sprint seeded: god mode + flight, animation, dragon repair, world rebuild, scent, and graphics tasks filed from owner playtest feedback (no user-visible change)
