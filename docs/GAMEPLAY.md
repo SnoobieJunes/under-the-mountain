@@ -118,7 +118,7 @@ the HUD and DataAsset exist from day one.
 | Pool | Max (L1) | Basis |
 |---|---|---|
 | HP | 100 | `[derived: percent-scale readability; all damage below is % of pool]` |
-| Stamina | 100 | `[derived: same percent scale as HP so drain rates read as %/s]` — one continuous pool, HUD-segmented into five 20-point reserves for flight impulses `[derived: T-075 decision record, docs/FLIGHT-SPIKE.md]` |
+| Stamina | 100 | `[derived: same percent scale as HP so drain rates read as %/s]` — one continuous pool, HUD-segmented into ten 10-point reserves for flight impulses `[derived: T-075 decision record, docs/FLIGHT-SPIKE.md; retuned five×20 → ten×10 in T-124, 2026-11-04]` |
 | Magic | 100 | `[derived: same percent scale; costs in §6]` |
 | Intro "full power" preview (§7) | stats shown at max-artifact values, then reset to L1 on loss/first session end | `[derived: idea.md — start at full power as tutorial, lose down to L1]` — preview numbers are the §6 artifact sums, not a second stat block `[tuning: PT-INTRO]` |
 
@@ -152,12 +152,12 @@ paid impulses `[derived: owner feedback + food-loop preservation, docs/FLIGHT-SP
 | Walk (ground patrol) | −1.5/s | Full pool ≈ 66 s continuous patrol before food pressure `[derived from value]` |
 | Run / charge (ground) | −4/s | — |
 | Glide (unpowered, wings held) | 0/s | Free but loses altitude/speed to physics `[derived: T-075 momentum model — unpowered flight spends the energy already in altitude/airspeed, not new stamina]` |
-| Ascent (takeoff / climb impulse) | −20 per use (one HUD segment) | Discrete energy purchase `[tuning: PT-STAM]` `[derived: cost attaches to the impulse input, readable as one reserve]` |
-| Surge (forward impulse) | −20 per use (one HUD segment) | Discrete energy purchase `[tuning: PT-STAM]` |
+| Ascent (takeoff / climb impulse) | −10 per use (one HUD segment) | Discrete energy purchase `[tuning: PT-STAM]` `[derived: cost attaches to the impulse input, readable as one reserve; 20 → 10 in T-124, 2026-11-04]` |
+| Surge (forward impulse) | −10 per use (one HUD segment) | Discrete energy purchase `[tuning: PT-STAM]` `[derived: 20 → 10 with Ascent in T-124, 2026-11-04]` |
 | Brake | 0/s to engage | Safety verb must always be available `[derived: high speed is only usable if stopping is never resource-gated]`; resulting hover then pays hover rate |
-| Precision rise / sustained precision climb | −8/s | Uses the hover rate `[derived: low-speed vertical thrust is hovering with a climb bias]` |
+| Precision rise / sustained precision climb | −3/s | Uses the hover rate `[derived: low-speed vertical thrust is hovering with a climb bias; 8 → 3 with hover in T-124, 2026-11-04]` |
 | Dive (nose-down posture) | 0/s drain, +speed | Dive converts altitude to speed `[derived: flight physics, idea.md]`; pull-out is paid by the airspeed already bought with altitude |
-| Hover | −8/s | Most expensive sustained state `[derived: hover removes momentum skill; price the loiter, T-075]` |
+| Hover | −3/s | Priciest sustained flight state `[derived: hover removes momentum skill; price the loiter, T-075]` `[tuning: PT-STAM — 8 → 3 in T-124, 2026-11-04: 8/s grounded the dragon in playtest]` |
 | Fire breath | −5/s while held, min 10 to start | `[tuning: PT-THIEF]` (counter balance §5) |
 | Roar | −10 flat, 6 s cooldown | `[tuning: PT-THIEF]` |
 | Claw / tail swipe | −4 per swing | `[tuning: PT-THIEF]` |

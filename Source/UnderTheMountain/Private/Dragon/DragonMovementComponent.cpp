@@ -423,7 +423,9 @@ void UDragonMovementComponent::ApplySurge()
 {
 	// [2026-11-03 T-075] Surge Forward: forward impulse + temporary ceiling
 	// (the ceiling is enforced by ClampSpeedToCeilings until drag converges).
-	// Stamina gating (one full 20-point reserve) is the caller's job via Stats.
+	// Stamina gating (one full impulse reserve) is the caller's job via Stats.
+	// [2026-11-04 T-124] The reserve cost is Stats->ImpulseReserveCost (10,
+	// was a 20.0f literal at the call sites).
 	if (CharacterOwner == nullptr)
 	{
 		return;

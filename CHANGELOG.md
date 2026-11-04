@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-04 — T-124 — God mode test slice + flight stamina retune: utm.testing.infinitestamina cvar (default off) disables every stamina cost/drain and the exhaustion HP burn while HP damage still applies, with a TESTING badge on the HUD while on; hover drain 8/s → 3/s and Ascent/Surge reserve 20 → 10, so the dragon stays airborne (~34 s sustained hover from full, was ~12.5 s)
+
 2026-11-03 — T-138 — Sandbox mode (rules-off free flight) tasked; gamepad remap unblocked (Option A), music credit recorded (no user-visible change)
 2026-11-03 — T-129 — Comprehensive review filed: final freeze, judge launch path, cadence/notoriety/witness tasks added; owner manual suite in meatsuite.md (no user-visible change)
 

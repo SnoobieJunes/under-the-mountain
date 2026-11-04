@@ -105,6 +105,14 @@ TAutoConsoleVariable<int32> CVarFlightCourse(
 	TEXT("utm.flight.course"), 0,
 	TEXT("1 = fly the scripted T-075 course legs in the live world, dump CSV, quit."));
 
+// [2026-11-04 T-124] Course hover-leg length in seconds (default 5, the
+// T-075 handling measurement). The stamina proof runs it long (65) to
+// hold a sustained hover: god runs pin the pool full, plain runs drain
+// to empty on the CSV, and the vehicle stays one knob, not a fork.
+TAutoConsoleVariable<float> CVarCourseHoverSeconds(
+	TEXT("utm.flight.coursehover"), 5.0f,
+	TEXT("Course hover-leg length in seconds (default 5; stamina proofs run 65)."));
+
 // [2026-11-03 T-065] Pitch-invert choices (Settings values until T-088's
 // screen surfaces them). All default off = stick/mouse up is nose-up:
 // mouse flight pitch, gamepad flight pitch (left stick), gamepad camera
@@ -1439,18 +1447,21 @@ void ADragonCharacter::HandleFlap()
 			GetCharacterMovement()->SetMovementMode(MOVE_Flying);
 		}
 	}
-	// [2026-11-03 T-075] Prototype takeoff/ascent: one full 20-point reserve
+	// [2026-11-03 T-075] Prototype takeoff/ascent: one full reserve
 	// buys the 900 cm/s up-forward launch (spike economy, provisional for
 	// the course); shipped keeps the 3-cost hop below.
+	// [2026-11-04 T-124] The reserve is Stats data now (10, was a 20.0f
+	// literal): the retune lands here by reading the component.
 	if (IsPrototypeFlying() || UDragonMovementComponent::GetFlightScheme() != 0)
 	{
-		if (Stats->Stamina < 20.0f)
+		if (Stats->Stamina < Stats->ImpulseReserveCost)
 		{
 			UE_LOG(LogUnderTheMountain, Log,
-				   TEXT("Ascent refused: needs one 20-point reserve (stamina %.1f)"), Stats->Stamina);
+				   TEXT("Ascent refused: needs one %.0f-point reserve (stamina %.1f)"),
+				   Stats->ImpulseReserveCost, Stats->Stamina);
 			return;
 		}
-		if (Stats->TryConsumeStamina(20.0f))
+		if (Stats->TryConsumeStamina(Stats->ImpulseReserveCost))
 		{
 			if (UDragonMovementComponent* Proto = Cast<UDragonMovementComponent>(GetCharacterMovement()))
 			{
@@ -2576,8 +2587,11 @@ void ADragonCharacter::UpdatePrototypeFlight(float DeltaSeconds)
 			}
 			Proto->bProtoAutoThrust = bSteerLatch;
 			// [2026-11-03 T-075] Prototype stamina classification (spike
-			// economy: dive posture costs 0, precision/hover band 8/s, glide
-			// 1/s). Zero stamina keeps glide/brake/land (mercy rule) and
+			// economy: dive posture costs 0, precision/hover band the
+			// hover rate, glide free).
+			// [2026-11-04 T-124] Restamped: hover 8/s -> 3/s (and glide
+			// has been 0/s, not 1/s, since T-062). Zero stamina keeps
+			// glide/brake/land (mercy rule) and
 			// burns HP only on draining actions — mirroring the shipped block.
 			const float Airspeed = Move->Velocity.Size();
 			const float AuthorityW = UDragonMovementComponent::PrecisionAuthorityWeight(
@@ -2620,8 +2634,9 @@ FRotator ADragonCharacter::GetProtoNose() const
 void ADragonCharacter::HandleMoveStarted(const FInputActionValue& Value)
 {
 	// [2026-11-03 T-075] W-tap Surge (adopted KB map): a fresh forward press
-	// in the momentum band buys +800 cm/s for one 20-point reserve (1/s
+	// in the momentum band buys +800 cm/s for one impulse reserve (1/s
 	// precision-band W stays thrust; shipped has no tap.
+	// [2026-11-04 T-124] Reserve cost reads Stats data (10, was 20.0f).
 	if (!IsPrototypeFlying())
 	{
 		return;
@@ -2645,11 +2660,11 @@ void ADragonCharacter::HandleMoveStarted(const FInputActionValue& Value)
 		return;
 	}
 	const float Now = GetWorld()->GetTimeSeconds();
-	if (Now - LastSurgeTime < 1.0f || Stats->Stamina < 20.0f)
+	if (Now - LastSurgeTime < 1.0f || Stats->Stamina < Stats->ImpulseReserveCost)
 	{
 		return;
 	}
-	if (Stats->TryConsumeStamina(20.0f))
+	if (Stats->TryConsumeStamina(Stats->ImpulseReserveCost))
 	{
 		LastSurgeTime = Now;
 		Proto->ApplySurge();
@@ -2787,12 +2802,14 @@ void ADragonCharacter::TickFlightCourse(float DeltaSeconds)
 	const float BaseYaw = GetControlRotation().Yaw;
 	switch (CoursePhase)
 	{
-	case 0: // Takeoff: Ascent launch on the same 20-reserve gate as HandleFlap.
+	case 0: // Takeoff: Ascent launch on the same reserve gate as HandleFlap.
+		// [2026-11-04 T-124] Reserve cost reads Stats data (10, was 20.0f).
 		if (CoursePhaseTime <= DeltaSeconds * 1.5f && !IsPrototypeFlying())
 		{
 			Move->SetMovementMode(MOVE_Custom, UDragonMovementComponent::DragonFlightCustomMode);
 			ProtoNose = GetControlRotation();
-			if (Stats->Stamina >= 20.0f && Stats->TryConsumeStamina(20.0f))
+			if (Stats->Stamina >= Stats->ImpulseReserveCost &&
+				Stats->TryConsumeStamina(Stats->ImpulseReserveCost))
 			{
 				Proto->ApplyAscent();
 			}
@@ -2815,7 +2832,8 @@ void ADragonCharacter::TickFlightCourse(float DeltaSeconds)
 			CourseMark = GetActorLocation();
 			// [2026-11-03 T-075] Climb entry needs energy: a second reserve
 			// buys a Surge the nose-up cruise then converts to altitude.
-			if (Stats->Stamina >= 20.0f && Stats->TryConsumeStamina(20.0f))
+			if (Stats->Stamina >= Stats->ImpulseReserveCost &&
+				Stats->TryConsumeStamina(Stats->ImpulseReserveCost))
 			{
 				Proto->ApplySurge();
 				CourseLog(TEXT("CourseLeg climb: entry surge (stamina %.1f)"), Stats->Stamina);
@@ -2834,7 +2852,8 @@ void ADragonCharacter::TickFlightCourse(float DeltaSeconds)
 			CoursePhaseTime = 0.0f;
 			CourseMark = GetActorLocation();
 			RestoreCoursePool(TEXT("climb"));
-			if (Stats->Stamina >= 20.0f && Stats->TryConsumeStamina(20.0f))
+			if (Stats->Stamina >= Stats->ImpulseReserveCost &&
+				Stats->TryConsumeStamina(Stats->ImpulseReserveCost))
 			{
 				Proto->ApplySurge();
 				CourseLog(TEXT("CourseLeg cruise: surged (stamina %.1f)"), Stats->Stamina);
@@ -2892,10 +2911,15 @@ void ADragonCharacter::TickFlightCourse(float DeltaSeconds)
 		}
 		break;
 	case 5: // Hover: dead stick; measure drift (chimney/cave enabler).
-		if (CoursePhaseTime >= 5.0f)
+	{
+		// [2026-11-04 T-124] Leg length reads the cvar (default 5 s, the
+		// T-075 measurement); stamina proofs stretch it past 60 s.
+		// Braced like case 3: the declaration must not leak into case 6.
+		const float HoverLegSeconds = FMath::Max(1.0f, CVarCourseHoverSeconds.GetValueOnGameThread());
+		if (CoursePhaseTime >= HoverLegSeconds)
 		{
-			CourseLog(TEXT("CourseLeg hover: drift=%.0fcm over 5s (stamina %.1f)"),
-					  (GetActorLocation() - CourseMark).Size(), Stats->Stamina);
+			CourseLog(TEXT("CourseLeg hover: drift=%.0fcm over %.0fs (stamina %.1f)"),
+					  (GetActorLocation() - CourseMark).Size(), HoverLegSeconds, Stats->Stamina);
 			// [2026-11-03 T-075] Transit: assisted landing flies onto the Entry
 			// floor by the PlayerStart disc (guaranteed clear spawn ground —
 			// the hoard center proved unwedgeable: SeeingStone + chests at
@@ -2915,6 +2939,7 @@ void ADragonCharacter::TickFlightCourse(float DeltaSeconds)
 			CourseLog(TEXT("CourseLeg land: assist ON, descending"));
 		}
 		break;
+	}
 	case 6: // Assisted landing: slight nose-down until walk, or timeout.
 		ProtoNose = FRotator(-10.0f, BaseYaw, 0.0f);
 		CourseTouchSpeed = Move->Velocity.Size();
@@ -3033,11 +3058,16 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 					const FString FlightStateText = (IsPrototypeFlying() || IsFlying())
 														? UDragonHUDWidget::FormatFlightState(bFlightDive, bFlightBrake, bFlightHover)
 														: FString();
+					// [2026-11-04 T-124] Testing badge rides the same feed:
+					// the widget owns presentation, the pawn owns state.
+					const FString TestingBadgeText = UDragonHUDWidget::FormatTestingBadge(
+						UDragonStatsComponent::IsInfiniteStaminaEnabled());
 					HUDWidget->Refresh(Stats->HP, Stats->MaxHP, Stats->Stamina, Stats->MaxStamina,
 									   Notoriety->GetStars(), Notoriety->GetPoints(),
 									   Hoard->GetCurrentHoard(TreasureSub->Registry()->TotalGold()),
 									   Hoard->GetStartingHoard(), Waves->GetCurrentWave(),
-									   HUDXP->GetTotalXP(), WaveWords[WaveIndex], FlightStateText);
+									   HUDXP->GetTotalXP(), WaveWords[WaveIndex], FlightStateText,
+									   TestingBadgeText);
 				}
 			}
 		}
@@ -3310,7 +3340,8 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 	// [2026-10-28 T-011] Flight mode name + drain rate for this tick, in
 	// one place so the debug readout below can never disagree with what
 	// was actually charged. GAMEPLAY.md section 2: dive 0/s (altitude
-	// pays), hover 8/s (priced out), glide 0/s (unpowered travel).
+	// pays), hover 3/s (priced loiter, was 8/s before T-124), glide 0/s
+	// (unpowered travel).
 	// [2026-11-03 T-062] This legacy block runs only on scheme 0 now: the
 	// hybrid (default) drains in UpdatePrototypeFlight above.
 	const FVector Velocity = GetCharacterMovement()->Velocity;
@@ -3334,10 +3365,12 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 		{
 			// [2026-10-28 T-036] Only a stamina-spending action has an
 			// exhaustion consequence. A dive reaches this point with a
-			// zero rate, so it keeps flying without HP burn; glide and
-			// hover have positive rates and therefore burn HP before
-			// flight ends. Checked after the stamina drain so the tick
-			// that empties the pool is also the first tick that pays.
+			// zero rate, so it keeps flying without HP burn; a free glide
+			// keeps flying with it (0/s since T-062 — the pre-T-124 note
+			// wrongly gave glide a positive rate), and only hover still
+			// burns HP before flight ends. Checked after the stamina
+			// drain so the tick that empties the pool is also the first
+			// tick that pays.
 			Stats->DrainHPForExhaustion(DeltaSeconds);
 			// [2026-10-27 T-003] Exhausted dragon glides down, not falls out of
 			// control: force walking mode so landing logic takes over.

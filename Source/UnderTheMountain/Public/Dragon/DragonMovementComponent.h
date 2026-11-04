@@ -79,7 +79,8 @@ struct FDragonFlightParams
 	float DragConvergenceRate = 1.5f;
 
 	// [2026-11-03 T-075] Discrete impulse delta-v values (cm/s). Stamina
-	// gating (one full 20-point reserve each) is the caller's job via Stats.
+	// gating (one full impulse reserve each) is the caller's job via Stats.
+	// [2026-11-04 T-124] The reserve is Stats->ImpulseReserveCost (10).
 	UPROPERTY(EditAnywhere, Category = "Dragon|Flight")
 	float SurgeDeltaV = 800.0f;
 

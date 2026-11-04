@@ -91,6 +91,11 @@ void UDragonHUDWidget::NativeOnInitialized()
 	// Hover / Brake / Glide in player terms); collapsed while grounded.
 	FlightStateText = MakeLabel(WidgetTree, TEXT("HUDFlightStateText"), TEXT(""), 13,
 								FLinearColor(1.0f, 0.9f, 0.55f));
+	// [2026-11-04 T-124] Testing badge under the flight-state line (god
+	// mode only); collapsed while off. Magenta reads as neither HP
+	// (crimson) nor stamina (green) nor flight (gold).
+	TestingBadgeText = MakeLabel(WidgetTree, TEXT("HUDTestingBadgeText"), TEXT(""), 13,
+								 FLinearColor(1.0f, 0.45f, 0.9f));
 	if (VitalsPanel && VitalsBox && HPText && HPBar && StaminaText && StaminaBar)
 	{
 		VitalsBox->AddChildToVerticalBox(HPText);
@@ -104,6 +109,10 @@ void UDragonHUDWidget::NativeOnInitialized()
 		if (FlightStateText != nullptr)
 		{
 			VitalsBox->AddChildToVerticalBox(FlightStateText);
+		}
+		if (TestingBadgeText != nullptr)
+		{
+			VitalsBox->AddChildToVerticalBox(TestingBadgeText);
 		}
 		VitalsPanel->SetContent(VitalsBox);
 		if (UCanvasPanelSlot* Slot = Canvas->AddChildToCanvas(VitalsPanel))
@@ -176,6 +185,13 @@ FString UDragonHUDWidget::FormatFlightState(bool bDiving, bool bBraking, bool bH
 	return TEXT("GLIDING - nose down to dive");
 }
 
+FString UDragonHUDWidget::FormatTestingBadge(bool bInfiniteStamina)
+{
+	// [2026-11-04 T-124] The badge names what is on: a tester seeing a
+	// full stamina bar needs to know it is the cvar, not the economy.
+	return bInfiniteStamina ? TEXT("TESTING - INFINITE STAMINA") : TEXT("");
+}
+
 FString UDragonHUDWidget::FormatHoard(int64 Hoard, int64 StartingHoard, int32 Wave, int32 XP,
 									  const FString& WaveStateText)
 {
@@ -197,7 +213,8 @@ float UDragonHUDWidget::BarFraction(float Value, float Max)
 
 void UDragonHUDWidget::Refresh(float HP, float MaxHP, float Stamina, float MaxStamina, int32 Stars,
 							   int32 Points, int64 Hoard, int64 StartingHoard, int32 Wave, int32 XP,
-							   const FString& WaveStateText, const FString& FlightStateLabel)
+							   const FString& WaveStateText, const FString& FlightStateLabel,
+							   const FString& TestingBadgeLabel)
 {
 	if (HPBar)
 	{
@@ -237,5 +254,12 @@ void UDragonHUDWidget::Refresh(float HP, float MaxHP, float Stamina, float MaxSt
 		FlightStateText->SetText(FText::FromString(FlightStateLabel));
 		FlightStateText->SetVisibility(FlightStateLabel.IsEmpty() ? ESlateVisibility::Collapsed
 																  : ESlateVisibility::Visible);
+	}
+	if (TestingBadgeText)
+	{
+		// [2026-11-04 T-124] Same contract: empty (god mode off) collapses.
+		TestingBadgeText->SetText(FText::FromString(TestingBadgeLabel));
+		TestingBadgeText->SetVisibility(TestingBadgeLabel.IsEmpty() ? ESlateVisibility::Collapsed
+																	: ESlateVisibility::Visible);
 	}
 }

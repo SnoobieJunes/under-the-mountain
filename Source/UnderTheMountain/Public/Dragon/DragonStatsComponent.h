@@ -42,7 +42,10 @@ class UNDERTHEMOUNTAIN_API UDragonStatsComponent : public UActorComponent
 
 	// [2026-10-28 T-011] GAMEPLAY.md section 2 (all [tuning: PT-STAM]):
 	// [2026-11-03 T-062] glide 1/s -> 0/s: unpowered travel is free.
-	// glide 0/s, hover -8/s, dive 0/s (a zero rate is free; glide keeps its
+	// [2026-11-04 T-124] hover 8/s -> 3/s: the playtest dragon could not
+	// stay airborne (8/s empties the pool in 12.5 s); 3/s prices the
+	// loiter without grounding the fantasy. Glide stays 0/s.
+	// glide 0/s, hover -3/s, dive 0/s (a zero rate is free; glide keeps its
 	// field so the rate stays data, dive passes 0 inline and has none).
 	// Hover is "flying but barely moving horizontally";
 	// the pawn classifies by comparing horizontal speed to this threshold.
@@ -50,7 +53,7 @@ class UNDERTHEMOUNTAIN_API UDragonStatsComponent : public UActorComponent
 	float GlideDrainPerSecond = 0.0f;
 
 	UPROPERTY(EditAnywhere, Category = "Dragon|Stats")
-	float HoverDrainPerSecond = 8.0f;
+	float HoverDrainPerSecond = 3.0f;
 
 	UPROPERTY(EditAnywhere, Category = "Dragon|Stats")
 	float HoverSpeedThreshold = 150.0f;
@@ -67,6 +70,14 @@ class UNDERTHEMOUNTAIN_API UDragonStatsComponent : public UActorComponent
 	// GAMEPLAY.md section 2 attaches the cost to the discrete flap input.
 	UPROPERTY(EditAnywhere, Category = "Dragon|Stats")
 	float FlapStaminaCost = 3.0f;
+
+	// [2026-11-04 T-124] One Ascent/Surge impulse costs one full reserve
+	// (GAMEPLAY.md section 2, [tuning: PT-STAM]): 20 -> 10, so a launch
+	// sequence (Ascent + entry Surge) costs 20 instead of 40 and a full
+	// pool holds ten impulses. New as data (was a 20.0f literal at every
+	// call site) so the retune is one edit and automation can pin it.
+	UPROPERTY(EditAnywhere, Category = "Dragon|Stats")
+	float ImpulseReserveCost = 10.0f;
 
 	UPROPERTY(VisibleAnywhere, Category = "Dragon|Stats")
 	float Stamina;
@@ -104,6 +115,14 @@ class UNDERTHEMOUNTAIN_API UDragonStatsComponent : public UActorComponent
 
 	// [2026-10-27 T-003] Pure stamina math, owner-free on purpose: automation
 	// tests exercise these directly without spawning a world.
+	// [2026-11-04 T-124] Purity exception: the four spend verbs below
+	// (TryConsumeStamina, both DrainForFlight overloads, and the
+	// exhaustion pair DrainHPForExhaustion/ShouldForceFallAtZeroStamina)
+	// no-op while the utm.testing.infinitestamina cvar is on, so god
+	// mode gates every stamina cost/drain in both flight paths (hybrid
+	// + legacy) from this one seam. Tests set the cvar directly; HP
+	// damage (ApplyHPDamage) is never gated.
+	static bool IsInfiniteStaminaEnabled();
 	bool TryConsumeStamina(float Cost);
 	void ApplyStaminaDelta(float Delta);
 	void DrainForFlight(float DeltaSeconds);

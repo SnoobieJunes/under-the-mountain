@@ -29,7 +29,7 @@ class UNDERTHEMOUNTAIN_API UDragonHUDWidget : public UUserWidget
 	// caller's word so this widget stays presentation-only.
 	void Refresh(float HP, float MaxHP, float Stamina, float MaxStamina, int32 Stars, int32 Points,
 				 int64 Hoard, int64 StartingHoard, int32 Wave, int32 XP, const FString& WaveStateText,
-				 const FString& FlightStateLabel);
+				 const FString& FlightStateLabel, const FString& TestingBadgeLabel);
 
 	// [2026-11-01 T-019] Pure formatting, tested verbatim:
 	// star pips (filled/empty of 5) with the point total, the
@@ -46,6 +46,11 @@ class UNDERTHEMOUNTAIN_API UDragonHUDWidget : public UUserWidget
 	// the urgent state. All false is level cruise (glide); the pawn
 	// passes empty while grounded so the line collapses.
 	static FString FormatFlightState(bool bDiving, bool bBraking, bool bHovering);
+
+	// [2026-11-04 T-124] Pure testing-badge text, tested verbatim: the
+	// god-mode indicator the HUD shows while utm.testing.infinitestamina
+	// is on (off collapses the line, like the grounded flight state).
+	static FString FormatTestingBadge(bool bInfiniteStamina);
 
   protected:
 	virtual void NativeOnInitialized() override;
@@ -76,4 +81,9 @@ class UNDERTHEMOUNTAIN_API UDragonHUDWidget : public UUserWidget
 	// player terms); hidden while grounded (empty text collapses it).
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> FlightStateText;
+
+	// [2026-11-04 T-124] Testing badge (god mode); same empty-collapses
+	// contract as the flight-state line above.
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> TestingBadgeText;
 };

@@ -10,6 +10,19 @@
 
 #include "Dragon/DragonStatsComponent.h"
 
+// [2026-11-04 T-124] God mode (testable slice of T-088's Testing toggle):
+// while on, every stamina cost/drain and the exhaustion HP burn no-op
+// (the gates below); HP damage is untouched. Default off; T-088's screen
+// keeps the toggle UI, this cvar is the automation/PIE vehicle.
+static TAutoConsoleVariable<int32> CVarInfiniteStamina(
+	TEXT("utm.testing.infinitestamina"), 0,
+	TEXT("Infinite stamina god mode (T-124): 1 disables every stamina cost/drain + " TEXT("the exhaustion HP burn (HP damage still applies); 0 is the shipped economy.")));
+
+bool UDragonStatsComponent::IsInfiniteStaminaEnabled()
+{
+	return CVarInfiniteStamina.GetValueOnGameThread() != 0;
+}
+
 UDragonStatsComponent::UDragonStatsComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
@@ -20,6 +33,13 @@ UDragonStatsComponent::UDragonStatsComponent()
 
 bool UDragonStatsComponent::TryConsumeStamina(float Cost)
 {
+	// [2026-11-04 T-124] God mode succeeds the purchase without spending:
+	// callers gate their impulse/verb on this bool, so returning true
+	// keeps Ascent/Surge/fire working while the pool never depletes.
+	if (IsInfiniteStaminaEnabled())
+	{
+		return true;
+	}
 	if (Cost < 0.0f || Stamina < Cost)
 	{
 		return false;
@@ -43,6 +63,13 @@ void UDragonStatsComponent::DrainForFlight(float DeltaSeconds)
 
 void UDragonStatsComponent::DrainForFlight(float DeltaSeconds, float RatePerSecond)
 {
+	// [2026-11-04 T-124] God mode: no per-second drain lands (covers the
+	// legacy no-rate overload above, which delegates here, plus fire
+	// breath, which reuses this verb for its per-second cost).
+	if (IsInfiniteStaminaEnabled())
+	{
+		return;
+	}
 	// [2026-10-28 T-011] Negative time and non-positive rates (dive) are
 	// free by construction: Max() on both, never a regen in disguise.
 	ApplyStaminaDelta(-FMath::Max(0.0f, RatePerSecond) * FMath::Max(0.0f, DeltaSeconds));
@@ -67,6 +94,13 @@ void UDragonStatsComponent::RestoreHP(float Amount)
 
 void UDragonStatsComponent::DrainHPForExhaustion(float DeltaSeconds)
 {
+	// [2026-11-04 T-124] God mode: the exhaustion HP burn is a stamina
+	// consequence, so it is gated with the drains (plain HP damage via
+	// ApplyHPDamage is never gated).
+	if (IsInfiniteStaminaEnabled())
+	{
+		return;
+	}
 	// [2026-10-28 T-011] GAMEPLAY.md section 2: at 0 stamina, continuing a
 	// draining action burns HP at ExhaustionHPDrainPerSecond (2/s). The
 	// pawn only calls this while a draining action continues, so a free
@@ -114,8 +148,16 @@ bool UDragonStatsComponent::ShouldForceFallAtZeroStamina(float RatePerSecond) co
 	// section 2: altitude, not stamina, pays for it. Therefore zero
 	// stamina must not convert a dive into a fall or start the HP
 	// burn. [2026-11-03 T-108] Same for glide (0/s since T-062):
-	// only hover still drains (8/s), so only continuing to hover at
-	// zero stamina has both consequences. (Corrects the T-036 note,
-	// which gave glide a positive rate.)
+	// only hover still drains (3/s since T-124), so only continuing
+	// to hover at zero stamina has both consequences. (Corrects the
+	// T-036 note, which gave glide a positive rate.)
+	// [2026-11-04 T-124] God mode never forces the fall (the pool never
+	// depletes while on; without this, toggling on at empty stamina
+	// would ground a dragon that can no longer spend). The rate rule
+	// below is unchanged when the cvar is off.
+	if (IsInfiniteStaminaEnabled())
+	{
+		return false;
+	}
 	return RatePerSecond > 0.0f;
 }

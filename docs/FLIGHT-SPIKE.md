@@ -24,7 +24,7 @@ starting tuning values.
 
 | Decision | Adopted prototype rule | Source |
 |---|---|---|
-| Stamina display/costs | One continuous 0–100 pool, HUD-segmented into five 20-point reserves. Ascent and Surge each require and spend one full 20-point reserve; continuous costs can spend fractions. | Owner: "idk whats better" → agent decision: preserves one survival economy while making impulse costs readable. |
+| Stamina display/costs | One continuous 0–100 pool, HUD-segmented into five 20-point reserves. Ascent and Surge each require and spend one full 20-point reserve; continuous costs can spend fractions. [2026-11-04 T-124: starting values, since retuned to ten 10-point reserves + hover 3/s — docs/GAMEPLAY.md §2 is normative.] | Owner: "idk whats better" → agent decision: preserves one survival economy while making impulse costs readable. |
 | Fast-flight/skim stamina regen | **None.** Speed never creates stamina. Skimming only gets the physical benefit of ground effect: less induced drag/sink and better speed retention. | Owner questioned the premise; agent rejected WoW-style resource creation for this game's food economy (explained below). |
 | Dive | Dive is nose-down posture, not a powered button. Left Shift becomes Brake. | Owner: "idk whats better UX" → agent decision. |
 | Precision authority | Automatic by airspeed, with Brake as an explicit override into the precision band. Starting bands: precision ≤650 cm/s, blend 650–1600, momentum >1600. | Agent decision under delegation. |
@@ -153,6 +153,8 @@ Weaknesses: velocity is commanded rather than earned. There is no reason to
 dive for speed, trade altitude, skim terrain, or plan an energy line. At a flat
 1800 cm/s cap, a minutes-wide world becomes a commute. Hover also becomes the
 resting state GAMEPLAY prices at -8/s specifically to discourage.
+[2026-11-04 T-124: -8/s was the then-current §2 hover price; T-124
+retuned hover to -3/s — §2 is normative.]
 
 Estimated cost: 1-2 sessions. This is the comfort option, not the AAA-feel
 option.
@@ -298,7 +300,8 @@ A momentum model changes the economy even if all food numbers remain.
 Adopted mapping:
 
 - Treat stamina as the existing 0-100 pool, displayed in five 20-point
-  segments. Fire, roar, and other continuous costs continue drawing fractions
+  segments [2026-11-04 T-124: starting values, since retuned to ten
+  10-point segments — docs/GAMEPLAY.md §2 is normative]. Fire, roar, and other continuous costs continue drawing fractions
   from the same pool; Ascent and Surge require and spend a full 20-point
   segment so their cost reads at a glance.
 - Unpowered glide and descent cost nothing.
@@ -358,7 +361,8 @@ Owner annotations were incorporated on 2026-10-31. Their wording is not
 preserved as design text; its substance is:
 
 - "idk" on charge presentation → one continuous pool with 20-point HUD
-  segments and 20-point impulse costs.
+  segments and 20-point impulse costs [2026-11-04 T-124: starting
+  values, since retuned to ten 10-point — docs/GAMEPLAY.md §2].
 - "That doesn't make sense. why?" on speed/skim regen → explained as WoW's
   arcade Vigor abstraction, then rejected for stamina; only physical ground
   effect (less drag/sink) carries over.

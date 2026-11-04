@@ -60,6 +60,14 @@ bool FDragonHUDTest::RunTest(const FString& Parameters)
 			  UDragonHUDWidget::FormatFlightState(false, false, false),
 			  FString(TEXT("GLIDING - nose down to dive")));
 
+	// [2026-11-04 T-124] Testing badge, tested verbatim: on names the
+	// cvar effect (a full stamina bar must read as god mode, not the
+	// economy); off is empty so the pawn's line collapses.
+	TestEqual(TEXT("badge names infinite stamina while on"),
+			  UDragonHUDWidget::FormatTestingBadge(true),
+			  FString(TEXT("TESTING - INFINITE STAMINA")));
+	TestEqual(TEXT("badge is empty while off"), UDragonHUDWidget::FormatTestingBadge(false), FString());
+
 	return true;
 }
 

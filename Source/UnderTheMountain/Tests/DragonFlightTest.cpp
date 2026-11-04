@@ -17,6 +17,7 @@
 #include "Animation/Skeleton.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "HAL/IConsoleManager.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -29,12 +30,12 @@ bool FDragonFlightTest::RunTest(const FString& Parameters)
 	// [2026-10-28 T-011] Defaults first, on a fresh component, before any
 	// test-local tuning overwrites them: these lock the GAMEPLAY.md s2
 	// numbers (flap 3/beat, glide 0/s [2026-11-03 T-062: unpowered travel],
-	// hover 8/s, exhaustion 2 HP/s) and
+	// hover 3/s [2026-11-04 T-124: was 8/s], exhaustion 2 HP/s) and
 	// the landing tuning picked in the header (800..2200 cm/s -> 5..25).
 	UDragonStatsComponent* Defaults = NewObject<UDragonStatsComponent>();
 	TestEqual(TEXT("flap cost default is 3 per beat"), Defaults->FlapStaminaCost, 3.0f);
 	TestEqual(TEXT("glide drain default is 0/s (unpowered)"), Defaults->GlideDrainPerSecond, 0.0f);
-	TestEqual(TEXT("hover drain default is 8/s"), Defaults->HoverDrainPerSecond, 8.0f);
+	TestEqual(TEXT("hover drain default is 3/s"), Defaults->HoverDrainPerSecond, 3.0f);
 	TestEqual(TEXT("exhaustion HP drain default is 2/s"), Defaults->ExhaustionHPDrainPerSecond, 2.0f);
 	TestEqual(TEXT("landing threshold default is 800 cm/s"), Defaults->LandingSpeedThreshold, 800.0f);
 	TestEqual(TEXT("landing max-damage speed default is 2200 cm/s"), Defaults->LandingSpeedMaxDamage, 2200.0f);
@@ -129,15 +130,69 @@ bool FDragonFlightTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("zero-stamina hover forces a fall"),
 			 Stats->ShouldForceFallAtZeroStamina(Stats->HoverDrainPerSecond));
 
-	// [2026-11-03 T-062] Impulse economy: one full 20-point reserve buys one
-	// Ascent/Surge (GAMEPLAY.md s2), so a full pool holds exactly five.
+	// [2026-11-04 T-124] Impulse economy retune (GAMEPLAY.md s2, was the
+	// T-062 five-reserve block): one full 10-point reserve buys one
+	// Ascent/Surge, so a full pool holds exactly ten. The cost reads
+	// Stats data (pinned above on Defaults), not a literal.
+	TestEqual(TEXT("impulse reserve default is 10"), Stats->ImpulseReserveCost, 10.0f);
 	Stats->Stamina = Stats->MaxStamina;
-	for (int32 Impulse = 0; Impulse < 5; ++Impulse)
+	for (int32 Impulse = 0; Impulse < 10; ++Impulse)
 	{
-		TestTrue(TEXT("a full reserve buys one impulse"), Stats->TryConsumeStamina(20.0f));
+		TestTrue(TEXT("a full reserve buys one impulse"),
+				 Stats->TryConsumeStamina(Stats->ImpulseReserveCost));
 	}
-	TestEqual(TEXT("five impulses exactly empty a full pool"), Stats->Stamina, 0.0f);
-	TestFalse(TEXT("no sixth impulse on an empty pool"), Stats->TryConsumeStamina(20.0f));
+	TestEqual(TEXT("ten impulses exactly empty a full pool"), Stats->Stamina, 0.0f);
+	TestFalse(TEXT("no eleventh impulse on an empty pool"),
+			  Stats->TryConsumeStamina(Stats->ImpulseReserveCost));
+	return true;
+}
+
+// [2026-11-04 T-124] God mode: utm.testing.infinitestamina gates every
+// stamina spend verb + the exhaustion burn from the Stats seam (both
+// flight paths inherit it — they share these methods), while HP damage
+// stays ungated. The cvar is restored off at the end so no later test
+// can observe god mode leaking across the suite.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDragonGodModeTest, "UnderTheMountain.Dragon.GodMode",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDragonGodModeTest::RunTest(const FString& Parameters)
+{
+	IConsoleVariable* CVar = IConsoleManager::Get().FindConsoleVariable(TEXT("utm.testing.infinitestamina"));
+	TestNotNull(TEXT("god-mode cvar exists"), CVar);
+	if (CVar == nullptr)
+	{
+		return false;
+	}
+	TestEqual(TEXT("god mode defaults off"), CVar->GetInt(), 0);
+	TestFalse(TEXT("accessor agrees god mode is off"), UDragonStatsComponent::IsInfiniteStaminaEnabled());
+
+	UDragonStatsComponent* Stats = NewObject<UDragonStatsComponent>();
+	Stats->MaxStamina = 100.0f;
+	Stats->Stamina = 40.0f;
+	Stats->MaxHP = 100.0f;
+	Stats->HP = 100.0f;
+	// Legacy overload drains at this rate (default 0 would prove nothing).
+	Stats->FlyingDrainPerSecond = 5.0f;
+
+	CVar->Set(1);
+	TestTrue(TEXT("accessor agrees god mode is on"), UDragonStatsComponent::IsInfiniteStaminaEnabled());
+	TestTrue(TEXT("god-mode consume succeeds"), Stats->TryConsumeStamina(50.0f));
+	TestEqual(TEXT("god-mode consume spends nothing"), Stats->Stamina, 40.0f);
+	Stats->DrainForFlight(10.0f, Stats->HoverDrainPerSecond);
+	TestEqual(TEXT("god-mode hover drain spends nothing"), Stats->Stamina, 40.0f);
+	Stats->DrainForFlight(10.0f);
+	TestEqual(TEXT("god-mode legacy overload spends nothing"), Stats->Stamina, 40.0f);
+	Stats->DrainHPForExhaustion(10.0f);
+	TestEqual(TEXT("god-mode exhaustion burns no HP"), Stats->HP, 100.0f);
+	TestFalse(TEXT("god mode never forces the fall"),
+			  Stats->ShouldForceFallAtZeroStamina(Stats->HoverDrainPerSecond));
+	Stats->ApplyHPDamage(25.0f);
+	TestEqual(TEXT("god mode leaves HP damage untouched"), Stats->HP, 75.0f);
+
+	CVar->Set(0);
+	TestFalse(TEXT("accessor agrees god mode is back off"), UDragonStatsComponent::IsInfiniteStaminaEnabled());
+	TestTrue(TEXT("economy restored: consume succeeds"), Stats->TryConsumeStamina(10.0f));
+	TestEqual(TEXT("economy restored: consume spends again"), Stats->Stamina, 30.0f);
 	return true;
 }
 
