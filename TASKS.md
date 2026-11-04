@@ -11,8 +11,7 @@
 <!-- [2026-10-31] Owner pulled T-075 + T-067 forward and ran them in parallel.
      Findings + adopted decisions are landed in docs/FLIGHT-SPIKE.md and
      docs/ANIMATION-SPIKE.md (owner annotations + agent best-judgement calls
-     under owner delegation). Neither spike is DONE: flight still owes the
-     playable PIE prototype course, and animation still owes T-059 + renders. -->
+     under owner delegation). [Closed: both spikes + T-059 are Done; flight feel-check rides T-030, animation implementation is T-125/T-126.] -->
 <!-- [2026-11-01] Owner ungating pass: spike-decided tasks flipped
      Gated: owner -> none so the loop can pick them (T-058, T-059, T-061,
      T-062, T-063, T-064, T-065, T-066, T-067, T-068, T-072, T-073, T-075,
@@ -43,9 +42,12 @@
       Why: owner playtest 2026-11-03: a poorly placed mountain mass covers a village in dark shadow and ruins the light. Owner direction: rebuild the map intelligently now that full scope is known, so it reads as a normal medieval world (villages in sun, mountain as backdrop/hoard home, castles/farms/roads placed deliberately).
       Accept: terrain + settlement layout re-authored (heightfield keeps villages/castles out of terrain self-shadow at the shipped sun angle; no landscape geometry overhangs a settlement); PeakSun/Shadows verified in -game captures of every settlement at default quality (readable sunlit pixels, no full-village shadow); existing systems unregressed (verify_lair 21/21 or its successor, thieves/villagers/goats still spawn and path, fps recorded vs T-115 baseline); placement idempotent via the map_guard chain; gate green.
       Touches: Content/Maps/, Scripts/create_world_terrain.py, Scripts/create_exterior.py, Scripts/create_sky.py   Depends: none   Gated: none
-- [ ] T-127 — Treasure scent: particle density + metallic gold sheen
+- [ ] T-114 — New goat + foliage content: rig/walk import, nat_* placement (owner drop, future)
+      Why: owner-supplied newest livestock + foliage (Content/Meshy/World/: liv-goat_quad_v2.* incl. walk cycle + nat-bush/broadleaf/grass FBX+GLB+basecolor) waits behind the dragon resync.
+      Accept: inventory the drop at claim (counts/formats recorded); goat texture holes fixed (owner playtest 2026-11-03: holes in goat textures — inspect UV/mesh at claim, repair or retexture) and goat rigged mesh + walk cycle imported and visible on the existing goat actors or their replacement (decided at claim); nat_* sets placed via the T-049/T-050 chain with the placement idempotent; foliage tri budget per docs/ASSET-PIPELINE.md (<=5k props, NOT 30k — FINAL-SPRINT prompt cap corrected in meatsuite.md), instanced where repeated; -game capture shows new goat + foliage; gate green.
+      Touches: Content/Meshy/World/, Scripts/, Content/Maps/   Depends: T-113, T-122   Gated: none- [ ] T-127 — Treasure scent: particle density + metallic gold sheen
       Why: owner feedback 2026-11-03: scent ribbons need particle density and a more metallic, gold, appetizing read (pillar 1's signature mechanic).
-      Accept: NS_ScentRibbon density/sheen retuned (values recorded here at claim); ribbon still spans nose-to-treasure (T-040 coverage rule); thickness still ranks value (PT-SCENT order); -game captures at gameplay distance in lair + exterior light reviewed; fps cost recorded; gate green.
+      Accept: NS_ScentRibbon density/sheen retuned (values recorded here at claim); ribbon still spans nose-to-treasure (T-040 coverage rule); end-on white-bar artifact in Near/Far cameras (T-111 finding) fixed or formally waived here; thickness still ranks value (PT-SCENT order); -game captures at gameplay distance in lair + exterior light reviewed; fps cost recorded; gate green.
       Touches: Content/Gameplay/Treasures/ (NS_ScentRibbon), Source/UnderTheMountain/Private/Scent/ (only if params move to code)   Depends: none   Gated: none
 - [ ] T-128 — Graphics quality presets: highest default, lowerable in Settings
       Why: owner pick 2026-11-03: ship maximum fidelity by default for the demo; judges/players on weaker machines need Low/Medium/High/Ultra to trade down. This is the graphics slice of T-088 (which keeps volume/sensitivity/invert + the god-mode toggle UI) and carries T-115's shipped-default decision.
@@ -129,7 +131,7 @@
 - [ ] T-021 — Submission package: video capture + project page draft
       Why: hackathon deliverable beyond the build.
       Accept: Unedited live gameplay capture recorded from the T-020 build. The route may be the benchmark loop **or an unscripted sandbox/"go rogue" run**; either must show intro exit, open-world flight, scent-led play, and the game responding systemically (theft/Notoriety/combat or consequences of ignoring them) without demo-only scripting. Submission text (pillars, stack, agentic workflow) drafted in docs/SUBMISSION.md.
-      Touches: docs/SUBMISSION.md   Depends: T-020   Gated: owner
+      Touches: docs/SUBMISSION.md   Depends: T-020, T-071, T-115, T-124, T-125, T-126, T-128, T-129   Gated: owner
 <!-- [2026-11-03] Owner redirect: v6 dragon replaces v4 now, then the camera is
      retuned to it. T-100's "v6 import rides with T-068 remainder" is superseded:
      T-110 takes import + pawn hookup, T-068 keeps clips/ABP/captures. -->
@@ -147,11 +149,37 @@
       Accept: NEW-PROJECT-GUIDE step-5 checklist run; [process] marker entry filed; successor sweep task filed.
       Touches: goose-deuce.md, docs/PLAN.md, TASKS.md   Depends: none   Gated: cadence
 
+- [ ] T-129 — Final freeze: repackage, packaged smoke, submission package
+      Why: audit 2026-11-03: Saved/Packaged .app (Nov 3 21:01) predates HEAD and all of T-122-T-128; docs/SUBMISSION.md does not exist; T-021 alone cannot ship a judge-ready build. This is the code-freeze task the deadline needs.
+      Accept: on final code: Scripts/gate.sh green; Scripts/package.sh rebuilt; fresh .app launched via LaunchServices (double-click path, not raw exec) reaching gameplay; docs/SUBMISSION.md complete (pillars, stack, controls, credits incl. friend music, known limits); upload artifact preserved outside git with path + checksum recorded here; gate green.
+      Touches: Scripts/package.sh, docs/SUBMISSION.md, README.md   Depends: T-122, T-123, T-124, T-125, T-126, T-127, T-128, T-115   Gated: none
+- [ ] T-130 — Judge launch path: double-click/Gatekeeper smoke for the packaged app
+      Why: audit: README only supports terminal -windowed launch; the judges' double-click (LaunchServices, no-flags fullscreen) wedged once and raw-exec SIGSEGV'd twice (T-115 watch). Nobody owns proving the path a judge actually uses.
+      Accept: fresh packaged .app double-clicked (LaunchServices) reaches title->gameplay on this Mac; unsigned/Development Gatekeeper behaviour recorded with the exact judge workaround in README if needed; failure modes named, not silently waived; gate green.
+      Touches: Scripts/package.sh, README.md, Config/   Depends: T-129   Gated: none
+- [ ] T-131 — Session cadence: incursions between waves (GAMEPLAY.md S1)
+      Why: audit: spec wants 90-150 s free-play gaps with 1-2 single-thief incursions (60-120 s, max 2 concurrent), 20 s wave warning, 4-min wave cap; code only loops waves 25 s apart (WaveSubsystem IntermissionSeconds=25, no incursion/warning/cap states). The session rhythm judges feel does not exist.
+      Accept: incursion scheduler behind a pure seam (cadence rules unit-tested); waves warn 20 s ahead and cap at 4 min with survivors fleeing; sandbox rule kept (nothing locks/teleports the player); -game log shows gap->incursion->warning->wave rhythm; gate green.
+      Touches: Source/UnderTheMountain/Private/Notoriety/ (wave home), Source/UnderTheMountain/Tests/   Depends: T-016   Gated: none
+- [ ] T-132 — Notoriety gear scaling + raider-borne loot (pillar 2 engine)
+      Why: audit: waves never read Notoriety; thief DataAssets have flat HP/speed with no star fields (no smoke/shield/cloak/crossbow/net tiers), and dead raiders never drop/register loot. Higher stars currently bring the same thieves carrying the same hoard items — the risk/reward ladder is missing.
+      Accept: star-tier gear/loot table data-driven (DT_NotorietyGear or equivalent); spawn applies HP/speed/gear by current stars; raider loot drops and registers on death (scent/HUD truthful); brain + spawn rules unit-tested; -game proof at forced 0-star vs 3-star; gate green.
+      Touches: Source/UnderTheMountain/Private/Thief/, Source/UnderTheMountain/Private/Notoriety/, Content/Gameplay/, Source/UnderTheMountain/Tests/   Depends: T-131   Gated: none
+- [ ] T-133 — Dwarf party roles + burglar crack entry routing
+      Why: audit: dwarf party spawns 3 identical actors (no carrier/trapper/guard roles, no re-pick after carrier death); every thief uses one hard-coded EntryPoint (18700,0,160) though T-066 built dragon-proof cracks burglars should use.
+      Accept: role field on thief data (carrier cap 3, trapper, guard 70 HP frontal block per GAMEPLAY.md S5.2); party re-pick rule (3 s) in brain with tests; burglars route via cracks, others via portal/peak; zero entry constants beyond one authored table; -game proof per type; gate green.
+      Touches: Source/UnderTheMountain/Private/Thief/, Source/UnderTheMountain/Private/Notoriety/, Content/Gameplay/   Depends: T-089   Gated: owner
+- [ ] T-134 — Witness-based notoriety (settlements + villagers, not a box)
+      Why: audit: IsInsideLair is a coordinate box; any goat eaten outside it charges +3 whether or not anyone saw it, and villagers are never consulted. Spec S2 prices witnessed/settlement kills only.
+      Accept: pure witness rule (settlement radius + villager line-of-sight/distance seam, unit-tested); pawn charges only witnessed/outside acts per GAMEPLAY.md S2/S4; unwitnessed wilderness eats are free; -game proof both ways; gate green.
+      Touches: Source/UnderTheMountain/Private/Notoriety/, Source/UnderTheMountain/Private/Dragon/DragonCharacter.cpp, Source/UnderTheMountain/Tests/   Depends: T-053   Gated: none
+- [ ] T-135 — Pyrrhic win + resolution score on the end screen
+      Why: audit: PyrrhicWin is collapsed into Won (DragonCharacter outcome map) and the end screen prints only HOARD DEFENDED/LOST; GAMEPLAY.md S8 wants the distinct gutted-hoard slink-away outcome and S1 a resolution score (inside vs outside kills).
+      Accept: outcome snapshot carries Pyrrhic + resolution score; end screen presents all three outcomes distinctly; GameFlow tests cover the mapping incl. boundary hoard fractions; -game or automation proof per outcome; gate green.
+      Touches: Source/UnderTheMountain/Private/Core/, Source/UnderTheMountain/Private/UI/, Source/UnderTheMountain/Tests/   Depends: T-072   Gated: none
+
 ## Later
-- [ ] T-114 — New goat + foliage content: rig/walk import, nat_* placement (owner drop, future)
-      Why: owner-supplied newest livestock + foliage (Content/Meshy/World/: liv-goat_quad_v2.* incl. walk cycle + nat-bush/broadleaf/grass FBX+GLB+basecolor) waits behind the dragon resync.
-      Accept: inventory the drop at claim (counts/formats recorded); goat texture holes fixed (owner playtest 2026-11-03: holes in goat textures — inspect UV/mesh at claim, repair or retexture) and goat rigged mesh + walk cycle imported and visible on the existing goat actors or their replacement (decided at claim); nat_* sets placed via the T-049/T-050 chain with the placement idempotent; -game capture shows new goat + foliage; gate green.
-      Touches: Content/Meshy/World/, Scripts/, Content/Maps/   Depends: T-113   Gated: none
+
 - [ ] T-042 — AGENTS.md snapshot corrections (owner-approval needed to edit)
       Why: T-004 sweep: measured coverage is 39.7% but the floor still says 29% (guide step 5 ratchets just under measured); the version line still says 2026-10-27 though the snapshot holds 2026-10-28 material (stranger-test finding); the adaptive-unity/coverage foot-gun (clean the module Intermediate dir before coverage.sh after a stash or bulk file adds) is unrecorded. Edits to AGENTS.md from this harness hit a write-approval block, so an owner-approved edit is owed.
       Accept: Owner approves/applies: floor 29% -> 37%, version line re-stamped, foot-gun appended — or explicitly declines, recorded here.
@@ -192,6 +220,15 @@
       Accept: A short written decision record (docs/STRETCH-GOALS.md section or its own spike doc — one home, chosen in the dive): either (a) CUT — the tower is renamed/relabelled as a watch/alchemist tower owned by T-096's structure rules, with the story script corrected; or (b) KEEP — a costed enemy proposal (attack tells, counter-play per §5.4's matrix shape, magic-pool interaction, M3/M4 phase tag, session estimate) filed as its own follow-up task. Ends at the decision; no meshes, code, or Content/ changes under this task.
       Stretch: moves to ## Now only if T-016, T-018, T-019, T-020 are [x] and the M1 exit gate is green; owner moves it — agents never self-promote stretch work.
       Touches: docs/ (report only)   Depends: T-080   Gated: owner
+
+- [ ] T-136 — GAMEPLAY DataAsset migration: values out of C++ literals
+      Why: audit: GAMEPLAY appendix names DA_SessionLoop/DA_DragonStats/DT_FoodValues/DA_ScentConfig/DT_ScentBrackets/DT_Waves/DT_NotorietyGear/DA_IntroBeats; only thief/treasure assets + DA_HoardThresholds exist. Tuning lives in code, so PT-* playtest tuning means recompiles.
+      Accept: named DataAssets exist and are read by their owning systems (grep-proven: no duplicate literals left); defaults bit-identical to shipped values (tests pin both); PT-STAM/PT-SCENT retunes become data-only edits; gate green.
+      Touches: Content/Gameplay/, Source/UnderTheMountain/   Depends: none   Gated: none
+- [ ] T-137 — README honesty refresh (2026-10-31 status is stale)
+      Why: audit: README still claims no HUD/waves/intro/packaged build, goat "not in the game yet", 20 tests/43.5% (now 48 tests/37.5%); judges and fresh agents read it first.
+      Accept: every README claim verified against the current tree (status, controls, test/coverage numbers, launch paths); stale sections rewritten or deleted; no claim without a command or task behind it; gate green (docs only).
+      Touches: README.md   Depends: T-129   Gated: none
 
 ## Blocked
 - [!] T-068 — Dragon animation set v1 (remainder after flight-core slice): roar, wing-flap attack, tail slam, land/hover/hit (F10b) — BLOCKED 2026-11-03 (see Decision 2026-11-03 below)

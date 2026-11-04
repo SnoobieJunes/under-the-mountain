@@ -123,6 +123,14 @@ tag, choose the owing one.
 <!-- Real entries accumulate below, NEWEST AT THE TOP. The top entries are
      session-start required reading (count: AGENTS.md → Session ritual). -->
 
+## 2026-11-03 — Comprehensive review: submission + system gaps filed, meatsuite.md created  [decision]
+- Task: T-129–T-137 (filed in this commit); T-021, T-114, T-127 amended
+- What: Three parallel audits (board/docs, C++ systems, assets/packaging) against docs/PLAN.md + docs/GAMEPLAY.md. Filed: T-129 final freeze/repackage (the packaged .app predates the sprint; docs/SUBMISSION.md did not exist), T-130 judge double-click/Gatekeeper launch path, T-131 session cadence/incursions, T-132 notoriety gear scaling + raider loot, T-133 dwarf party roles + burglar crack routing, T-134 witness-based notoriety, T-135 Pyrrhic/resolution end screen, T-136 DataAsset migration + T-137 README honesty (Later). T-021 re-depended on the sprint + T-071 + T-129; T-114 promoted to ## Now behind T-122 with the corrected ≤5k foliage budget; T-127 now owns the end-on ribbon white-bar artifact. Owner-manual work split into meatsuite.md (decisions, Meshy batch, audio intake, T-030 playtest, sign-offs, submission day, generic loop prompt).
+- Why: Owner ordered a comprehensive pre-sprint review with missing work added to the board and a manual-task file for parallel work. Audits proved the gaps with file evidence (waves loop at 25 s with no incursions, spawns never read Notoriety, single hard-coded thief entry, box-check witness model, Pyrrhic collapsed to Won, stale README, untracked audio, stale packaged build).
+- Where: TASKS.md, meatsuite.md (new), goose-deuce.md (this entry), CHANGELOG.md. No product code.
+- Plan: docs/PLAN.md unchanged — M2 decomposition (levels/streaming) stays post-hackathon under the owner's full-scope/best-effort order, recorded in meatsuite.md, not silently dropped. TASKS.md corrected in this commit.
+- Commit(s): this commit
+
 ## 2026-11-03 — Final sprint seeded: full scope stands, T-068 sliced, defaults stay max fidelity  [decision]
 - Task: T-122–T-128 (filed in this commit); T-068, T-088, T-114, T-115 amended
 - What: Owner playtest feedback (landscape-shadowed village, walk/flight/idle/slither/tail/eat/roar animation, god mode, frankensteined dragon with chest/tail holes, goat texture holes, scent density/sheen, settings/graphics, flight stamina) filed as sprint tasks T-122–T-128 at the top of ## Now with docs/FINAL-SPRINT.md as the intake record (incl. verbatim answers: god mode was specced in GAMEPLAY.md §2/T-088 but never implemented; no ABP_Dragon exists — 9 clips play single-node, 6 v1 families + 2 verb clips missing). T-068's open slice-vs-epic question answered: sliced into T-125 (harness) + T-126 (clips). T-115 unblocked by the owner's shipped-default pick.
