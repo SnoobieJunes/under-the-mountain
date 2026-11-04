@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-04 — T-123 — Dragon mesh surgically repaired: chest-side + tail-spine holes closed (1,308/1,308 named loops), wings verified bit-identical, textures read unified in lair + sunlight; same rig, clips, and materials, zero Meshy spend
+
 2026-11-04 — T-125 — ABP_Dragon agent lane: animation brain completed in C++ (hybrid-aware state sampling, published locomotion state, auto-detects the graph with single-node fallback); one-shots play through graph slots; owner build sheet for the graph filed as T-139 (no user-visible change yet — dragon animates exactly as before until the graph lands)
 
 2026-11-04 — T-124 — God mode test slice + flight stamina retune: utm.testing.infinitestamina cvar (default off) disables every stamina cost/drain and the exhaustion HP burn while HP damage still applies, with a TESTING badge on the HUD while on; hover drain 8/s → 3/s and Ascent/Surge reserve 20 → 10, so the dragon stays airborne (~34 s sustained hover from full, was ~12.5 s)

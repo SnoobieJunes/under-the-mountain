@@ -13,6 +13,9 @@
 # world) the course never arms without it — the pawn never ticks at
 # Title, so two T-124 plain runs sat unarmed until killed, and the one
 # god run that flew did so on T-112's unexplained auto-start flake.
+# [2026-11-04 T-123] SHOT = proof-shot delay in seconds (default 0 =
+# off): fires one HighResShot mid-course for mesh/read captures (the
+# course still quits itself at COMPLETE; no utm.proof.quit needed).
 set -eu
 . "$(dirname "$0")/ue-env.sh"
 SCHEME="${1:-2}"
@@ -20,6 +23,9 @@ HOVER="${HOVER:-5}"
 EXECCMDS="utm.intro.enabled 0, utm.gameflow.autostart 1, utm.flight.scheme $SCHEME, utm.flight.course 1, utm.flight.coursehover $HOVER"
 if [ "${GOD:-0}" = "1" ]; then
   EXECCMDS="$EXECCMDS, utm.testing.infinitestamina 1"
+fi
+if [ "${SHOT:-0}" != "0" ]; then
+  EXECCMDS="$EXECCMDS, utm.proof.shotdelay $SHOT"
 fi
 
 "$UE_BUILD" UnderTheMountain Mac Development -Project="$UPROJECT" -WaitMutex -NoHotReload -NoUba "$@"
