@@ -12,6 +12,11 @@ import unreal
 
 _sys.path.insert(0, _os.path.join(unreal.Paths.project_dir(), "Scripts"))
 import map_guard
+# [2026-11-04 T-122] Heightfield single source of truth (kills the
+# three-copy T-050 sync foot-gun: this file, create_npcs.py and
+# create_burnables.py all import the same closed form; the C++
+# commandlet stays a documented twin).
+from terrain_profile import terrain_height
 
 MAP_PATH = "/Game/Maps/Lair/Lair"
 eal = unreal.EditorAssetLibrary
@@ -104,9 +109,15 @@ for i, (x, y, z) in enumerate(((28000, -3500, 4000), (31000, 4200, 2700), (34500
     place_mesh("Exterior_Rock%d" % i, ROCKS[i], x, y, z - 400, 1100, yaw=i * 40)
     place_mesh("Exterior_Pine%d" % i, "nat-pine", x + 900, y + 700, z - 150, 800)
 
-# --- village at x=38000 on the valley floor: real Meshy meshes at
+# --- village at x=50000 on the valley floor: real Meshy meshes at
 # the greybox layout positions (T-046), heights in cm ---
-VX = HOARD_X + 19000
+# [2026-11-04 T-122] VX 38000 -> 50000: the old site sat entombed
+# under the T-017 terrace slabs (T2 bottom 2300 + T3 band 1000-1300
+# over a 0-1150 village = a roofed cave, proven by overhang audit;
+# the owner's "mountain mass covers a village in dark shadow").
+# The new pad is open sky (T3 ends at x=45000, 50+ m clear of the
+# westernmost fence) on the same valley floor, same relative layout.
+VX = HOARD_X + 31000
 
 place_mesh("Exterior_HouseA", "vil-house-a", VX - 1200, -900, 0, 620, yaw=15)
 place_mesh("Exterior_HouseB", "vil-house-b", VX + 400, -1400, 0, 620, yaw=-10)
@@ -128,27 +139,16 @@ place_mesh("Exterior_FenceB", "vil-fences", VX - 1800, -200, 0, 160, yaw=90)
 # 5 km landscape, each with a different mix/layout (ring village,
 # road village, courtyard castles, lone farmsteads) - no copy-paste
 # rows. Grounding replicates the terrain commandlet's closed-form
-# height function (TerrainCommandlet.cpp TerrainHeightCm - keep the
-# constants in sync; the landscape is a bilinear surface over the
+# height function (Scripts/terrain_profile.py - the single source of
+# truth since T-122; the landscape is a bilinear surface over the
 # same samples, so buildings sink 60 cm to absorb interpolation).
-import math
-
-
-def terrain_height(x, y):
-    fields = 350.0 * math.sin(x * 2.1e-5 + 1.7) * math.cos(y * 1.7e-5) \
-        + 250.0 * math.sin((x + y) * 1.3e-5)
-    dist = math.hypot(x - 10000.0, y)
-    t = max(0.0, min(1.0, (dist - 70000.0) / 80000.0))
-    range_mask = t * t * (3.0 - 2.0 * t)
-    ridge = (1.0 - abs(math.sin(x * 4.5e-5 + 2.0 * math.sin(y * 3.0e-5)))) ** 3
-    ranges = range_mask * (900.0 + 3400.0 * ridge)
-    massif = 4600.0 * math.exp(-((x - 19000.0) ** 2 + (y + 10000.0) ** 2)
-                               / (2.0 * 20000.0 ** 2))
-    h = fields + ranges + massif
-    cx = 1.0 - (lambda u: u * u * (3 - 2 * u))(max(0.0, min(1.0, (x - 21000.0) / 5000.0)))
-    cy = 1.0 - (lambda u: u * u * (3 - 2 * u))(max(0.0, min(1.0, (abs(y) - 7000.0) / 3000.0)))
-    h = h * (1.0 - cx * cy) + (-250.0) * (cx * cy)
-    return max(-800.0, min(5200.0, h))
+# [2026-11-04 T-122] Village N/E re-sited onto local flats (old
+# centres sat on a 13-degree slope / a 29 m ridge crest at 21-degree
+# building grades - grounded but half-buried/floating walls). New
+# centres keep the region and the relative layouts, hold 7/9-degree
+# sun horizons against the 52-degree shipped sun, and sit under 1 cm
+# of grade. All other T-050 sites verified flat in place (<=3 deg)
+# and stay where they are.
 
 
 def settle(label, asset, x, y, target_h, yaw=0.0):
@@ -177,7 +177,12 @@ settle("Exterior_CastleB_WallE", "cas-wall", BX + 1500, BY - 300, 700, yaw=80)
 
 # Village 2 (north): a ring of houses around the well - different
 # mix (B/C-led) and geometry from the valley village's road layout.
-NX, NY = -150000.0, 85000.0
+# [2026-11-04 T-122] Centre moved (-150000, 85000) -> (-155000, 55000):
+# the old ring stood on a 13-degree slope (34 m of relief across the
+# ring); the new pad is near-flat (19 m of gentle tilt across the
+# ring, sub-1-degree building grades) with a 7-degree sun horizon.
+# Relative layout unchanged.
+NX, NY = -155000.0, 55000.0
 settle("Exterior_VillageN_Well", "vil-well", NX, NY, 170)
 for i, (dx, dy, asset, yaw) in enumerate((
         (-1600, -600, "vil-house-b", 40), (1500, -900, "vil-house-c", -30),
@@ -188,7 +193,11 @@ settle("Exterior_VillageN_Stall", "vil-market-stall", NX + 500, NY + 300, 320, y
 
 # Village 3 (east): an inn-led road bend - inn at the corner, houses
 # trailing east, tower watching the road.
-EX, EY = 185000.0, -65000.0
+# [2026-11-04 T-122] Centre moved (185000, -65000) -> (195000, -80000):
+# the old site crowned a 29 m ridge at up to 21-degree building grades
+# (half-buried/floating walls); the new pad is flat (1 m relief) with
+# a 9-degree sun horizon. Relative layout unchanged.
+EX, EY = 195000.0, -80000.0
 settle("Exterior_VillageE_Inn", "vil-inn", EX, EY, 880, yaw=35)
 settle("Exterior_VillageE_House0", "vil-house-c", EX + 1800, EY + 700, 700, yaw=60)
 settle("Exterior_VillageE_House1", "vil-house-a", EX + 3200, EY + 1500, 600, yaw=75)

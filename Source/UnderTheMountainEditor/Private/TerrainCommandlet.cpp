@@ -75,7 +75,28 @@ double TerrainHeightCm(double X, double Y)
 	const double CorridorX = 1.0 - SmoothStep(21000.0, 26000.0, X);
 	const double CorridorY = 1.0 - SmoothStep(7000.0, 10000.0, FMath::Abs(Y));
 	const double Corridor = CorridorX * CorridorY;
-	Height = Height * (1.0 - Corridor) + (-250.0) * Corridor;
+	// [2026-11-04 T-122] Valley press: the T-017 flight zone (terraces +
+	// valley floor boxes at z<=0, x in [27k, 63k]) predates the T-049
+	// landscape, and the massif skirt buries it under ~29 m of terrain
+	// at the village (proven: TerrainHeightCm(38000, 0) = 2914 with the
+	// old mask). Press the valley rect to the same -250 the boxes were
+	// authored against. Bounds are load-bearing (proven: zero box-top
+	// excesses on a 250 cm grid over the whole flight zone): west
+	// blends 23000->27000 so Terrace1's south edge (the massif north
+	// lobe hits 4324 raw at (25000, -8000)) and the valley floor's
+	// west edge (x=27000) both sit on fully pressed ground; east
+	// blends back by x=90000 so the valley exits through a pass
+	// instead of a canyon to the map edge; |y| blends 21000->26000.
+	// Combined with max() so either mask fully presses and shoulders
+	// never stack past 1. Lair zone x<23000 is corridor-only,
+	// bit-identical to the pre-T-122 function. Twin:
+	// Scripts/terrain_profile.py terrain_height (T-050 mirror rule:
+	// change one, change the other; diffed equal at the T-122 close).
+	const double ValleyX =
+		SmoothStep(23000.0, 27000.0, X) * (1.0 - SmoothStep(66000.0, 90000.0, X));
+	const double ValleyY = 1.0 - SmoothStep(21000.0, 26000.0, FMath::Abs(Y));
+	const double Press = FMath::Max(Corridor, ValleyX * ValleyY);
+	Height = Height * (1.0 - Press) + (-250.0) * Press;
 
 	return FMath::Clamp(Height, -800.0, 5200.0);
 }
@@ -208,6 +229,21 @@ int32 UTerrainCommandlet::Main(const FString& Params)
 			   TEXT("TerrainCommandlet: M_MountainRock not found; landscape keeps default material"));
 	}
 	Landscape->RegisterAllComponents();
+
+	// [2026-11-04 T-122] Never save a component-less landscape: the map
+	// lost its entire terrain in c7531d3 (2.05MB -> 454KB) because this
+	// commandlet destroys-then-rebuilds and saves unconditionally, so a
+	// silent Import failure ships a terrain-less map that nothing
+	// detects (verify_lair.py only sees StaticMeshActors). 16 = the 4x4
+	// components T-049's well-formed split guarantees. Returning 1 here
+	// leaves the on-disk map (with its old terrain) untouched.
+	if (Landscape->LandscapeComponents.Num() != 16)
+	{
+		UE_LOG(LogTemp, Error,
+			   TEXT("TerrainCommandlet: REFUSING to save - Import produced %d components, expected 16"),
+			   Landscape->LandscapeComponents.Num());
+		return 1;
+	}
 
 	const FBox Bounds = Landscape->GetComponentsBoundingBox(true);
 	UE_LOG(LogTemp, Display,

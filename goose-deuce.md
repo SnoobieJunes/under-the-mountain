@@ -123,6 +123,14 @@ tag, choose the owing one.
 <!-- Real entries accumulate below, NEWEST AT THE TOP. The top entries are
      session-start required reading (count: AGENTS.md → Session ritual). -->
 
+## 2026-11-04 — T-122 layout calls: village out from under the slabs, two villages re-sited, heightfield unified  [decision]
+- Task: T-122 (this commit)
+- What: The "mountain mass covers a village" was not terrain self-shadow — T2/T3 terrace slabs roofed 7 of 8 valley buildings (overhang audit; the 8th, the tower, is intersected by T3's band). Valley VX moved 38000 -> 50000 (open sky; T3 ends x=45000) instead of moving the terraces (which anchor T-017 flight zone + course legs); Village N/E re-sited onto verified local flats (slope/ridge sites proven grounded-but-broken); valley press west edge 26000 -> 23000/27000 after proving the uncommitted 26000 rationale left a 274 cm Terrace1 poke-through (below-slab dents are invisible, pokes are not); the three Python heightfield replicas collapsed into Scripts/terrain_profile.py (C++ stays a documented twin) after the press landed in only one copy.
+- Why: Overhang audit over the old footprint (7 roofed + 1 intersected); numeric poke scan (153-274 cm mound through Terrace1 at 26000); grade audit at building scale (N 0.06-0.15, E 0.25-0.39); sun-horizon audit at every site old and new (all < 22 deg vs 52 deg shipped sun — lighting was never the terrain's fault).
+- Where: Content/Maps/Lair/Lair.umap (rebuilt: terrain restored, settlements moved), Scripts/terrain_profile.py (new), Scripts/create_exterior.py + create_npcs.py + create_burnables.py (single import + moved centres), Scripts/verify_lair.py (landscape + grounding/horizon/overhang successor checks, 21 -> 59), Source/UnderTheMountainEditor/Private/TerrainCommandlet.cpp (press bounds)
+- Plan: TASKS.md Accept said "re-authored" without naming the defect — the defect is named here; overhang auditing now lives in verify_lair.py permanently. TASKS.md corrected in this commit (T-122 closed, anomalies noted on T-030). docs/PLAN.md states no map authorship vehicle → not falsified, folded at the next sweep.
+- Commit(s): this commit
+
 ## 2026-11-04 — T-125 split into agent/owner lanes; graph needs human hands  [decision]
 - Task: T-125 (agent lane, this commit); T-139 filed (owner lane); T-126, T-068 amended
 - What: T-125 narrowed to the agent lane — C++ parent completion (UENUM state, published LocomotionState/bDiving, hybrid-aware sampling, bank feed, ANIMSTATE channel), dual-mode pawn hookup (ABP auto-detect + byte-identical single-node fallback), dynamic-montage one-shot seam through FullBody/UpperBody slots, automation (state order, dual-mode contract, slot names), and docs/ABP-DRAGON-BUILDSHEET.md. The graph build itself filed as owner-lane T-139 (Gated: owner, ~25 min in the open editor); T-126 re-depends on T-139; the T-068 ABP-clause close rides T-139.

@@ -17,6 +17,9 @@ import unreal
 
 _sys.path.insert(0, _os.path.join(unreal.Paths.project_dir(), "Scripts"))
 import map_guard
+# [2026-11-04 T-122] Heightfield single source of truth (was a local
+# replica here - second copy of the T-050 closed form).
+from terrain_profile import terrain_height
 
 MAP_PATH = "/Game/Maps/Lair/Lair"
 eal = unreal.EditorAssetLibrary
@@ -53,33 +56,17 @@ DIR = "/Game/Meshy/World/"
 
 # (label, intact, rubble, x, y, z)
 PROPS = [
-    ("Burnable_ValleyCrates", "des-crates-intact", "des-crates-rubble", 38850, 650, 60),
-    ("Burnable_ValleyBarrels", "des-barrels-intact", "des-barrels-rubble", 39000, 780, 60),
-    ("Burnable_ValleyCart", "des-cart-intact", "des-cart-rubble", 37100, 300, 60),
-    ("Burnable_ValleyFence", "des-fence-intact", "des-fence-rubble", 36200, 1800, 60),
-    ("Burnable_NorthCrates", "des-crates-intact", "des-crates-rubble", -149500, 85600, None),
-    ("Burnable_NorthBarrels", "des-barrels-intact", "des-barrels-rubble", -150800, 84300, None),
+    # [2026-11-04 T-122] Valley props follow the village VX move
+    # (38000 -> 50000): same relative offsets, all clear of T3.
+    ("Burnable_ValleyCrates", "des-crates-intact", "des-crates-rubble", 50850, 650, 60),
+    ("Burnable_ValleyBarrels", "des-barrels-intact", "des-barrels-rubble", 51000, 780, 60),
+    ("Burnable_ValleyCart", "des-cart-intact", "des-cart-rubble", 49100, 300, 60),
+    ("Burnable_ValleyFence", "des-fence-intact", "des-fence-rubble", 48200, 1800, 60),
+    # [2026-11-04 T-122] North props follow Village N
+    # ((-150000, 85000) -> (-155000, 55000)): same relative offsets.
+    ("Burnable_NorthCrates", "des-crates-intact", "des-crates-rubble", -154500, 55600, None),
+    ("Burnable_NorthBarrels", "des-barrels-intact", "des-barrels-rubble", -155800, 54300, None),
 ]
-
-import math
-
-
-def terrain_height(x, y):
-    # Replica of the terrain closed form (see create_exterior.py).
-    fields = 350.0 * math.sin(x * 2.1e-5 + 1.7) * math.cos(y * 1.7e-5) \
-        + 250.0 * math.sin((x + y) * 1.3e-5)
-    dist = math.hypot(x - 10000.0, y)
-    t = max(0.0, min(1.0, (dist - 70000.0) / 80000.0))
-    range_mask = t * t * (3.0 - 2.0 * t)
-    ridge = (1.0 - abs(math.sin(x * 4.5e-5 + 2.0 * math.sin(y * 3.0e-5)))) ** 3
-    ranges = range_mask * (900.0 + 3400.0 * ridge)
-    massif = 4600.0 * math.exp(-((x - 19000.0) ** 2 + (y + 10000.0) ** 2)
-                               / (2.0 * 20000.0 ** 2))
-    h = fields + ranges + massif
-    cx = 1.0 - (lambda u: u * u * (3 - 2 * u))(max(0.0, min(1.0, (x - 21000.0) / 5000.0)))
-    cy = 1.0 - (lambda u: u * u * (3 - 2 * u))(max(0.0, min(1.0, (abs(y) - 7000.0) / 3000.0)))
-    h = h * (1.0 - cx * cy) + (-250.0) * (cx * cy)
-    return max(-800.0, min(5200.0, h))
 
 
 for label, intact, rubble, x, y, z in PROPS:

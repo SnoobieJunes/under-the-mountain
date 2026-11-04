@@ -7,7 +7,6 @@
 # Re-runnable: prior Villager_*/FarmGoat_* actors are destroyed and
 # respawned at the same deterministic spots (offsets are fixed
 # tables, never RNG, so evidence counts are stable).
-import math
 import os as _os
 import sys as _sys
 
@@ -15,6 +14,9 @@ import unreal
 
 _sys.path.insert(0, _os.path.join(unreal.Paths.project_dir(), "Scripts"))
 import map_guard
+# [2026-11-04 T-122] Heightfield single source of truth (was a local
+# replica here - third copy of the T-050 closed form).
+from terrain_profile import terrain_height
 
 MAP_PATH = "/Game/Maps/Lair/Lair"
 eal = unreal.EditorAssetLibrary
@@ -46,23 +48,8 @@ for a in list(eas.get_all_level_actors()):
         require(eas.destroy_actor(a), "destroy prior npc %s" % label)
 
 
-# Terrain height replica (kept in sync with TerrainCommandlet.cpp
-# and create_exterior.py - same closed form, same constants).
-def terrain_height(x, y):
-    fields = 350.0 * math.sin(x * 2.1e-5 + 1.7) * math.cos(y * 1.7e-5) \
-        + 250.0 * math.sin((x + y) * 1.3e-5)
-    dist = math.hypot(x - 10000.0, y)
-    t = max(0.0, min(1.0, (dist - 70000.0) / 80000.0))
-    range_mask = t * t * (3.0 - 2.0 * t)
-    ridge = (1.0 - abs(math.sin(x * 4.5e-5 + 2.0 * math.sin(y * 3.0e-5)))) ** 3
-    ranges = range_mask * (900.0 + 3400.0 * ridge)
-    massif = 4600.0 * math.exp(-((x - 19000.0) ** 2 + (y + 10000.0) ** 2)
-                               / (2.0 * 20000.0 ** 2))
-    h = fields + ranges + massif
-    cx = 1.0 - (lambda u: u * u * (3 - 2 * u))(max(0.0, min(1.0, (x - 21000.0) / 5000.0)))
-    cy = 1.0 - (lambda u: u * u * (3 - 2 * u))(max(0.0, min(1.0, (abs(y) - 7000.0) / 3000.0)))
-    h = h * (1.0 - cx * cy) + (-250.0) * (cx * cy)
-    return max(-800.0, min(5200.0, h))
+# Terrain height: Scripts/terrain_profile.py (single source of truth
+# since T-122; the C++ commandlet is its documented twin).
 
 
 villager_cls = require(
@@ -74,9 +61,13 @@ goat_cls = require(
 
 # (settlement centre, ground z or None for terrain, offsets)
 VILLAGES = [
-    ("Valley", (38000.0, 0.0), 30.0,
+    # [2026-11-04 T-122] Valley centre follows create_exterior.py VX
+    # (38000 -> 50000: old site under the terrace slabs).
+    ("Valley", (50000.0, 0.0), 30.0,
      [(-800, -500), (600, 800), (-300, 1200), (1100, -900), (-1400, 300), (200, -1400)]),
-    ("North", (-150000.0, 85000.0), None,
+    # [2026-11-04 T-122] North centre follows create_exterior.py
+    # ((-150000, 85000) -> (-155000, 55000): old ring on a slope).
+    ("North", (-155000.0, 55000.0), None,
      [(-900, -400), (800, 600), (-200, 1000), (1200, -700), (-1300, 500)]),
 ]
 count = 0

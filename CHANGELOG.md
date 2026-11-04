@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-04 — T-122 — World map rebuilt: the valley village moves out from under the terrace slabs that roofed it (now open sky at x=50000) and Villages N/E move onto local flats; terrain re-pressed under the whole flight zone with zero poke-throughs; all 9 settlements verify sunlit in-game and every capture shows readable sunlit pixels — the world reads as a normal medieval landscape
+
 2026-11-04 — T-123 — Dragon mesh surgically repaired: chest-side + tail-spine holes closed (1,308/1,308 named loops), wings verified bit-identical, textures read unified in lair + sunlight; same rig, clips, and materials, zero Meshy spend
 
 2026-11-04 — T-125 — ABP_Dragon agent lane: animation brain completed in C++ (hybrid-aware state sampling, published locomotion state, auto-detects the graph with single-node fallback); one-shots play through graph slots; owner build sheet for the graph filed as T-139 (no user-visible change yet — dragon animates exactly as before until the graph lands)

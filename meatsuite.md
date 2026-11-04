@@ -40,7 +40,7 @@ session** (links expire ~3 days), drop into `Content/Meshy/World/` with
 the exact names below. Style anchor for every prompt:
 "medieval, grounded realism, game-ready, no characters".
 
-- [ ] `nat-pine-v2` — tall pine, dark needles, rough bark, windswept
+- [x] `nat-pine-v2` — tall pine, dark needles, rough bark, windswept
 - [ ] `nat-oak-v1` — broad oak, full canopy, gnarled trunk
 - [ ] `nat-birch-v1` — slim birch, white bark, light leaves
 - [ ] `nat-bush-berry-v1` — dense berry bush, red berries

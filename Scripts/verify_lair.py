@@ -194,6 +194,88 @@ if disc_violations:
 results.append(len(disc_violations) == 0)
 print("LAIR_TRACE touchdown_disc clear=%s" % (len(disc_violations) == 0))
 
+# [2026-11-04 T-122] Settlement successor checks: the map that lost its
+# terrain in T-066 (2.05 MB -> 454 KB, nothing detected it) gets a
+# landscape assertion, and every settlement gets grounded + sunlit
+# proofs from the same closed form the scripts place with
+# (Scripts/terrain_profile.py - imported, not replicated).
+_sys.path.insert(0, _os.path.join(unreal.Paths.project_dir(), "Scripts"))
+from terrain_profile import grade as _grade
+from terrain_profile import sun_horizon_deg as _sun_horizon
+from terrain_profile import terrain_height as _th
+
+_landscapes = [a for a in actors if a.get_class().get_name() == "Landscape"]
+print("LAIR_LANDSCAPE_COUNT", len(_landscapes))
+results.append(len(_landscapes) == 1)
+if _landscapes:
+    _comps = _landscapes[0].get_components_by_class(unreal.LandscapeComponent)
+    print("LAIR_LANDSCAPE_COMPONENTS", len(_comps))
+    results.append(len(_comps) == 16)
+else:
+    print("LAIR_LANDSCAPE_COMPONENTS 0 (no landscape actor)")
+    results.append(False)
+
+# Settlement groups: label prefix -> (grounded rule, horizon limit).
+# settle-placed groups (castles, VillageN/E, farms) sit at terrain-60;
+# the valley group sits on T-017 boxes at fixed z, so its rule is
+# terrain-below-floor instead of terrain-follow.
+_SETTLE_GROUPS = ("Exterior_CastleA_", "Exterior_CastleB_",
+                  "Exterior_VillageN_", "Exterior_VillageE_",
+                  "Exterior_Farm", "Exterior_House", "Exterior_Inn",
+                  "Exterior_Tower", "Exterior_Well", "Exterior_Stall",
+                  "Exterior_Cart", "Exterior_Crates", "Exterior_Barrels",
+                  "Exterior_Fence")
+for _prefix in _SETTLE_GROUPS:
+    _members = [(label, lo, hi) for label, lo, hi in BOXES
+                if label.startswith(_prefix)]
+    if not _members:
+        continue
+    _cx = sum((lo[0] + hi[0]) / 2.0 for _, lo, hi in _members) / len(_members)
+    _cy = sum((lo[1] + hi[1]) / 2.0 for _, lo, hi in _members) / len(_members)
+    _horizon = _sun_horizon(_cx, _cy)
+    print("LAIR_SETTLE %s n=%d horizon=%.1fdeg" % (_prefix, len(_members), _horizon))
+    results.append(_horizon < 50.0)
+    _is_valley = not (_prefix.startswith("Exterior_Castle")
+                      or _prefix.startswith("Exterior_Village")
+                      or _prefix.startswith("Exterior_Farm"))
+    _bad = []
+    for _label, _lo, _hi in _members:
+        _gx, _gy = (_lo[0] + _hi[0]) / 2.0, (_lo[1] + _hi[1]) / 2.0
+        _ground = _th(_gx, _gy)
+        if _is_valley:
+            # Valley boxes carry the floor (top z=0); terrain pressed
+            # to -250 must stay below every member's base.
+            if _ground > _lo[2] - 50.0:
+                _bad.append(_label)
+        else:
+            # Settle-placed: base within 1.5 m of terrain-60 (sink +
+            # interpolation + gentle pad slope).
+            if abs(_lo[2] - (_ground - 60.0)) > 150.0:
+                _bad.append(_label)
+        if _grade(_gx, _gy) > 0.45:
+            _bad.append(_label + ":steep")
+    if _bad:
+        print("LAIR_SETTLE_GROUND %s VIOLATIONS: %s" % (_prefix, _bad))
+    results.append(len(_bad) == 0)
+    # [2026-11-04 T-122] Overhang audit (the actual owner-reported bug:
+    # T2/T3 terrace slabs roofed 7 of 8 valley buildings — a roofed
+    # cave, not a sunlit village). No StaticMesh box may sit above a
+    # settlement member in plan view (the valley floor beneath is
+    # below, never above, so it never votes). The heightfield cannot
+    # overhang by construction.
+    _over = []
+    for _label, _lo, _hi in _members:
+        _mcx, _mcy = (_lo[0] + _hi[0]) / 2.0, (_lo[1] + _hi[1]) / 2.0
+        for _bl, _blo, _bhi in BOXES:
+            if _bl == _label or _bhi[2] <= _hi[2] + 50.0:
+                continue
+            if _blo[0] <= _mcx <= _bhi[0] and _blo[1] <= _mcy <= _bhi[1]:
+                _over.append("%s under %s" % (_label, _bl))
+                break
+    if _over:
+        print("LAIR_SETTLE_OVERHANG %s VIOLATIONS: %s" % (_prefix, _over))
+    results.append(len(_over) == 0)
+
 passed = sum(1 for r in results if r)
 print("LAIR_TRACES_SUMMARY passed=%d/%d" % (passed, len(results)))
 if passed != len(results):
