@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-04 — T-101 — Removed two stray editor lock files swept in with the goat work (no user-visible change)
+
 2026-11-04 — T-020 — Packaged macOS build: Scripts/package.sh produces a runnable .app; fresh launch reaches gameplay (title → playing, thieves stealing, newest-clip flight); 1280×720 windowed measures ~59 fps lair / ~56 fps village — just under the 60 gate, perf pass filed as T-115
 
 2026-11-04 — T-111 — Three dragon cameras: V/R3 cycles Eyes → Near → Far opening on Near — first-person at the eyes (mesh hidden), near chase above the wings, far scenic chase
