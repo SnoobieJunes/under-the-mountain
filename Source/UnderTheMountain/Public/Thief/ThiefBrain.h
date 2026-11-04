@@ -120,6 +120,14 @@ class UNDERTHEMOUNTAIN_API UThiefBrain : public UObject
 	// first carried) — then become Scared for ScaredSeconds. A dead
 	// thief ignores roars.
 	void OnRoar(const FVector& ThiefLocation);
+	// [2026-11-04 T-131] Wave cap reached: run for the exit now,
+	// keeping whatever is carried (fleeing survivors are the wave
+	// resolving, not a scare — no loot drop, unlike OnRoar). Dead
+	// thieves and thieves already at the exit ignore it; the brain
+	// otherwise drops any grab/scare/daze and heads out, so the
+	// owning character walks it home on the next Tick.
+	void ForceFlee();
+
 	// [2026-10-28 T-014] Convenience overload for callers without a
 	// location handy; drops at the last location Tick reported.
 	void OnRoar();

@@ -14,7 +14,9 @@
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
+#include "Notoriety/NotorietySubsystem.h"
 #include "UI/GameFlowWidget.h"
+#include "Waves/WaveSubsystem.h"
 
 // [2026-11-03 T-072] Headless/scripted runs skip the title screen and
 // start playing immediately (paused title would freeze captures and
@@ -23,6 +25,14 @@
 TAutoConsoleVariable<int32> CVarFlowAutostart(
 	TEXT("utm.gameflow.autostart"), 0,
 	TEXT("1 = skip the title screen and start the run immediately (automation)."));
+
+// [2026-11-04 T-138] Sandbox for automation and footage runs: the
+// mode reads this at BeginPlay (and re-reads it on a normal start,
+// below) and arms the GameFlow sandbox flag from it. The title
+// button is the human path to the same flag; default 0 = ruled run.
+TAutoConsoleVariable<int32> CVarSandbox(
+	TEXT("utm.sandbox"), 0,
+	TEXT("1 = sandbox run: no wave/incursion spawns, no notoriety, no win/lose outcome."));
 
 // [2026-11-03 T-110] Proof-capture cvars (see the header): delayed
 // one-shot HighResShot + optional delayed quit for scripted -game
@@ -172,6 +182,15 @@ void AUnderTheMountainGameMode::BeginPlay()
 	Super::BeginPlay();
 
 	FlowMachine = NewObject<UGameFlowMachine>(this);
+	// [2026-11-04 T-138] The cvar arms sandbox before any start
+	// verb runs, so autostart+sandbox (scripted free flight) and
+	// title+sandbox both launch under the same flag. A sandbox
+	// restart reload carries ?sandbox=1 the same way (RestartRun).
+	if (CVarSandbox.GetValueOnGameThread() != 0 || GetWorld()->URL.HasOption(TEXT("sandbox")))
+	{
+		FlowMachine->SetSandboxEnabled(true);
+	}
+	ApplySandboxToSubsystems();
 	FlowWidget = CreateWidget<UGameFlowWidget>(GetWorld(), UGameFlowWidget::StaticClass());
 	if (FlowWidget != nullptr)
 	{
@@ -266,10 +285,64 @@ void AUnderTheMountainGameMode::ApplyFlowState()
 	}
 }
 
+bool AUnderTheMountainGameMode::IsSandboxRun() const
+{
+	return FlowMachine != nullptr && FlowMachine->IsSandboxEnabled();
+}
+
+void AUnderTheMountainGameMode::ApplySandboxToSubsystems()
+{
+	// [2026-11-04 T-138] One propagation from the machine to the
+	// two gated subsystems; missing subsystems (piecemeal worlds)
+	// simply have nothing to gate.
+	if (UWorld* World = GetWorld())
+	{
+		const bool bSandbox = IsSandboxRun();
+		if (UWaveSubsystem* Waves = World->GetSubsystem<UWaveSubsystem>())
+		{
+			Waves->SetSandboxEnabled(bSandbox);
+		}
+		if (UNotorietySubsystem* Notoriety = World->GetSubsystem<UNotorietySubsystem>())
+		{
+			Notoriety->SetSandboxEnabled(bSandbox);
+		}
+	}
+}
+
 void AUnderTheMountainGameMode::StartRun()
 {
+	// [2026-11-04 T-138] A normal start re-reads the cvar: title
+	// START RUN is a ruled run unless utm.sandbox says otherwise
+	// (automation), and it clears a stale title sandbox selection.
+	// An already-armed flag (cvar at BeginPlay, or a ?sandbox=1
+	// restart reload) survives — QuitToTitle is what disarms, and
+	// it has already run before any title start can happen.
+	if (FlowMachine != nullptr)
+	{
+		FlowMachine->SetSandboxEnabled(CVarSandbox.GetValueOnGameThread() != 0 ||
+									   FlowMachine->IsSandboxEnabled());
+		ApplySandboxToSubsystems();
+	}
 	if (FlowMachine != nullptr && FlowMachine->StartPlay())
 	{
+		UE_LOG(LogUnderTheMountain, Log, TEXT("Game flow: run started (sandbox=%d)"),
+			   IsSandboxRun() ? 1 : 0);
+		ApplyFlowState();
+	}
+}
+
+void AUnderTheMountainGameMode::StartSandboxRun()
+{
+	if (FlowMachine == nullptr)
+	{
+		return;
+	}
+	FlowMachine->SetSandboxEnabled(true);
+	ApplySandboxToSubsystems();
+	if (FlowMachine->StartPlay())
+	{
+		UE_LOG(LogUnderTheMountain, Log,
+			   TEXT("Game flow: SANDBOX run started (no spawns, no notoriety, no outcome)"));
 		ApplyFlowState();
 	}
 }
@@ -297,9 +370,13 @@ void AUnderTheMountainGameMode::RestartRun()
 	if (FlowMachine != nullptr && FlowMachine->RestartRun())
 	{
 		UGameplayStatics::SetGamePaused(GetWorld(), false);
+		// [2026-11-04 T-138] Sandbox restarts stay sandbox across
+		// the reload (?sandbox=1, re-read in BeginPlay); ruled
+		// restarts keep the plain autostart option exactly as before.
+		const TCHAR* Options = IsSandboxRun() ? TEXT("?autostart=1?sandbox=1") : TEXT("?autostart=1");
 		UGameplayStatics::OpenLevel(this,
 									FName(*UGameplayStatics::GetCurrentLevelName(GetWorld(), true)),
-									true, TEXT("?autostart=1"));
+									true, Options);
 	}
 }
 
@@ -310,6 +387,9 @@ void AUnderTheMountainGameMode::QuitToTitle()
 		return;
 	}
 	FlowMachine->QuitToTitle();
+	// [2026-11-04 T-138] QuitToTitle disarms the machine flag, so
+	// the subsystem gates must follow it back to ruled behaviour.
+	ApplySandboxToSubsystems();
 	ApplyFlowState();
 }
 
@@ -324,10 +404,20 @@ void AUnderTheMountainGameMode::QuitGame()
 }
 
 void AUnderTheMountainGameMode::RequestSessionEnd(EGameFlowOutcome Outcome, int64 CurrentHoard,
-												  int64 StartingHoard, int32 Stars, int32 Wave)
+												  int64 StartingHoard, int32 Stars, int32 Wave,
+												  int32 InsideKills, int32 OutsideKills)
 {
 	if (FlowMachine == nullptr)
 	{
+		return;
+	}
+	// [2026-11-04 T-138] Sandbox never ends by outcome: say so in
+	// the log (the machine would refuse silently) and stay playing.
+	if (IsSandboxRun())
+	{
+		UE_LOG(LogUnderTheMountain, Log,
+			   TEXT("Game flow: session end suppressed (sandbox, outcome %d ignored)"),
+			   static_cast<int32>(Outcome));
 		return;
 	}
 	FGameFlowResult Result;
@@ -336,6 +426,10 @@ void AUnderTheMountainGameMode::RequestSessionEnd(EGameFlowOutcome Outcome, int6
 	Result.StartingHoard = StartingHoard;
 	Result.Stars = Stars;
 	Result.FinalWave = Wave;
+	// [2026-11-04 T-135] Clamp like MakeResult: a counting bug
+	// reads as zero kills, never a negative resolution score.
+	Result.InsideKills = FMath::Max(0, InsideKills);
+	Result.OutsideKills = FMath::Max(0, OutsideKills);
 	if (FlowMachine->RequestEnd(Result))
 	{
 		ApplyFlowState();

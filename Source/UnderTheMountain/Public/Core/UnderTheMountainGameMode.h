@@ -30,13 +30,26 @@ class UNDERTHEMOUNTAIN_API AUnderTheMountainGameMode : public AGameModeBase
 	// the pawn's pause input. Every verb goes through the machine, so
 	// illegal calls (pause from title, restart from title) are no-ops.
 	void StartRun();
+	// [2026-11-04 T-138] Title sandbox entry: arms the GameFlow
+	// sandbox flag, propagates it to the wave/notoriety subsystem
+	// gates, then starts play exactly like StartRun — one shared
+	// start path so sandbox cannot drift from the normal launch.
+	void StartSandboxRun();
+	// [2026-11-04 T-138] True while the current run was launched
+	// in sandbox (title button or utm.sandbox cvar); the pawn and
+	// HUD read this, the machine remains the only writer.
+	bool IsSandboxRun() const;
 	void TogglePauseRun();
 	void RestartRun();
 	void QuitToTitle();
 	void QuitGame();
 	// Session end from the pawn's audit (T-016 outcome + numbers).
+	// [2026-11-04 T-135] Inside/OutsideKills carry the resolution
+	// score split into the snapshot (default 0 for callers that
+	// have no kill accounting yet).
 	void RequestSessionEnd(EGameFlowOutcome Outcome, int64 CurrentHoard, int64 StartingHoard,
-						   int32 Stars, int32 Wave);
+						   int32 Stars, int32 Wave, int32 InsideKills = 0,
+						   int32 OutsideKills = 0);
 	bool HasRunStarted() const;
 	// [2026-11-03 T-072] Pawn pause routing reads the state; all
 	// mutation goes through the verbs above (the machine stays the
@@ -47,6 +60,11 @@ class UNDERTHEMOUNTAIN_API AUnderTheMountainGameMode : public AGameModeBase
 	// [2026-11-03 T-072] Applies a machine state to the world: pause
 	// flag, input mode + cursor, visible screen.
 	void ApplyFlowState();
+	// [2026-11-04 T-138] Pushes the machine's sandbox flag into
+	// the wave and notoriety subsystem gates (their own seams, so
+	// the rules hold even for callers that bypass this mode).
+	// Called at BeginPlay, both start verbs, and quit-to-title.
+	void ApplySandboxToSubsystems();
 	APlayerController* GetFlowController() const;
 
 	// [2026-11-03 T-072] Held by UPROPERTY so the GC sees them (the

@@ -60,6 +60,15 @@ class UNDERTHEMOUNTAIN_API UNotorietySubsystem : public UWorldSubsystem
 	void AddLivestockEatPointsWitnessed(const FVector& EatLocation,
 										const TArray<FSettlementArea>& Settlements,
 										const TArray<FVillagerWitness>& Villagers);
+	// [2026-11-04 T-138] Sandbox gate at the single writer: while
+	// enabled, AddPoints (and therefore every verb below) changes
+	// nothing, so no caller — audit, roar, eat, intro — can move
+	// notoriety in a sandbox run. The game mode arms this from the
+	// GameFlow flag; normal runs never enable it.
+	void SetSandboxEnabled(bool bEnabled);
+	// [2026-11-04 T-138] True while sandbox suppresses all gains
+	// (see SetSandboxEnabled for why the gate lives at this writer).
+	bool IsSandboxEnabled() const;
 
 	// [2026-11-01 T-016] Direct add for tests and future verbs;
 	// negative adds clamp at 0 total (points never go negative,
@@ -82,4 +91,6 @@ class UNDERTHEMOUNTAIN_API UNotorietySubsystem : public UWorldSubsystem
 
   private:
 	int32 Points = 0;
+	// [2026-11-04 T-138] See SetSandboxEnabled.
+	bool bSandboxEnabled = false;
 };

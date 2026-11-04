@@ -68,6 +68,14 @@ bool FDragonHUDTest::RunTest(const FString& Parameters)
 			  FString(TEXT("TESTING - INFINITE STAMINA")));
 	TestEqual(TEXT("badge is empty while off"), UDragonHUDWidget::FormatTestingBadge(false), FString());
 
+	// [2026-11-04 T-138] Sandbox badge, tested verbatim: on is the
+	// one word that marks unscored footage; off is empty so the
+	// pawn's line collapses in ruled runs.
+	TestEqual(TEXT("sandbox badge names the mode while on"),
+			  UDragonHUDWidget::FormatSandboxBadge(true), FString(TEXT("SANDBOX")));
+	TestEqual(TEXT("sandbox badge is empty while off"), UDragonHUDWidget::FormatSandboxBadge(false),
+			  FString());
+
 	return true;
 }
 

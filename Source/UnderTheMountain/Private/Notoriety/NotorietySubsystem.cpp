@@ -60,8 +60,27 @@ int32 UNotorietySubsystem::GetStars() const
 	return StarsForPoints(Points);
 }
 
+void UNotorietySubsystem::SetSandboxEnabled(bool bEnabled)
+{
+	bSandboxEnabled = bEnabled;
+}
+
+bool UNotorietySubsystem::IsSandboxEnabled() const
+{
+	return bSandboxEnabled;
+}
+
 void UNotorietySubsystem::AddPoints(int32 Amount, const TCHAR* Reason)
 {
+	// [2026-11-04 T-138] Sandbox suppression at the single writer:
+	// logged (not silent) so a sandbox proof run can show gains
+	// were offered and refused, with the total untouched.
+	if (bSandboxEnabled && Amount != 0)
+	{
+		UE_LOG(LogUnderTheMountain, Log, TEXT("Notoriety %+d suppressed (sandbox): %s"), Amount,
+			   Reason);
+		return;
+	}
 	Points = FMath::Max(0, Points + Amount);
 	UE_LOG(LogUnderTheMountain, Log, TEXT("Notoriety %+d (%s): %d points, %d star(s)"), Amount,
 		   Reason, Points, GetStars());

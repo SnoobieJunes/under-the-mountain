@@ -27,9 +27,13 @@ class UNDERTHEMOUNTAIN_API UDragonHUDWidget : public UUserWidget
 	// [2026-11-01 T-019] Show one frame of game state: bar
 	// fractions, star pips, gold and wave. WaveStateText is the
 	// caller's word so this widget stays presentation-only.
+	// [2026-11-04 T-138] SandboxBadgeLabel rides Refresh as its own
+	// line (not folded into the testing badge): a sandbox run and
+	// god mode are different facts and can be on together.
 	void Refresh(float HP, float MaxHP, float Stamina, float MaxStamina, int32 Stars, int32 Points,
 				 int64 Hoard, int64 StartingHoard, int32 Wave, int32 XP, const FString& WaveStateText,
-				 const FString& FlightStateLabel, const FString& TestingBadgeLabel);
+				 const FString& FlightStateLabel, const FString& TestingBadgeLabel,
+				 const FString& SandboxBadgeLabel);
 
 	// [2026-11-01 T-019] Pure formatting, tested verbatim:
 	// star pips (filled/empty of 5) with the point total, the
@@ -51,6 +55,12 @@ class UNDERTHEMOUNTAIN_API UDragonHUDWidget : public UUserWidget
 	// god-mode indicator the HUD shows while utm.testing.infinitestamina
 	// is on (off collapses the line, like the grounded flight state).
 	static FString FormatTestingBadge(bool bInfiniteStamina);
+
+	// [2026-11-04 T-138] Pure sandbox-badge text, tested verbatim:
+	// "SANDBOX" while a sandbox run is live, empty (line collapsed
+	// by Refresh, same contract as the testing badge) in a ruled
+	// run, so free flight is never mistaken for a scored session.
+	static FString FormatSandboxBadge(bool bSandbox);
 
   protected:
 	virtual void NativeOnInitialized() override;
@@ -86,4 +96,9 @@ class UNDERTHEMOUNTAIN_API UDragonHUDWidget : public UUserWidget
 	// contract as the flight-state line above.
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> TestingBadgeText;
+
+	// [2026-11-04 T-138] Sandbox badge; same empty-collapses
+	// contract, in a cool tint that reads as mode, not warning.
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> SandboxBadgeText;
 };

@@ -96,6 +96,11 @@ void UDragonHUDWidget::NativeOnInitialized()
 	// (crimson) nor stamina (green) nor flight (gold).
 	TestingBadgeText = MakeLabel(WidgetTree, TEXT("HUDTestingBadgeText"), TEXT(""), 13,
 								 FLinearColor(1.0f, 0.45f, 0.9f));
+	// [2026-11-04 T-138] Sandbox badge under the testing badge
+	// (sandbox only); collapsed in ruled runs. Cool cyan reads as
+	// mode information, distinct from every vitals colour above.
+	SandboxBadgeText = MakeLabel(WidgetTree, TEXT("HUDSandboxBadgeText"), TEXT(""), 13,
+								 FLinearColor(0.45f, 0.9f, 1.0f));
 	if (VitalsPanel && VitalsBox && HPText && HPBar && StaminaText && StaminaBar)
 	{
 		VitalsBox->AddChildToVerticalBox(HPText);
@@ -113,6 +118,10 @@ void UDragonHUDWidget::NativeOnInitialized()
 		if (TestingBadgeText != nullptr)
 		{
 			VitalsBox->AddChildToVerticalBox(TestingBadgeText);
+		}
+		if (SandboxBadgeText != nullptr)
+		{
+			VitalsBox->AddChildToVerticalBox(SandboxBadgeText);
 		}
 		VitalsPanel->SetContent(VitalsBox);
 		if (UCanvasPanelSlot* Slot = Canvas->AddChildToCanvas(VitalsPanel))
@@ -192,6 +201,13 @@ FString UDragonHUDWidget::FormatTestingBadge(bool bInfiniteStamina)
 	return bInfiniteStamina ? TEXT("TESTING - INFINITE STAMINA") : TEXT("");
 }
 
+FString UDragonHUDWidget::FormatSandboxBadge(bool bSandbox)
+{
+	// [2026-11-04 T-138] One word, all caps like the testing badge:
+	// unmistakable in footage that this run is unscored.
+	return bSandbox ? TEXT("SANDBOX") : TEXT("");
+}
+
 FString UDragonHUDWidget::FormatHoard(int64 Hoard, int64 StartingHoard, int32 Wave, int32 XP,
 									  const FString& WaveStateText)
 {
@@ -214,7 +230,7 @@ float UDragonHUDWidget::BarFraction(float Value, float Max)
 void UDragonHUDWidget::Refresh(float HP, float MaxHP, float Stamina, float MaxStamina, int32 Stars,
 							   int32 Points, int64 Hoard, int64 StartingHoard, int32 Wave, int32 XP,
 							   const FString& WaveStateText, const FString& FlightStateLabel,
-							   const FString& TestingBadgeLabel)
+							   const FString& TestingBadgeLabel, const FString& SandboxBadgeLabel)
 {
 	if (HPBar)
 	{
@@ -260,6 +276,13 @@ void UDragonHUDWidget::Refresh(float HP, float MaxHP, float Stamina, float MaxSt
 		// [2026-11-04 T-124] Same contract: empty (god mode off) collapses.
 		TestingBadgeText->SetText(FText::FromString(TestingBadgeLabel));
 		TestingBadgeText->SetVisibility(TestingBadgeLabel.IsEmpty() ? ESlateVisibility::Collapsed
+																	: ESlateVisibility::Visible);
+	}
+	if (SandboxBadgeText)
+	{
+		// [2026-11-04 T-138] Same contract: empty (ruled run) collapses.
+		SandboxBadgeText->SetText(FText::FromString(SandboxBadgeLabel));
+		SandboxBadgeText->SetVisibility(SandboxBadgeLabel.IsEmpty() ? ESlateVisibility::Collapsed
 																	: ESlateVisibility::Visible);
 	}
 }

@@ -54,6 +54,25 @@ bool FGameLoopRulesTest::RunTest(const FString& Parameters)
 	Notoriety->AddPublicKillPoints(FVector(38000.0f, 0.0f, 100.0f));
 	TestEqual(TEXT("outside kill through the verb adds 10"), Notoriety->GetPoints(), 23);
 
+	// --- [2026-11-04 T-138] Sandbox gate at the notoriety writer:
+	// every verb is offered and refused, then the gate lifts ---
+	{
+		UNotorietySubsystem* Sandboxed = NewObject<UNotorietySubsystem>();
+		Sandboxed->SetSandboxEnabled(true);
+		TestTrue(TEXT("sandbox flag reads back"), Sandboxed->IsSandboxEnabled());
+		Sandboxed->AddEscapePoints(true);
+		Sandboxed->AddPublicKillPoints(FVector(38000.0f, 0.0f, 100.0f));
+		Sandboxed->AddRoarOutsidePoints();
+		Sandboxed->AddLivestockEatPoints();
+		Sandboxed->AddStructureHitPoints();
+		Sandboxed->AddPoints(50, TEXT("test direct add"));
+		TestEqual(TEXT("sandbox notoriety never moves"), Sandboxed->GetPoints(), 0);
+		TestEqual(TEXT("sandbox stars stay zero"), Sandboxed->GetStars(), 0);
+		Sandboxed->SetSandboxEnabled(false);
+		Sandboxed->AddEscapePoints(false);
+		TestEqual(TEXT("notoriety flows again once sandbox lifts"), Sandboxed->GetPoints(), 5);
+	}
+
 	// --- AT-HoardThresholds: boundaries at the spec's 8500 start,
 	// fractions read from the classifier's parameters (0.5/0.2) ---
 	auto Classify = [](int64 Current, bool bFinal, bool bDown)

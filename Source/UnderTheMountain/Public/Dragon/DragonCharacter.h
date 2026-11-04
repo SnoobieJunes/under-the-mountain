@@ -717,6 +717,13 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	TSet<FName> CountedPropBurns;
 	float LoopAuditTimer = 0.0f;
 	bool bOutcomeLogged = false;
+	// [2026-11-04 T-135] Resolution-score ledger: thief kills the
+	// audit has counted, split by lair location at the death site
+	// (the same inside/outside test notoriety prices). Fed into
+	// the end-screen snapshot; counted in the dead-thief branch
+	// exactly once per thief via CountedThiefEvents above.
+	int32 ResolutionInsideKills = 0;
+	int32 ResolutionOutsideKills = 0;
 	// [2026-11-03 T-086] Hoard-mound visual: cached actor + base scale
 	// (captured on first sight — box() bakes size into actor scale),
 	// last applied step (-1 forces the first apply + log).

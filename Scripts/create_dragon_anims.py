@@ -355,7 +355,172 @@ def clip_hit():
     export(arm, action, "dragon_v4_hit.fbx")
 
 
-CLIPS = (clip_fly, clip_glide, clip_hover, clip_idle, clip_takeoff, clip_land, clip_roar, clip_hit)
+# [2026-11-04 T-126] Ground-rest pose shared by SleepIdle/Wake/LieDown so the
+# three clips agree on what "lying down" is: legs folded under, wings folded,
+# neck curled, pelvis lowered. amount=0 is standing, amount=1 is fully lying.
+_LYING_LEGS = {"upper": (-52.0, 0.0, 0.0), "lower": (78.0, 0.0, 0.0), "foot": (-20.0, 0.0, -10.0)}
+
+
+def lying_pose(arm, amount, breath=0.0):
+    chest, neck, head = pb(arm, "chest"), pb(arm, "neck"), pb(arm, "head")
+    keyed = wing_pose(arm, 0, 0.0)
+    keyed += leg_pose(arm, amount, front=_LYING_LEGS, hind=_LYING_LEGS)
+    set_rot(chest, x=-2.0 * amount + breath)
+    set_rot(neck, x=-14.0 * amount, z=10.0 * amount)
+    set_rot(head, x=-10.0 * amount, z=6.0 * amount)
+    return keyed + [chest, neck, head]
+
+
+def clip_hitheavy():
+    # [2026-11-04 T-126] NotifyFraction 0.25 -> recoil apex at frame 6/20.
+    arm, action = open_rig("HitHeavy", 20)
+    chest, neck, head = pb(arm, "chest"), pb(arm, "neck"), pb(arm, "head")
+    poses = [(1, 0.0, 0.0, 0.0, 0.0), (6, -22.0, 16.0, 28.0, 0.35), (11, -12.0, 7.0, 14.0, 0.15), (20, 0.0, 0.0, 0.0, 0.0)]
+    for frame, cx, cz, hx, unfold in poses:
+        keyed = wing_pose(arm, 0, unfold) + leg_pose(arm, 0.0) + tail_wave(arm, frame, 0, 0.0)
+        set_rot(chest, x=cx, z=cz)
+        set_rot(neck, x=hx * 0.7, z=cz)
+        set_rot(head, x=hx, z=cz * 0.5)
+        key(keyed + [chest, neck, head], frame)
+    export(arm, action, "dragon_v4_hitheavy.fbx")
+
+
+def clip_defeat():
+    arm, action = open_rig("Defeat", 48)
+    pelvis = pb(arm, "pelvis")
+    pbind = tuple(pelvis.location)
+    poses = [(1, 0.0, 0.0, 0.0), (12, 0.35, 0.25, -0.10), (28, 0.8, 0.1, -0.30), (48, 1.0, 0.0, -0.38)]
+    for frame, amount, unfold, drop in poses:
+        keyed = lying_pose(arm, amount) + tail_wave(arm, frame, 0, 0.0)
+        pelvis.location = (pbind[0], pbind[1], pbind[2] + drop)
+        key(keyed, frame)
+        key([pelvis], frame, ("location",))
+    export(arm, action, "dragon_v4_defeat.fbx")
+
+
+def clip_sleepidle():
+    span, end = 47, 48
+    arm, action = open_rig("SleepIdle", end)
+    pelvis = pb(arm, "pelvis")
+    pbind = tuple(pelvis.location)
+    for frame in (1, 13, 25, 37, 48):
+        keyed = lying_pose(arm, 1.0, breath=1.6 * sine(frame, span)) + tail_wave(arm, frame, span, 1.0)
+        pelvis.location = (pbind[0], pbind[1], pbind[2] - 0.38)
+        key(keyed, frame)
+        key([pelvis], frame, ("location",))
+    export(arm, action, "dragon_v4_sleepidle.fbx")
+
+
+def clip_wake():
+    arm, action = open_rig("Wake", 36)
+    pelvis = pb(arm, "pelvis")
+    pbind = tuple(pelvis.location)
+    poses = [(1, 1.0, -0.38), (14, 0.85, -0.34), (24, 0.4, -0.15), (36, 0.0, 0.0)]
+    for frame, amount, drop in poses:
+        keyed = lying_pose(arm, amount) + tail_wave(arm, frame, 0, 0.0)
+        pelvis.location = (pbind[0], pbind[1], pbind[2] + drop)
+        key(keyed, frame)
+        key([pelvis], frame, ("location",))
+    export(arm, action, "dragon_v4_wake.fbx")
+
+
+def clip_liedown():
+    arm, action = open_rig("LieDown", 36)
+    pelvis = pb(arm, "pelvis")
+    pbind = tuple(pelvis.location)
+    poses = [(1, 0.0, 0.0), (12, 0.35, -0.12), (24, 0.8, -0.30), (36, 1.0, -0.38)]
+    for frame, amount, drop in poses:
+        keyed = lying_pose(arm, amount) + tail_wave(arm, frame, 0, 0.0)
+        pelvis.location = (pbind[0], pbind[1], pbind[2] + drop)
+        key(keyed, frame)
+        key([pelvis], frame, ("location",))
+    export(arm, action, "dragon_v4_liedown.fbx")
+
+
+def clip_firepose():
+    span, end = 47, 48
+    arm, action = open_rig("FirePose", end)
+    chest, neck, head = pb(arm, "chest"), pb(arm, "neck"), pb(arm, "head")
+    for frame in (1, 13, 25, 37, 48):
+        s = sine(frame, span)
+        lag_flap = {b: 6.0 * s for b in WING_BASES}
+        keyed = wing_pose(arm, 0, 0.55, lag_flap) + leg_pose(arm, 0.0) + tail_wave(arm, frame, span, 2.0)
+        set_rot(chest, x=8.0 + 1.5 * s)
+        set_rot(neck, x=10.0)
+        set_rot(head, x=8.0 + 1.0 * s)
+        key(keyed + [chest, neck, head], frame)
+    export(arm, action, "dragon_v4_firepose.fbx")
+
+
+def clip_claw():
+    # [2026-11-04 T-126] NotifyFraction 0.45 -> strike apex at frame 11/24.
+    arm, action = open_rig("Claw", 24)
+    chest, neck, head = pb(arm, "chest"), pb(arm, "neck"), pb(arm, "head")
+    upper, lower, foot = pb(arm, "frontleg_upper.R"), pb(arm, "frontleg_lower.R"), pb(arm, "frontleg_foot.R")
+    poses = [(1, 0.0, 0.0, 0.0, 0.0), (7, -35.0, -50.0, 10.0, -6.0), (11, 38.0, 12.0, -18.0, 8.0),
+             (16, 12.0, 0.0, 0.0, 3.0), (24, 0.0, 0.0, 0.0, 0.0)]
+    for frame, ux, lx, fx, cx in poses:
+        keyed = wing_pose(arm, 0, 0.0) + leg_pose(arm, 0.0) + tail_wave(arm, frame, 0, 0.0)
+        set_rot(upper, x=ux)
+        set_rot(lower, x=lx)
+        set_rot(foot, x=fx)
+        set_rot(chest, x=cx)
+        set_rot(neck, x=cx * 0.5)
+        set_rot(head, x=cx * 0.5)
+        key(keyed + [upper, lower, foot, chest, neck, head], frame)
+    export(arm, action, "dragon_v4_claw.fbx")
+
+
+def clip_biteeat():
+    # [2026-11-04 T-126] NotifyFraction 0.60 -> bite apex at frame 22/36.
+    arm, action = open_rig("BiteEat", 36)
+    chest, neck, head = pb(arm, "chest"), pb(arm, "neck"), pb(arm, "head")
+    poses = [(1, 0.0, 0.0, 0.0), (10, -6.0, -16.0, -12.0), (22, -10.0, -30.0, -22.0),
+             (28, -4.0, -10.0, -4.0), (32, -5.0, -14.0, -8.0), (36, 0.0, 0.0, 0.0)]
+    for frame, cx, nx, hx in poses:
+        keyed = wing_pose(arm, 0, 0.0) + leg_pose(arm, 0.0) + tail_wave(arm, frame, 0, 0.0)
+        set_rot(chest, x=cx)
+        set_rot(neck, x=nx)
+        set_rot(head, x=hx)
+        key(keyed + [chest, neck, head], frame)
+    export(arm, action, "dragon_v4_biteeat.fbx")
+
+
+def clip_tailwhip():
+    # [2026-11-04 T-126] NotifyFraction 0.50 -> sweep apex at frame 12/24.
+    arm, action = open_rig("TailWhip", 24)
+    chest = pb(arm, "chest")
+    poses = [(1, 0.0, 0.0), (6, -28.0, -4.0), (12, 34.0, 5.0), (18, 14.0, 2.0), (24, 0.0, 0.0)]
+    for frame, sweep, cx in poses:
+        keyed = wing_pose(arm, 0, 0.0) + leg_pose(arm, 0.0)
+        tails = []
+        for i, name in enumerate(TAIL_BONES):
+            bone = pb(arm, name)
+            set_rot(bone, z=sweep * (0.4 + 0.15 * i))
+            tails.append(bone)
+        set_rot(chest, x=cx, z=cx * 0.6)
+        key(keyed + tails + [chest], frame)
+    export(arm, action, "dragon_v4_tailwhip.fbx")
+
+
+def clip_wingbuffet():
+    # [2026-11-04 T-126] NotifyFraction 0.40 -> downstroke apex at frame 10/24.
+    arm, action = open_rig("WingBuffet", 24)
+    chest, neck, head = pb(arm, "chest"), pb(arm, "neck"), pb(arm, "head")
+    poses = [(1, 0.0, 0.0, 0.0), (6, -18.0, 0.9, -4.0), (10, 34.0, 1.0, 6.0),
+             (16, 8.0, 0.6, 2.0), (24, 0.0, 0.0, 0.0)]
+    for frame, flap, unfold, cx in poses:
+        keyed = wing_pose(arm, flap, unfold) + leg_pose(arm, 0.0) + tail_wave(arm, frame, 0, 0.0)
+        set_rot(chest, x=cx)
+        set_rot(neck, x=-cx * 0.5)
+        set_rot(head, x=-cx * 0.3)
+        key(keyed + [chest, neck, head], frame)
+    export(arm, action, "dragon_v4_wingbuffet.fbx")
+
+
+CLIPS = (clip_fly, clip_glide, clip_hover, clip_idle, clip_takeoff, clip_land, clip_roar, clip_hit,
+         clip_hitheavy, clip_defeat, clip_sleepidle, clip_wake, clip_liedown, clip_firepose,
+         clip_claw, clip_biteeat, clip_tailwhip, clip_wingbuffet)
 
 if __name__ == "__main__":
     for clip in CLIPS:

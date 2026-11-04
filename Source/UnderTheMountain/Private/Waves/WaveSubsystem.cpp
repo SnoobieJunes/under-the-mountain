@@ -79,9 +79,52 @@ bool UWaveSubsystem::IsSessionOver() const
 	return State == EWaveState::SessionOver;
 }
 
+void UWaveSubsystem::SetSandboxEnabled(bool bEnabled)
+{
+	bSandboxEnabled = bEnabled;
+}
+
+bool UWaveSubsystem::IsSandboxEnabled() const
+{
+	return bSandboxEnabled;
+}
+
+bool UWaveSubsystem::IsWaveWarningActive() const
+{
+	return State == EWaveState::Intermission && bCadenceGapStarted && Cadence.IsWarningActive();
+}
+
+int32 UWaveSubsystem::CountActiveIncursions() const
+{
+	// [2026-11-04 T-131] Live = actor still there, brain not dead,
+	// not yet at the exit (the same resolution test wave thieves
+	// use). Missing actors count resolved, as in T-104's rule.
+	int32 Active = 0;
+	for (const TWeakObjectPtr<AThiefCharacter>& Weak : IncursionThieves)
+	{
+		AThiefCharacter* Thief = Weak.Get();
+		if (Thief == nullptr)
+		{
+			continue;
+		}
+		UThiefBrain* Brain = Thief->GetBrain();
+		if (Brain != nullptr && Brain->State() != EThiefState::Dead && !Brain->ReachedExit())
+		{
+			++Active;
+		}
+	}
+	return Active;
+}
+
 void UWaveSubsystem::TickWave(float DeltaSeconds)
 {
 	if (State == EWaveState::SessionOver)
+	{
+		return;
+	}
+	// [2026-11-04 T-138] Sandbox freezes the machine before any
+	// timer advances: no gap, no incursion, no wave, no cap.
+	if (bSandboxEnabled)
 	{
 		return;
 	}
@@ -89,18 +132,52 @@ void UWaveSubsystem::TickWave(float DeltaSeconds)
 	switch (State)
 	{
 	case EWaveState::Intermission:
-		if (StateTimer >= IntermissionSeconds)
+	{
+		// [2026-11-04 T-131] The scheduler owns the gap: draw its
+		// rolls once per intermission, then act on its verdicts.
+		if (!bCadenceGapStarted)
 		{
+			bCadenceGapStarted = true;
+			Cadence.BeginGap(FMath::FRand(), FMath::FRand(), FMath::FRand());
+			UE_LOG(LogUnderTheMountain, Log,
+				   TEXT("Cadence: %.0fs gap before wave %d (%d incursion(s) planned)"),
+				   Cadence.GetGapSeconds(), CurrentWave + 1, Cadence.GetPlannedIncursions());
+		}
+		const FIncursionCadenceDecision Decision =
+			Cadence.TickGap(DeltaSeconds, CountActiveIncursions(), FMath::FRand(), false);
+		if (Decision.bSpawnIncursion)
+		{
+			SpawnIncursionThief();
+		}
+		if (Decision.bWaveWarningStarted)
+		{
+			UE_LOG(LogUnderTheMountain, Log, TEXT("Wave %d warning (20s)"), CurrentWave + 1);
+		}
+		if (Decision.bWaveDue)
+		{
+			bCadenceGapStarted = false;
+			Cadence.BeginWave();
 			BeginWave(CurrentWave + 1);
 		}
 		break;
+	}
 	case EWaveState::Spawning:
+		// [2026-11-04 T-131] The cap clock runs from wave start,
+		// spawning included — a slow stagger cannot extend a wave.
+		if (Cadence.TickWave(DeltaSeconds, false).bWaveCapReached)
+		{
+			ForceWaveSurvivorsToFlee();
+		}
 		if (StateTimer >= SpawnGroupIntervalSeconds)
 		{
 			SpawnNextGroup();
 		}
 		break;
 	case EWaveState::Active:
+		if (Cadence.TickWave(DeltaSeconds, false).bWaveCapReached)
+		{
+			ForceWaveSurvivorsToFlee();
+		}
 		if (AreWaveThievesResolved())
 		{
 			UE_LOG(LogUnderTheMountain, Log, TEXT("Wave %d cleared"), CurrentWave);
@@ -176,19 +253,66 @@ AThiefCharacter* UWaveSubsystem::SpawnThief(UThiefDataAsset* Data, const FVector
 	return Thief;
 }
 
+void UWaveSubsystem::EnsureThiefDataLoaded()
+{
+	// [2026-11-04 T-131] One-time load shared by wave groups and
+	// incursions (was inline in SpawnNextGroup, which duplicated
+	// the asset paths for any second spawn path).
+	if (bDataLoaded)
+	{
+		return;
+	}
+	bDataLoaded = true;
+	BurglarData = LoadObject<UThiefDataAsset>(
+		nullptr, TEXT("/Game/Gameplay/Thieves/DA_Thief_Burglar.DA_Thief_Burglar"));
+	DwarfData = LoadObject<UThiefDataAsset>(
+		nullptr, TEXT("/Game/Gameplay/Thieves/DA_Thief_DwarfParty.DA_Thief_DwarfParty"));
+	AdventurerData = LoadObject<UThiefDataAsset>(
+		nullptr, TEXT("/Game/Gameplay/Thieves/DA_Thief_Adventurer.DA_Thief_Adventurer"));
+}
+
+void UWaveSubsystem::SpawnIncursionThief()
+{
+	// [2026-11-04 T-131] A single burglar at the entry, tracked
+	// apart from the wave (see the header): the pawn's audit still
+	// prices its escape/theft like any thief's.
+	EnsureThiefDataLoaded();
+	AThiefCharacter* Thief = SpawnThief(
+		BurglarData, FThiefRules::EntryForRole(EThiefRole::Burglar, FVector::ZeroVector).Location,
+		EThiefRole::Burglar);
+	if (Thief != nullptr)
+	{
+		// SpawnThief records into WaveThieves (its wave contract);
+		// move the record so this thief cannot hold a wave open.
+		WaveThieves.Remove(Thief);
+		IncursionThieves.Add(Thief);
+		UE_LOG(LogUnderTheMountain, Log, TEXT("Incursion: single thief entered (%d active)"),
+			   CountActiveIncursions());
+	}
+}
+
+void UWaveSubsystem::ForceWaveSurvivorsToFlee()
+{
+	// [2026-11-04 T-131] Cap verdict: live wave thieves flee for
+	// the exit carrying what they hold; dead/gone/exited slots
+	// need nothing. The wave resolves as they arrive.
+	UE_LOG(LogUnderTheMountain, Log, TEXT("Wave %d cap (4 min): survivors fleeing"), CurrentWave);
+	for (const TWeakObjectPtr<AThiefCharacter>& Weak : WaveThieves)
+	{
+		if (AThiefCharacter* Thief = Weak.Get())
+		{
+			if (UThiefBrain* Brain = Thief->GetBrain())
+			{
+				Brain->ForceFlee();
+			}
+		}
+	}
+}
+
 void UWaveSubsystem::SpawnNextGroup()
 {
 	StateTimer = 0.0f;
-	if (!bDataLoaded)
-	{
-		bDataLoaded = true;
-		BurglarData = LoadObject<UThiefDataAsset>(
-			nullptr, TEXT("/Game/Gameplay/Thieves/DA_Thief_Burglar.DA_Thief_Burglar"));
-		DwarfData = LoadObject<UThiefDataAsset>(
-			nullptr, TEXT("/Game/Gameplay/Thieves/DA_Thief_DwarfParty.DA_Thief_DwarfParty"));
-		AdventurerData = LoadObject<UThiefDataAsset>(
-			nullptr, TEXT("/Game/Gameplay/Thieves/DA_Thief_Adventurer.DA_Thief_Adventurer"));
-	}
+	EnsureThiefDataLoaded();
 	// [2026-11-01 T-016] Groups of at most 3 actors per stagger
 	// tick (a dwarf party is one group of 3 by itself).
 	int32 Spawned = 0;

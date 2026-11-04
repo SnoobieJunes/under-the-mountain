@@ -136,15 +136,50 @@ void UGameFlowWidget::ShowPause()
 	ShowOnly(PausePanel.Get());
 }
 
+FString UGameFlowWidget::FormatOutcomeVerdict(EGameFlowOutcome Outcome)
+{
+	// [2026-11-04 T-135] Three endings, three wordings: defended,
+	// the pyrrhic gutted-hoard slink-away, and lost. Collapsing
+	// pyrrhic into "defended" here is exactly the T-135 bug.
+	switch (Outcome)
+	{
+	case EGameFlowOutcome::Won:
+		return TEXT("HOARD DEFENDED");
+	case EGameFlowOutcome::PyrrhicWin:
+		return TEXT("PYRRHIC WIN - HOARD GUTTED");
+	case EGameFlowOutcome::Lost:
+		return TEXT("HOARD LOST");
+	case EGameFlowOutcome::InProgress:
+	default:
+		return TEXT("RUN IN PROGRESS");
+	}
+}
+
+FString UGameFlowWidget::FormatResolutionScore(int32 InsideKills, int32 OutsideKills)
+{
+	// [2026-11-04 T-135] The section 1 resolution score is the
+	// split itself (inside kills were invisible, outside kills
+	// raised notoriety — the debrief is which kind the dragon
+	// dealt), so the line prints both counts, never a blended total.
+	return FString::Printf(TEXT("Resolution: %d inside / %d outside kills"), InsideKills,
+						   OutsideKills);
+}
+
+FString UGameFlowWidget::FormatEndScreen(const FGameFlowResult& Result)
+{
+	// [2026-11-04 T-135] Verdict, the hoard it cost, then the
+	// resolution split — ShowEnd renders exactly this string.
+	return FString::Printf(TEXT("%s\nHoard %lld of %lld  —  %d stars  —  wave %d\n%s"),
+						   *FormatOutcomeVerdict(Result.Outcome), Result.CurrentHoard,
+						   Result.StartingHoard, Result.Stars, Result.FinalWave,
+						   *FormatResolutionScore(Result.InsideKills, Result.OutsideKills));
+}
+
 void UGameFlowWidget::ShowEnd(const FGameFlowResult& Result)
 {
 	if (EndOutcomeText != nullptr)
 	{
-		const TCHAR* Verdict =
-			Result.Outcome == EGameFlowOutcome::Won ? TEXT("HOARD DEFENDED") : TEXT("HOARD LOST");
-		EndOutcomeText->SetText(FText::FromString(FString::Printf(
-			TEXT("%s\nHoard %lld of %lld  —  %d stars  —  wave %d"), Verdict, Result.CurrentHoard,
-			Result.StartingHoard, Result.Stars, Result.FinalWave)));
+		EndOutcomeText->SetText(FText::FromString(FormatEndScreen(Result)));
 	}
 	ShowOnly(EndPanel.Get());
 }
@@ -188,6 +223,15 @@ void UGameFlowWidget::NativeOnInitialized()
 		{
 			Start->OnClicked.AddDynamic(this, &UGameFlowWidget::HandleStart);
 			TitleBox->AddChild(Start);
+		}
+		// [2026-11-04 T-138] Sandbox sits under Start on the title:
+		// same one-click entry, opposite contract (free flight, no
+		// game rules) — the label says so before the player commits.
+		if (UButton* Sandbox = MakeFlowButton(WidgetTree, TEXT("FlowStartSandbox"),
+											  TEXT("START SANDBOX (NO RULES)"), Slate, 20))
+		{
+			Sandbox->OnClicked.AddDynamic(this, &UGameFlowWidget::HandleStartSandbox);
+			TitleBox->AddChild(Sandbox);
 		}
 		if (UButton* Quit = MakeFlowButton(WidgetTree, TEXT("FlowTitleQuit"), TEXT("QUIT"),
 										   Slate, 20))
@@ -263,6 +307,14 @@ void UGameFlowWidget::HandleStart()
 	if (AUnderTheMountainGameMode* Mode = BoundMode.Get())
 	{
 		Mode->StartRun();
+	}
+}
+
+void UGameFlowWidget::HandleStartSandbox()
+{
+	if (AUnderTheMountainGameMode* Mode = BoundMode.Get())
+	{
+		Mode->StartSandboxRun();
 	}
 }
 

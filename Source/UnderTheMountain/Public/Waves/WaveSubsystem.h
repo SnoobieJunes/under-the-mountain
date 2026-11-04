@@ -10,12 +10,17 @@
 // (the section 4 table); spawning is staggered in small groups,
 // never a full wave at once; a wave is cleared exactly when every
 // spawned thief is dead or has reached the exit.
+// [2026-11-04 T-131] Between waves the FIncursionScheduler owns
+// the rhythm (90-150 s gaps, 1-2 single-thief incursions, 20 s
+// warning, 4-minute wave cap); this subsystem only acts on its
+// verdicts. [2026-11-04 T-138] Sandbox freezes the whole machine.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "Thief/ThiefDataAsset.h"
+#include "Waves/IncursionScheduler.h"
 #include "WaveSubsystem.generated.h"
 
 class AThiefCharacter;
@@ -26,7 +31,13 @@ enum class EWaveState : uint8
 	Intermission,
 	Spawning,
 	Active,
-	SessionOver
+	SessionOver,
+	// [2026-11-04 T-131] Warning is not a stored state (the machine
+	// stays in Intermission while the scheduler's warning window is
+	// open — see IsWaveWarningActive); the enumerator exists only
+	// as the HUD's word for that window, appended last so existing
+	// state values keep their numbers.
+	Warning
 };
 
 UCLASS()
@@ -42,17 +53,24 @@ class UNDERTHEMOUNTAIN_API UWaveSubsystem : public UWorldSubsystem
 								   int32& OutAdventurers);
 	static int32 TotalActorsForWave(int32 Wave);
 
-	// [2026-11-01 T-016] Seconds between waves and between spawn
-	// groups (spec: 15-30 s stagger; intermission is the breather
-	// the wave table implies between incursions).
-	UPROPERTY(EditAnywhere, Category = "Waves")
-	float IntermissionSeconds = 25.0f;
-
+	// [2026-11-04 T-131] Gap length is no longer a fixed property:
+	// FIncursionScheduler rolls 90-150 s per gap (the old fixed
+	// 25 s IntermissionSeconds is gone — no caller read it but
+	// TickWave, and a constant cannot express the spec range).
 	UPROPERTY(EditAnywhere, Category = "Waves")
 	float SpawnGroupIntervalSeconds = 15.0f;
 
 	UPROPERTY(EditAnywhere, Category = "Waves")
 	int32 FinalWave = 6;
+
+	// [2026-11-04 T-138] Sandbox gate: while enabled, TickWave is
+	// a no-op (no gaps advance, no incursions, no waves, no cap),
+	// mirroring the GameFlow rule at this subsystem's own seam so
+	// a direct TickWave call cannot spawn into a sandbox world.
+	void SetSandboxEnabled(bool bEnabled);
+	// [2026-11-04 T-138] True while sandbox freezes the machine
+	// (see SetSandboxEnabled).
+	bool IsSandboxEnabled() const;
 
 	// [2026-11-01 T-016] Advance the machine. The pawn calls this
 	// every tick; all spawning/timing lives here.
@@ -61,6 +79,15 @@ class UNDERTHEMOUNTAIN_API UWaveSubsystem : public UWorldSubsystem
 	EWaveState GetWaveState() const;
 	int32 GetCurrentWave() const;
 	bool IsSessionOver() const;
+	// [2026-11-04 T-131] True during the scheduler's 20 s warning
+	// window before the next wave (state stays Intermission; this
+	// is how the HUD picks its "Warning" word without a state the
+	// transition table would have to carry).
+	bool IsWaveWarningActive() const;
+	// [2026-11-04 T-131] Live incursion thieves (not dead, not at
+	// the exit) — the count the scheduler's concurrency cap reads,
+	// exposed so tests and logs read the same number.
+	int32 CountActiveIncursions() const;
 
   private:
 	void BeginWave(int32 Wave);
@@ -68,6 +95,18 @@ class UNDERTHEMOUNTAIN_API UWaveSubsystem : public UWorldSubsystem
 	// [2026-11-04 T-133] Role is per-spawn (dwarf party members differ).
 	AThiefCharacter* SpawnThief(UThiefDataAsset* Data, const FVector& EntryPoint,
 								EThiefRole Role = EThiefRole::None);
+	// [2026-11-04 T-131] Loads the three thief DataAssets once;
+	// extracted from SpawnNextGroup so incursion spawns share the
+	// same one-time load instead of duplicating the asset paths.
+	void EnsureThiefDataLoaded();
+	// [2026-11-04 T-131] Spawns one burglar as a gap incursion and
+	// tracks it apart from WaveThieves: incursion thieves must not
+	// hold a wave open (they belong to the gap, not the wave).
+	void SpawnIncursionThief();
+	// [2026-11-04 T-131] Wave cap reached: every live wave thief
+	// is told to flee (UThiefBrain::ForceFlee); the wave then
+	// resolves as they reach the exit, like any other resolution.
+	void ForceWaveSurvivorsToFlee();
 	bool AreWaveThievesResolved() const;
 
 	EWaveState State = EWaveState::Intermission;
@@ -77,8 +116,22 @@ class UNDERTHEMOUNTAIN_API UWaveSubsystem : public UWorldSubsystem
 	int32 PendingDwarfParties = 0;
 	int32 PendingAdventurers = 0;
 
+	// [2026-11-04 T-131] The cadence clock for the current gap /
+	// wave (see IncursionScheduler.h); bCadenceGapStarted marks a
+	// gap whose rolls are drawn, reset when a wave begins so the
+	// next intermission draws a fresh gap.
+	FIncursionScheduler Cadence;
+	bool bCadenceGapStarted = false;
+	// [2026-11-04 T-138] See SetSandboxEnabled.
+	bool bSandboxEnabled = false;
+
 	UPROPERTY()
 	TArray<TWeakObjectPtr<AThiefCharacter>> WaveThieves;
+
+	// [2026-11-04 T-131] Incursion thieves, tracked apart from
+	// WaveThieves (see SpawnIncursionThief).
+	UPROPERTY()
+	TArray<TWeakObjectPtr<AThiefCharacter>> IncursionThieves;
 
 	// [2026-11-03 T-104] Once-per-slot ledger for the loud missing-thief
 	// report in AreWaveThievesResolved. Mutable because resolution is a
@@ -102,6 +155,13 @@ class UNDERTHEMOUNTAIN_API UWaveSubsystem : public UWorldSubsystem
 	bool TestAreWaveThievesResolved() const
 	{
 		return AreWaveThievesResolved();
+	}
+	// [2026-11-04 T-131] Records an incursion thief through the
+	// same weak-pointer seam as TestRecordWaveThief, so the
+	// concurrency count is testable without a spawned world.
+	void TestRecordIncursionThief(TWeakObjectPtr<AThiefCharacter> Thief)
+	{
+		IncursionThieves.Add(Thief);
 	}
 #endif
 

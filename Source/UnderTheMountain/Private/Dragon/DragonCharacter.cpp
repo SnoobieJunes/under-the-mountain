@@ -2068,6 +2068,13 @@ void ADragonCharacter::AuditGameLoop(float DeltaSeconds)
 		return;
 	}
 	Hoard->RecordSessionStart(TreasureSub->Registry()->TotalGold());
+	// [2026-11-04 T-138] Sandbox is read off the game mode once per
+	// audit: the wave machine and notoriety writer enforce it at
+	// their own seams, and this flag gates the outcome audit below
+	// (no win/lose in sandbox, however the hoard or HP moves).
+	const AUnderTheMountainGameMode* SandboxMode =
+		World->GetAuthGameMode<AUnderTheMountainGameMode>();
+	const bool bSandbox = SandboxMode != nullptr && SandboxMode->IsSandboxRun();
 	Waves->TickWave(DeltaSeconds);
 
 	// [2026-11-03 T-083] Wave-gold XP window: when the wave number
@@ -2215,12 +2222,23 @@ void ADragonCharacter::AuditGameLoop(float DeltaSeconds)
 				TArray<FVillagerWitness> Villagers;
 				GatherWitnessFacts(Thief->GetActorLocation(), Settlements, Villagers);
 				Notoriety->AddPublicKillPointsWitnessed(Thief->GetActorLocation(), Settlements, Villagers);
+				// [2026-11-04 T-135] Resolution ledger: the same
+				// inside/outside test, counted here where the corpse
+				// is first accounted (once, via Key above).
+				if (UNotorietySubsystem::IsInsideLair(Thief->GetActorLocation()))
+				{
+					++ResolutionInsideKills;
+				}
+				else
+				{
+					++ResolutionOutsideKills;
+				}
+				// [2026-11-03 T-083] Inside kills earn XP (GAMEPLAY.md
+				// section 8): claimed by stable actor name, so a later
+				// eat reprocessing the same corpse claims nothing.
+				XP->ClaimKill(Thief->GetFName(),
+							  UNotorietySubsystem::IsInsideLair(Thief->GetActorLocation()));
 			}
-			// [2026-11-03 T-083] Inside kills earn XP (GAMEPLAY.md
-			// section 8): claimed by stable actor name, so a later
-			// eat reprocessing the same corpse claims nothing.
-			XP->ClaimKill(Thief->GetFName(),
-						  UNotorietySubsystem::IsInsideLair(Thief->GetActorLocation()));
 		}
 	}
 
@@ -2240,7 +2258,9 @@ void ADragonCharacter::AuditGameLoop(float DeltaSeconds)
 	// [2026-11-01 T-016] Outcome: dragon down loses immediately;
 	// final-wave survival scores the hoard. Logged once; the
 	// session-end screen is T-072's, this is the state it reads.
-	if (!bOutcomeLogged)
+	// [2026-11-04 T-138] Sandbox skips the outcome audit entirely:
+	// no classification, no "Session outcome" line, no end screen.
+	if (!bOutcomeLogged && UGameFlowMachine::ShouldResolveSessionOutcome(bSandbox))
 	{
 		const bool bDragonDown = Stats != nullptr && Stats->HP <= 0.0f;
 		// [2026-11-01 T-016] Fractions come from DA_HoardThresholds
@@ -2259,20 +2279,18 @@ void ADragonCharacter::AuditGameLoop(float DeltaSeconds)
 				   TEXT("Session outcome: %d (hoard %lld of %lld, stars %d, wave %d)"),
 				   static_cast<int32>(Outcome), Hoard->GetCurrentHoard(TreasureSub->Registry()->TotalGold()),
 				   Hoard->GetStartingHoard(), Notoriety->GetStars(), Waves->GetCurrentWave());
-			// [2026-11-03 T-072] Feed the flow shell: the end screen
-			// shows this outcome (PyrrhicWin still counts as won —
-			// the hoard numbers on the screen tell the cost).
+			// [2026-11-04 T-135] Feed the flow shell via the single
+			// mapping site on the machine: PyrrhicWin reaches the
+			// end screen as itself (previously collapsed to Won
+			// here), with the resolution kill split alongside.
 			if (AUnderTheMountainGameMode* Mode =
 					World->GetAuthGameMode<AUnderTheMountainGameMode>())
 			{
-				const EGameFlowOutcome FlowOutcome =
-					(Outcome == EHoardOutcome::Win || Outcome == EHoardOutcome::PyrrhicWin)
-						? EGameFlowOutcome::Won
-						: EGameFlowOutcome::Lost;
-				Mode->RequestSessionEnd(FlowOutcome,
-										Hoard->GetCurrentHoard(TreasureSub->Registry()->TotalGold()),
-										Hoard->GetStartingHoard(), Notoriety->GetStars(),
-										Waves->GetCurrentWave());
+				Mode->RequestSessionEnd(
+					UGameFlowMachine::OutcomeForHoardOutcome(Outcome),
+					Hoard->GetCurrentHoard(TreasureSub->Registry()->TotalGold()),
+					Hoard->GetStartingHoard(), Notoriety->GetStars(), Waves->GetCurrentWave(),
+					ResolutionInsideKills, ResolutionOutsideKills);
 			}
 		}
 	}
@@ -3679,6 +3697,11 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 													   TEXT("Active"), TEXT("Session over")};
 					const int32 WaveIndex =
 						FMath::Clamp(static_cast<int32>(Waves->GetWaveState()), 0, 3);
+					// [2026-11-04 T-131] The warning window reads as
+					// its own word while the state stays Intermission
+					// (the scheduler owns the window; see WaveSubsystem).
+					const FString WaveWord =
+						Waves->IsWaveWarningActive() ? TEXT("Warning") : WaveWords[WaveIndex];
 					// [2026-11-03 T-064] Flight-state line: one classification,
 					// caller-worded like WaveStateText. Only flight modes show
 					// a line — grounded (and falling) pass empty and the
@@ -3694,12 +3717,19 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 					// the widget owns presentation, the pawn owns state.
 					const FString TestingBadgeText = UDragonHUDWidget::FormatTestingBadge(
 						UDragonStatsComponent::IsInfiniteStaminaEnabled());
+					// [2026-11-04 T-138] Sandbox badge rides the same
+					// feed off the game mode (its only writer), so HUD
+					// and rules can never disagree about the mode.
+					const AUnderTheMountainGameMode* HUDMode =
+						GetWorld()->GetAuthGameMode<AUnderTheMountainGameMode>();
+					const FString SandboxBadgeText = UDragonHUDWidget::FormatSandboxBadge(
+						HUDMode != nullptr && HUDMode->IsSandboxRun());
 					HUDWidget->Refresh(Stats->HP, Stats->MaxHP, Stats->Stamina, Stats->MaxStamina,
 									   Notoriety->GetStars(), Notoriety->GetPoints(),
 									   Hoard->GetCurrentHoard(TreasureSub->Registry()->TotalGold()),
 									   Hoard->GetStartingHoard(), Waves->GetCurrentWave(),
-									   HUDXP->GetTotalXP(), WaveWords[WaveIndex], FlightStateText,
-									   TestingBadgeText);
+									   HUDXP->GetTotalXP(), WaveWord, FlightStateText, TestingBadgeText,
+									   SandboxBadgeText);
 				}
 			}
 		}

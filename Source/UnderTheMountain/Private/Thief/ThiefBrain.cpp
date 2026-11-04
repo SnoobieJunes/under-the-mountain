@@ -350,6 +350,24 @@ void UThiefBrain::OnRoar()
 	OnRoar(LastKnownLocation);
 }
 
+void UThiefBrain::ForceFlee()
+{
+	// [2026-11-04 T-131] Cap flight keeps carried loot (the escape
+	// accounting downstream prices what walks out — that is the
+	// cost of ignoring a wave to its cap) and cancels any timed
+	// state that would hold the thief in place past the cap.
+	if (CurrentState == EThiefState::Dead || bReachedExit)
+	{
+		return;
+	}
+	TargetId = NAME_None;
+	GrabTimer = 0.0f;
+	ScareTimer = 0.0f;
+	DazeTimer = 0.0f;
+	Destination = ExitLocation;
+	TransitionTo(EThiefState::Flee, TEXT("wave cap reached"));
+}
+
 void UThiefBrain::OnWingBuffet(const FVector& ThiefLocation)
 {
 	LastKnownLocation = ThiefLocation;

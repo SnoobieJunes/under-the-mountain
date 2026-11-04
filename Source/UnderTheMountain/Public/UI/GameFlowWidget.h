@@ -39,6 +39,20 @@ class UNDERTHEMOUNTAIN_API UGameFlowWidget : public UUserWidget
 	void ShowEnd(const FGameFlowResult& Result);
 	void HideAll();
 
+	// [2026-11-04 T-135] Pure end-screen text, tested verbatim:
+	// the verdict word for one outcome (Won / PyrrhicWin / Lost
+	// read as three different endings, never two), the resolution
+	// line carrying the inside/outside kill split, and the full
+	// end-screen body ShowEnd renders. Presentation only — the
+	// snapshot it formats is UGameFlowMachine::MakeResult's.
+	static FString FormatOutcomeVerdict(EGameFlowOutcome Outcome);
+	// [2026-11-04 T-135] The resolution-score line for the end
+	// screen (see FormatOutcomeVerdict for the pure-text contract).
+	static FString FormatResolutionScore(int32 InsideKills, int32 OutsideKills);
+	// [2026-11-04 T-135] The full end-screen body for a snapshot
+	// (see FormatOutcomeVerdict for the pure-text contract).
+	static FString FormatEndScreen(const FGameFlowResult& Result);
+
 	// [2026-11-03 T-112] Public (the base keeps it protected) so the
 	// UI.FlowWidget automation test can drive the code-built tree
 	// headless: Initialize skips this without a player context.
@@ -48,6 +62,11 @@ class UNDERTHEMOUNTAIN_API UGameFlowWidget : public UUserWidget
   private:
 	UFUNCTION()
 	void HandleStart();
+	// [2026-11-04 T-138] Title sandbox button: starts a run with
+	// the GameFlow sandbox flag armed (the normal Start button
+	// starts a ruled run; the game mode owns applying the flag).
+	UFUNCTION()
+	void HandleStartSandbox();
 	UFUNCTION()
 	void HandleResume();
 	UFUNCTION()

@@ -25,6 +25,17 @@ CLIPS = [
     ("dragon_v4_land.fbx", "SK_Dragon_v4_LandAnim"),
     ("dragon_v4_roar.fbx", "SK_Dragon_v4_RoarAnim"),
     ("dragon_v4_hit.fbx", "SK_Dragon_v4_HitAnim"),
+    # [2026-11-04 T-126] Ten families authored in create_dragon_anims.py.
+    ("dragon_v4_hitheavy.fbx", "SK_Dragon_v4_HitHeavyAnim"),
+    ("dragon_v4_defeat.fbx", "SK_Dragon_v4_DefeatAnim"),
+    ("dragon_v4_sleepidle.fbx", "SK_Dragon_v4_SleepIdleAnim"),
+    ("dragon_v4_wake.fbx", "SK_Dragon_v4_WakeAnim"),
+    ("dragon_v4_liedown.fbx", "SK_Dragon_v4_LieDownAnim"),
+    ("dragon_v4_firepose.fbx", "SK_Dragon_v4_FirePoseAnim"),
+    ("dragon_v4_claw.fbx", "SK_Dragon_v4_ClawAnim"),
+    ("dragon_v4_biteeat.fbx", "SK_Dragon_v4_BiteEatAnim"),
+    ("dragon_v4_tailwhip.fbx", "SK_Dragon_v4_TailWhipAnim"),
+    ("dragon_v4_wingbuffet.fbx", "SK_Dragon_v4_WingBuffetAnim"),
 ]
 
 
