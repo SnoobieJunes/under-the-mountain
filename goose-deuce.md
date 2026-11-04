@@ -130,6 +130,7 @@ tag, choose the owing one.
 - Where: TASKS.md (T-113/T-114 filed, T-111/T-112 updated), docs/PLAN.md (pipeline + risk), docs/ASSET-PIPELINE.md (pointer note), stash "T-112" (uncommitted fix+test)
 - Plan: docs/PLAN.md "proven hero pipeline" + "Meshy dragon rig" risk amended in this commit (owner-drop replaces Meshy-app for dragon; Blender stays the fixup fallback). TASKS.md corrected in this commit. No product code touched.
 - Commit(s): this commit
+- [Correction, 2026-11-03: T-112 unparked same day per owner (title believed working; stash fragility) — fix+test popped back to the working tree uncommitted instead of staying in stash "T-112". The stash entry is dropped; the task carries the resume note. No product code committed by the unpark.]
 
 ## 2026-11-03 — T-110: proof-capture cvars + v6 import leaves T-068  [decision]
 - Task: T-110 (import dragon v6 as the pawn mesh)
