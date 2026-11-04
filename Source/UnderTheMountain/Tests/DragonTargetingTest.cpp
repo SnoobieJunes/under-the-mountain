@@ -116,6 +116,18 @@ bool FDragonTargetSelectionTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("cycle landed on the crown (nearest treasure)"),
 				  Targeting->CurrentTargetId(), FName(TEXT("Crown")));
 
+		// [2026-11-04] D-pad Left steps prev in the same ranked order
+		// (Crown -> Carrier, back where the forward cycle came from),
+		// and prev with no lock starts from the far end.
+		TestTrue(TEXT("cycle prev steps back to the carrier"),
+				 Targeting->CycleTarget(Theft, Origin, -1));
+		TestEqual(TEXT("cycle prev landed on the carrier"), Targeting->CurrentTargetId(),
+				  FName(TEXT("Carrier")));
+		Targeting->ClearLock();
+		TestTrue(TEXT("cycle prev with no lock acquires"), Targeting->CycleTarget(Theft, Origin, -1));
+		TestEqual(TEXT("prev-from-none lands on the last ranked candidate"),
+				  Targeting->CurrentTargetId(), FName(TEXT("Goblet")));
+
 		TestFalse(TEXT("empty field breaks and clears the lock"),
 				  Targeting->UpdateSelection(TArray<FDragonTargetCandidate>{}, Origin));
 		TestFalse(TEXT("no lock reads as no lock"), Targeting->HasLock());

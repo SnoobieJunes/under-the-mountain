@@ -29,6 +29,17 @@ bool FSleepRulesTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("place is checked before wave state"),
 			 FSleepRules::CanSleep(false, true, true) == ESleepRefusal::NotAtHoardMound);
 
+	// [2026-11-04 T-084] Pawn glue seam: near means within radius in
+	// 2D (perched on top of the pile still counts), never beyond it.
+	TestTrue(TEXT("at the mound can sleep there"),
+			 FSleepRules::IsNearHoardMound(FVector(0, 0, 900), FVector::ZeroVector, FSleepRules::HoardMoundSleepRadiusCm));
+	TestTrue(TEXT("at the radius edge can sleep there"),
+			 FSleepRules::IsNearHoardMound(FVector(FSleepRules::HoardMoundSleepRadiusCm, 0, 0), FVector::ZeroVector, FSleepRules::HoardMoundSleepRadiusCm));
+	TestFalse(TEXT("beyond the mound refuses"),
+			  FSleepRules::IsNearHoardMound(FVector(2000, 0, 0), FVector::ZeroVector, FSleepRules::HoardMoundSleepRadiusCm));
+	TestFalse(TEXT("a non-positive radius never sleeps"),
+			  FSleepRules::IsNearHoardMound(FVector::ZeroVector, FVector::ZeroVector, 0.0f));
+
 	// --- Star decay (S9: -2 stars, points reset to the band floor) ---
 	// From each starting star, checked at band floors and interiors.
 	TestEqual(TEXT("0 stars stays 0 points"), UNotorietySubsystem::PointsAfterSleepDecay(0), 0);

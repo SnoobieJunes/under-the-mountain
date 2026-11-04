@@ -122,8 +122,11 @@ struct FDragonFlightParams
 
 	// [2026-11-03 T-075] See StallSpeed: maximum sink rate (cm/s, positive
 	// number, applied downward).
+	// [2026-11-04 FLIGHT-VIGOR] 600 -> 300: a stall now sinks at half the
+	// old rate so the low band reads as a sag, not a drop, while the
+	// pilot recovers speed (dive) or spends an impulse.
 	UPROPERTY(EditAnywhere, Category = "Dragon|Flight")
-	float StallSinkRate = 600.0f;
+	float StallSinkRate = 300.0f;
 
 	// [2026-11-03 T-075] Precision-band thrust speed (cm/s): full-stick
 	// deflection in the hover band commands this velocity. Matches the
@@ -167,6 +170,20 @@ class UNDERTHEMOUNTAIN_API UDragonMovementComponent : public UCharacterMovementC
 	// full precision fading to 55 deg/s at dive speed.
 	static float YawRateForAirspeed(float Airspeed, const FDragonFlightParams& Params);
 
+	// [2026-11-04 FLIGHT-VIGOR] Causal bank: the turn input commands the
+	// bank first and yaw derives from it (never the reverse). MaxBank is
+	// the same 35-degree cap ComputeBankDegrees always clamped to.
+	// CommandedBankDegrees maps a [-1,1] turn input onto that cap
+	// (visual roll sign: positive yaw turns bank negative, matching the
+	// old yaw-derivative sign); YawRateForBank recovers the signed yaw
+	// rate as -Bank/MaxBank * YawRateForAirspeed. SteerStepDegrees is
+	// one rate-limited nose-steer step for RMB sailing: a pending
+	// mouse demand (degrees) clamped to the per-tick rate budget.
+	static constexpr float MaxBankDegrees = 35.0f;
+	static float CommandedBankDegrees(float TurnInput);
+	static float YawRateForBank(float BankDegrees, float Airspeed, const FDragonFlightParams& Params);
+	static float SteerStepDegrees(float PendingDegrees, float MaxRateDegPerSec, float DeltaSeconds);
+
 	// [2026-11-03 T-075] Nose-follow responsiveness for the current airspeed:
 	// the base rate (precision-boosted like the integrator uses) floored by
 	// 4x the yaw rate in rad/s, so the lag angle stays near 14 deg and a
@@ -194,6 +211,10 @@ class UNDERTHEMOUNTAIN_API UDragonMovementComponent : public UCharacterMovementC
 	// Holding brake forces precision authority (caller applies) even before
 	// airspeed has decayed — the adopted Brake rule.
 	static float BrakeStep(float Speed, float DeltaSeconds, const FDragonFlightParams& Params);
+	// [2026-11-04] Analog brake: Strength (L2 pull, 0..1) scales the
+	// decel, so a half pull brakes half as hard. 1.0 = the step above.
+	static float BrakeStep(float Speed, float DeltaSeconds, const FDragonFlightParams& Params,
+						   float Strength);
 
 	// [2026-11-03 T-075] Impact severity in [0,1] from speed AND impact
 	// angle: only the surface-normal component (Speed * sin(angle)) prices
@@ -245,6 +266,9 @@ class UNDERTHEMOUNTAIN_API UDragonMovementComponent : public UCharacterMovementC
 	// [2026-11-03 T-075] Brake feed from the pawn (Shift/LT held). While held
 	// the integrator decels and (C slice) forces precision authority.
 	bool bProtoBraking = false;
+	// [2026-11-04] Analog brake strength fed by the pawn (1.0 for the
+	// digital keyboard Shift / course; the L2 pull otherwise).
+	float BrakeStrength = 1.0f;
 
 	// [2026-11-03 T-103] Trap-slow feed from the pawn (dwarf traps, T-014).
 	// The integrator multiplies precision thrust, Surge/Ascent impulses and

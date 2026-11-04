@@ -89,4 +89,50 @@ bool FDragonMagicTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// [2026-11-04 FLIGHT-VIGOR] Signed speed-band flight stamina: every
+// band edge of the pure rate function plus the signed apply verb
+// (drain, cruise-free, refill, clamps, negative time). Hover outranks
+// speed at every airspeed.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDragonFlightStaminaRateTest, "UnderTheMountain.Dragon.FlightStaminaRate",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDragonFlightStaminaRateTest::RunTest(const FString& Parameters)
+{
+	using S = UDragonStatsComponent;
+	TestEqual(TEXT("hover at rest drains 3/s"), S::FlightStaminaRatePerSecond(0.0f, true), -3.0f);
+	TestEqual(TEXT("hover at cruise speed still drains 3/s"), S::FlightStaminaRatePerSecond(1500.0f, true), -3.0f);
+	TestEqual(TEXT("hover at vigor speed still drains 3/s"), S::FlightStaminaRatePerSecond(4000.0f, true), -3.0f);
+	TestEqual(TEXT("hover rate mirrors the hover drain default"), S::FlightStaminaRatePerSecond(0.0f, true),
+			  -NewObject<UDragonStatsComponent>()->HoverDrainPerSecond);
+	TestEqual(TEXT("rest (not hovering) drains 1/s"), S::FlightStaminaRatePerSecond(0.0f, false), -1.0f);
+	TestEqual(TEXT("just under 1200 drains 1/s"), S::FlightStaminaRatePerSecond(1199.0f, false), -1.0f);
+	TestEqual(TEXT("1200 enters the free cruise band"), S::FlightStaminaRatePerSecond(1200.0f, false), 0.0f);
+	TestEqual(TEXT("mid cruise band is free"), S::FlightStaminaRatePerSecond(1500.0f, false), 0.0f);
+	TestEqual(TEXT("just under 1800 is still free"), S::FlightStaminaRatePerSecond(1799.0f, false), 0.0f);
+	TestEqual(TEXT("1800 is the vigor recharge speed"), S::FlightStaminaRatePerSecond(1800.0f, false), 3.0f);
+	TestEqual(TEXT("dive terminal refills 3/s"), S::FlightStaminaRatePerSecond(4000.0f, false), 3.0f);
+	TestEqual(TEXT("slow band edge is 1200"), S::SlowFlightBandMaxSpeed, 1200.0f);
+	TestEqual(TEXT("vigor recharge speed is 1800"), S::VigorRechargeSpeed, 1800.0f);
+
+	UDragonStatsComponent* Stats = NewObject<UDragonStatsComponent>();
+	Stats->MaxStamina = 100.0f;
+	Stats->Stamina = 50.0f;
+	Stats->ApplyFlightStaminaRate(10.0f, S::FlightStaminaRatePerSecond(500.0f, false));
+	TestEqual(TEXT("10 s slow flight drains 10"), Stats->Stamina, 40.0f);
+	Stats->ApplyFlightStaminaRate(10.0f, S::FlightStaminaRatePerSecond(1500.0f, false));
+	TestEqual(TEXT("10 s cruise band is free"), Stats->Stamina, 40.0f);
+	Stats->ApplyFlightStaminaRate(10.0f, S::FlightStaminaRatePerSecond(2400.0f, false));
+	TestEqual(TEXT("10 s fast flight refills 30 (one Surge in ~3.3 s)"), Stats->Stamina, 70.0f);
+	Stats->ApplyFlightStaminaRate(100.0f, 3.0f);
+	TestEqual(TEXT("airborne refill clamps at max"), Stats->Stamina, 100.0f);
+	Stats->ApplyFlightStaminaRate(100.0f, -3.0f);
+	TestEqual(TEXT("signed drain clamps at zero"), Stats->Stamina, 0.0f);
+	Stats->Stamina = 50.0f;
+	Stats->ApplyFlightStaminaRate(-5.0f, 3.0f);
+	TestEqual(TEXT("negative time applies nothing"), Stats->Stamina, 50.0f);
+	Stats->ApplyFlightStaminaRate(0.0f, -3.0f);
+	TestEqual(TEXT("zero time applies nothing"), Stats->Stamina, 50.0f);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

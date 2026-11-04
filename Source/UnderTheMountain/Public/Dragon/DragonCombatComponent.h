@@ -162,6 +162,11 @@ class UNDERTHEMOUNTAIN_API UDragonCombatComponent : public UActorComponent
 	// and arms the damage window (ClawDamageDelaySeconds); the
 	// hit itself lands in TickClaw. One swing at a time — a press
 	// during a pending window is refused by the cooldown.
+	// [2026-11-04 feel/spam] This (like TryRoar/TryWingBuffet/
+	// [2026-11-04 feel/spam] TryTailSlam) is a DAMAGE gate only: the
+	// [2026-11-04 feel/spam] pawn plays clip+sound on every press, so
+	// [2026-11-04 feel/spam] a cooldown refusal must stay free and must
+	// [2026-11-04 feel/spam] never re-arm or extend a pending window.
 	bool TryClaw(float CurrentTimeSeconds, UDragonStatsComponent* Stats);
 
 	// [2026-11-04 T-076] True while a swing's damage window has

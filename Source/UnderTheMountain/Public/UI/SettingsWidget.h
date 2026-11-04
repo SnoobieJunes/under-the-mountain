@@ -16,8 +16,13 @@
 #include "UI/SettingsModel.h"
 #include "SettingsWidget.generated.h"
 
+class UButton;
 class UTextBlock;
 class UWidget;
+
+// [2026-11-04] Fired after the settings panel hides on Close, so the
+// screen that opened it (title or pause) can restore itself + focus.
+DECLARE_MULTICAST_DELEGATE(FOnUtmSettingsClosed);
 
 UCLASS()
 class UNDERTHEMOUNTAIN_API USettingsWidget : public UUserWidget
@@ -37,6 +42,9 @@ class UNDERTHEMOUNTAIN_API USettingsWidget : public UUserWidget
 
 	void ShowSettings();
 	void HideSettings();
+
+	// [2026-11-04] Close notification (see delegate above).
+	FOnUtmSettingsClosed OnClosed;
 
 	// [2026-11-04 T-088] The working snapshot (tests read this; the
 	// screen's buttons are the only writers besides ReloadFromSaved).
@@ -102,6 +110,10 @@ class UNDERTHEMOUNTAIN_API USettingsWidget : public UUserWidget
 
 	UPROPERTY(Transient)
 	TObjectPtr<UWidget> Panel = nullptr;
+	// [2026-11-04] First control on the panel: ShowSettings points pad
+	// keyboard focus here so D-pad navigation starts somewhere sane.
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> FirstButton = nullptr;
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> ResolutionText = nullptr;
 	UPROPERTY(Transient)

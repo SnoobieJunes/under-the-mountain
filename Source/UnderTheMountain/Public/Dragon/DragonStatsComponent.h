@@ -157,6 +157,20 @@ class UNDERTHEMOUNTAIN_API UDragonStatsComponent : public UActorComponent
 	static bool IsInfiniteStaminaEnabled();
 	bool TryConsumeStamina(float Cost);
 	void ApplyStaminaDelta(float Delta);
+	// [2026-11-04 FLIGHT-VIGOR] Signed speed-band flight stamina (owner
+	// override of GAMEPLAY.md S2 / FLIGHT-SPIKE.md's no-regen rule):
+	// hovering -3/s, slow non-hover flight (<1200) -1/s, cruise band
+	// (1200..1800) 0/s, fast flight (>= VigorRechargeSpeed) +3/s. Pure
+	// and static so every band edge is headless-testable; the pawn feeds
+	// it true airspeed + the precision/near-zero-horizontal hover fact.
+	static constexpr float SlowFlightBandMaxSpeed = 1200.0f;
+	static constexpr float VigorRechargeSpeed = 1800.0f;
+	static float FlightStaminaRatePerSecond(float Airspeed, bool bHovering);
+	// [2026-11-04 FLIGHT-VIGOR] Applies a signed rate (negative drains,
+	// positive refills) over time through ApplyStaminaDelta, gated by
+	// the infinite-stamina cvar like the other stamina verbs. Negative
+	// time applies nothing. DrainForFlight below stays the fire verb.
+	void ApplyFlightStaminaRate(float DeltaSeconds, float SignedRatePerSecond);
 	void DrainForFlight(float DeltaSeconds);
 	// [2026-11-03 T-062] Drain at a caller-chosen rate (hover positive;
 	// glide/dive pass 0 and are free), which also means no exhaustion burn.

@@ -118,7 +118,10 @@ class UNDERTHEMOUNTAIN_API UDragonTargetingComponent : public UActorComponent
 	// SelectTargetIndex ranks them and the pick wraps. With no
 	// lock it acquires the best; with no eligible candidate it
 	// clears. Returns true while anything is locked afterwards.
-	bool CycleTarget(const TArray<FDragonTargetCandidate>& Candidates, const FVector& Origin);
+	// [2026-11-04] Direction added for the D-pad Left/Right map:
+	// +1 (default, Tab/Right) steps next, -1 (Left) steps prev.
+	bool CycleTarget(const TArray<FDragonTargetCandidate>& Candidates, const FVector& Origin,
+					 int32 Direction = 1);
 
 	void ClearLock();
 

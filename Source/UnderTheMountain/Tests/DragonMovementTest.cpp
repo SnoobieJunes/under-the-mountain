@@ -31,7 +31,7 @@ bool FDragonMovementTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("dive yaw rate is 55 deg/s"), Params.DiveYawRateDeg, 55.0f);
 	TestEqual(TEXT("steer responsiveness default is 3/s"), Params.SteerResponsiveness, 3.0f);
 	TestEqual(TEXT("stall speed default is 400 cm/s"), Params.StallSpeed, 400.0f);
-	TestEqual(TEXT("stall sink default is 600 cm/s"), Params.StallSinkRate, 600.0f);
+	TestEqual(TEXT("stall sink default is 300 cm/s"), Params.StallSinkRate, 300.0f);
 	TestEqual(TEXT("precision thrust default is 650 cm/s"), Params.PrecisionThrustSpeed, 650.0f);
 	TestEqual(TEXT("impulse window default is 1.5 s"), Params.ImpulseAuthorityWindow, 1.5f);
 
@@ -234,6 +234,47 @@ bool FDragonMovementTest::RunTest(const FString& Parameters)
 			 DiveShallow < DiveSteep);
 	TestEqual(TEXT("grazing dive entry is free"),
 			  UDragonMovementComponent::LandingSeverity(3200.0f, 10.0f, *Stats), 0.0f);
+
+	// [2026-11-04 FLIGHT-VIGOR] Causal bank: input commands bank, yaw
+	// derives from it. Full input banks to the 35 cap, wings-level
+	// never turns, and full bank recovers exactly the airspeed yaw
+	// rate at both ends of the blend (sign: positive turn input yaws
+	// positive, banked negative like the old derivative bank).
+	TestEqual(TEXT("no turn input is wings-level"), UDragonMovementComponent::CommandedBankDegrees(0.0f), 0.0f);
+	TestEqual(TEXT("full turn input banks to the cap"), UDragonMovementComponent::CommandedBankDegrees(1.0f), -35.0f);
+	TestEqual(TEXT("full opposite input banks to the opposite cap"),
+			  UDragonMovementComponent::CommandedBankDegrees(-1.0f), 35.0f);
+	TestEqual(TEXT("half input banks half"), UDragonMovementComponent::CommandedBankDegrees(0.5f), -17.5f);
+	TestEqual(TEXT("over-input clamps to the cap"), UDragonMovementComponent::CommandedBankDegrees(2.0f), -35.0f);
+	TestEqual(TEXT("wings-level never yaws"),
+			  UDragonMovementComponent::YawRateForBank(0.0f, 2400.0f, Params), 0.0f);
+	TestEqual(TEXT("full bank at dive speed yaws at the dive rate"),
+			  UDragonMovementComponent::YawRateForBank(-35.0f, 4000.0f, Params), 55.0f);
+	TestEqual(TEXT("full bank at hover yaws at the precision rate"),
+			  UDragonMovementComponent::YawRateForBank(-35.0f, 0.0f, Params), 90.0f);
+	TestEqual(TEXT("half bank yaws at half rate"),
+			  UDragonMovementComponent::YawRateForBank(-17.5f, 4000.0f, Params), 27.5f);
+	TestEqual(TEXT("opposite bank yaws opposite"),
+			  UDragonMovementComponent::YawRateForBank(35.0f, 4000.0f, Params), -55.0f);
+	// Bank -> yaw round-trips the input at any airspeed.
+	TestEqual(TEXT("bank-derived yaw round-trips full input"),
+			  UDragonMovementComponent::YawRateForBank(UDragonMovementComponent::CommandedBankDegrees(1.0f),
+													   4000.0f, Params),
+			  UDragonMovementComponent::YawRateForAirspeed(4000.0f, Params));
+
+	// [2026-11-04 FLIGHT-VIGOR] RMB sailing step: demand consumes at
+	// the rate budget per tick, never overshoots, never runs on
+	// non-positive time or rate.
+	TestEqual(TEXT("small steer demand applies in full"),
+			  UDragonMovementComponent::SteerStepDegrees(0.5f, 90.0f, 1.0f), 0.5f);
+	TestEqual(TEXT("large steer demand clamps to the tick budget"),
+			  UDragonMovementComponent::SteerStepDegrees(90.0f, 90.0f, 0.5f), 45.0f);
+	TestEqual(TEXT("negative steer demand clamps symmetrically"),
+			  UDragonMovementComponent::SteerStepDegrees(-90.0f, 55.0f, 1.0f), -55.0f);
+	TestEqual(TEXT("zero time steers nothing"), UDragonMovementComponent::SteerStepDegrees(10.0f, 90.0f, 0.0f),
+			  0.0f);
+	TestEqual(TEXT("zero rate steers nothing"), UDragonMovementComponent::SteerStepDegrees(10.0f, 0.0f, 1.0f),
+			  0.0f);
 
 	return true;
 }

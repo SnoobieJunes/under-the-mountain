@@ -32,7 +32,10 @@ EDragonAnimState UDragonAnimInstance::SelectLocomotionState(bool bFlying, bool b
 		{
 			return EDragonAnimState::Hover;
 		}
-		if (HorizontalSpeed > 600.0f && VerticalSpeed <= -50.0f)
+		// [2026-11-04 feel/spam] Glide ENTRY is VS<=-250 (was -50): the
+		// [2026-11-04 feel/spam] -250..-50 band is the hysteresis zone the
+		// [2026-11-04 feel/spam] dwell overload below holds a Glide through.
+		if (HorizontalSpeed > 600.0f && VerticalSpeed <= -250.0f)
 		{
 			return EDragonAnimState::Glide;
 		}
@@ -43,6 +46,54 @@ EDragonAnimState UDragonAnimInstance::SelectLocomotionState(bool bFlying, bool b
 		return EDragonAnimState::Walk;
 	}
 	return EDragonAnimState::Idle;
+}
+
+EDragonAnimState UDragonAnimInstance::SelectLocomotionState(EDragonAnimState PreviousState, bool bFlying,
+															bool bDiving, float HorizontalSpeed,
+															float VerticalSpeed,
+															float TimeInPreviousStateSeconds)
+{
+	const EDragonAnimState Candidate =
+		SelectLocomotionState(bFlying, bDiving, HorizontalSpeed, VerticalSpeed);
+	if (Candidate == PreviousState || Candidate == EDragonAnimState::Dive ||
+		PreviousState == EDragonAnimState::Dive)
+	{
+		return Candidate;
+	}
+	const bool bPreviousAirborne = PreviousState == EDragonAnimState::Fly ||
+								   PreviousState == EDragonAnimState::Glide ||
+								   PreviousState == EDragonAnimState::Hover;
+	const bool bCandidateAirborne = Candidate == EDragonAnimState::Fly ||
+									Candidate == EDragonAnimState::Glide ||
+									Candidate == EDragonAnimState::Hover;
+	// [2026-11-04 feel/spam] Ground<->air and ground-state changes are fact
+	// [2026-11-04 feel/spam] changes, not band churn: never dwell-blocked.
+	if (!bFlying || !bPreviousAirborne || !bCandidateAirborne)
+	{
+		return Candidate;
+	}
+	// [2026-11-04 feel/spam] Exit bands are looser than entry bands: a held
+	// [2026-11-04 feel/spam] Glide survives until VS rises past -50, a held
+	// [2026-11-04 feel/spam] Hover until either axis leaves 350.
+	if (PreviousState == EDragonAnimState::Glide && HorizontalSpeed > 600.0f && VerticalSpeed <= -50.0f)
+	{
+		return EDragonAnimState::Glide;
+	}
+	if (PreviousState == EDragonAnimState::Hover && HorizontalSpeed < 350.0f &&
+		FMath::Abs(VerticalSpeed) < 350.0f)
+	{
+		return EDragonAnimState::Hover;
+	}
+	if (TimeInPreviousStateSeconds < MinLocomotionDwellSeconds)
+	{
+		return PreviousState;
+	}
+	return Candidate;
+}
+
+float UDragonAnimInstance::ComputeWalkPlayRate(float GroundSpeed)
+{
+	return FMath::Clamp(GroundSpeed / 300.0f, 0.5f, 1.5f);
 }
 
 float UDragonAnimInstance::ComputeFlapPlayRate(EDragonAnimState State, float HorizontalSpeed, float VerticalSpeed)
@@ -208,6 +259,17 @@ float UDragonAnimInstance::ComputeTailLagDegrees(int32 SegmentIndex, float YawRa
 	return FMath::Clamp(PerSegment * static_cast<float>(SegmentIndex), -30.0f, 30.0f);
 }
 
+FRotator UDragonAnimInstance::ComputeSlitherBoneRotation(int32 SegmentIndex, float PhaseRadians,
+														 float AmplitudeDeg, float YawRateDegPerSec,
+														 float HorizontalSpeed)
+{
+	// [2026-11-04 feel/spam] Component-space yaw only: lateral wave + turn
+	// [2026-11-04 feel/spam] lag read the same in any bone's local frame.
+	const float YawDeg = ComputeSlitherOffsetDeg(SegmentIndex, PhaseRadians, AmplitudeDeg) +
+						 ComputeTailLagDegrees(SegmentIndex, YawRateDegPerSec, HorizontalSpeed);
+	return FRotator(0.0f, YawDeg, 0.0f);
+}
+
 float UDragonAnimInstance::ComputeFireAimPitchDegrees(float DesiredPitchDeg)
 {
 	// [2026-11-04 T-126] Head aim band: enough to sell the breath direction
@@ -249,8 +311,18 @@ void UDragonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	}
 	bFlying = bAirborne;
 	bDiving = bAirborne && bDiveInput;
-	LocomotionState = SelectLocomotionState(bAirborne, bDiving, GroundSpeed, VerticalSpeed);
+	// [2026-11-04 feel/spam] Hysteresis overload owns the published state:
+	// [2026-11-04 feel/spam] the dwell timer resets on every real change.
+	TimeInLocomotionStateSeconds += FMath::Max(0.0f, DeltaSeconds);
+	const EDragonAnimState NextLocomotionState = SelectLocomotionState(
+		LocomotionState, bAirborne, bDiving, GroundSpeed, VerticalSpeed, TimeInLocomotionStateSeconds);
+	if (NextLocomotionState != LocomotionState)
+	{
+		TimeInLocomotionStateSeconds = 0.0f;
+	}
+	LocomotionState = NextLocomotionState;
 	FlapPlayRate = ComputeFlapPlayRate(LocomotionState, GroundSpeed, VerticalSpeed);
+	WalkPlayRate = ComputeWalkPlayRate(GroundSpeed);
 	FoldAlpha = ComputeFoldAlpha(LocomotionState);
 	TuckAlpha = ComputeTuckAlpha(LocomotionState);
 	MeshPitchDegrees = ComputeMeshPitchDegrees(GroundSpeed, VerticalSpeed);
@@ -267,7 +339,14 @@ void UDragonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		const float YawRate = FMath::FindDeltaAngleDegrees(LastUpdateYaw, Yaw) / DeltaSeconds;
 		YawRateForLag = YawRate;
 		LastUpdateYaw = Yaw;
-		BankDegrees = ComputeBankDegrees(YawRate, GroundSpeed);
+		// [2026-11-04 FLIGHT-VIGOR] Commanded bank wins while
+		// prototype-flying: the pawn banks from turn input first and
+		// derives yaw from it, so the graph reads the cause, not the
+		// yaw-derivative effect. Other paths keep the derivative.
+		const ADragonCharacter* Dragon = Cast<ADragonCharacter>(Pawn);
+		BankDegrees = (Dragon != nullptr && Dragon->IsPrototypeFlying())
+						  ? Dragon->GetProtoBankDegrees()
+						  : ComputeBankDegrees(YawRate, GroundSpeed);
 	}
 	// [2026-11-04 T-126] Procedural layer: phase advances with speed (a
 	// [2026-11-04 T-126] stopped dragon does not keep writhing), tail lag
@@ -281,6 +360,16 @@ void UDragonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	// [2026-11-04 T-126] Segment 3 = mid-tail read for the graph's single
 	// [2026-11-04 T-126] published value; per-segment values recompute in-graph.
 	TailLagDegrees = ComputeTailLagDegrees(3, YawRateForLag, GroundSpeed);
+	// [2026-11-04 feel/spam] Per-bone additive rotations for the ABP
+	// [2026-11-04 feel/spam] ModifyBone chain (pelvis/tail.01/tail.03/tail.05).
+	SpineSlitherRotation =
+		ComputeSlitherBoneRotation(0, SlitherPhaseRadians, SlitherAmplitudeDeg, YawRateForLag, GroundSpeed);
+	TailBaseSlitherRotation =
+		ComputeSlitherBoneRotation(1, SlitherPhaseRadians, SlitherAmplitudeDeg, YawRateForLag, GroundSpeed);
+	TailMidSlitherRotation =
+		ComputeSlitherBoneRotation(3, SlitherPhaseRadians, SlitherAmplitudeDeg, YawRateForLag, GroundSpeed);
+	TailTipSlitherRotation =
+		ComputeSlitherBoneRotation(5, SlitherPhaseRadians, SlitherAmplitudeDeg, YawRateForLag, GroundSpeed);
 	bFiring = false;
 	if (const ADragonCharacter* Dragon = Cast<ADragonCharacter>(Pawn))
 	{

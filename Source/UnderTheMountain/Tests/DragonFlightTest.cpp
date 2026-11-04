@@ -182,6 +182,12 @@ bool FDragonGodModeTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("god-mode hover drain spends nothing"), Stats->Stamina, 40.0f);
 	Stats->DrainForFlight(10.0f);
 	TestEqual(TEXT("god-mode legacy overload spends nothing"), Stats->Stamina, 40.0f);
+	// [2026-11-04 FLIGHT-VIGOR] The signed flight-rate verb is gated at
+	// the same seam (drain and refill alike).
+	Stats->ApplyFlightStaminaRate(10.0f, -3.0f);
+	TestEqual(TEXT("god-mode signed flight drain spends nothing"), Stats->Stamina, 40.0f);
+	Stats->ApplyFlightStaminaRate(10.0f, 3.0f);
+	TestEqual(TEXT("god-mode signed flight refill adds nothing"), Stats->Stamina, 40.0f);
 	Stats->DrainHPForExhaustion(10.0f);
 	TestEqual(TEXT("god-mode exhaustion burns no HP"), Stats->HP, 100.0f);
 	TestFalse(TEXT("god mode never forces the fall"),
@@ -267,8 +273,10 @@ bool FDragonAnimStateTest::RunTest(const FString& Parameters)
 			 ADragonCharacter::SelectAnimState(true, true, 900.0f, -500.0f) == EDragonAnimState::Dive);
 	TestTrue(TEXT("fast climbing flight is Fly"),
 			 ADragonCharacter::SelectAnimState(true, false, 900.0f, 300.0f) == EDragonAnimState::Fly);
-	TestTrue(TEXT("fast descending cruise is Glide"),
-			 ADragonCharacter::SelectAnimState(true, false, 900.0f, -200.0f) == EDragonAnimState::Glide);
+	TestTrue(TEXT("fast descending cruise is Fly until the -250 glide entry"),
+			 ADragonCharacter::SelectAnimState(true, false, 900.0f, -200.0f) == EDragonAnimState::Fly);
+	TestTrue(TEXT("fast steep descent is Glide"),
+			 ADragonCharacter::SelectAnimState(true, false, 900.0f, -300.0f) == EDragonAnimState::Glide);
 	TestTrue(TEXT("slow descending precision flight is Hover"),
 			 ADragonCharacter::SelectAnimState(true, false, 10.0f, -100.0f) == EDragonAnimState::Hover);
 	TestTrue(TEXT("slow climbing precision flight is Hover"),

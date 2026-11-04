@@ -100,6 +100,13 @@ struct UNDERTHEMOUNTAIN_API FSleepRules
 	// a caller logs names the first broken condition.
 	static ESleepRefusal CanSleep(bool bAtHoardMound, bool bWaveInProgress, bool bLiveThiefInLair);
 
+	// [2026-11-04 T-084] The pawn's grounded verb glue reads this:
+	// "on/near the hoard mound" is a 2D distance from the mound
+	// actor (height on the pile must not refuse a sleep), inside
+	// HoardMoundSleepRadiusCm; a non-positive radius never sleeps.
+	static constexpr float HoardMoundSleepRadiusCm = 1500.0f;
+	static bool IsNearHoardMound(const FVector& DragonLocation, const FVector& MoundLocation, float RadiusCm);
+
 	// [2026-11-04 T-084] Gold lost from ONE bulk stack: 15% of its
 	// gold, rounded to nearest, never negative and never more
 	// than the stack holds. Per-stack (S9: rolled per bracket-

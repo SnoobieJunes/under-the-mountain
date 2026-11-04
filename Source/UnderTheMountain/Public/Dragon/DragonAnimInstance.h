@@ -72,11 +72,30 @@ class UNDERTHEMOUNTAIN_API UDragonAnimInstance : public UAnimInstance
 	static EDragonAnimState SelectLocomotionState(bool bFlying, bool bDiving, float HorizontalSpeed,
 												  float VerticalSpeed);
 
+	// [2026-11-04 feel/spam] Hysteresis/dwell overload (the raw overload above
+	// [2026-11-04 feel/spam] stays the candidate rule): a Fly/Glide/Hover state
+	// [2026-11-04 feel/spam] is held for MinLocomotionDwellSeconds and each band
+	// [2026-11-04 feel/spam] has separate enter/exit edges (Glide enters at
+	// [2026-11-04 feel/spam] VS<-250 in the raw rule, a held Glide exits only at
+	// [2026-11-04 feel/spam] VS>-50; Hover enters inside 250/250, exits outside
+	// [2026-11-04 feel/spam] 350/350), so borderline flight cannot churn states
+	// [2026-11-04 feel/spam] frame-to-frame. Dive and ground/air switches are
+	// [2026-11-04 feel/spam] input/fact changes, never dwell-blocked.
+	static EDragonAnimState SelectLocomotionState(EDragonAnimState PreviousState, bool bFlying,
+												  bool bDiving, float HorizontalSpeed,
+												  float VerticalSpeed, float TimeInPreviousStateSeconds);
+	static constexpr float MinLocomotionDwellSeconds = 0.3f;
+
 	// [2026-11-01 T-068] Wingbeat play rate per state (spike wingbeat curves):
 	// [2026-11-01 T-068] climb works harder, cruise moderates, hover beats deep
 	// [2026-11-01 T-068] and fast, glide/dive barely move. Clamped 0.05..1.8 so
 	// [2026-11-01 T-068] no tuning value can freeze or strobe the mesh.
 	static float ComputeFlapPlayRate(EDragonAnimState State, float HorizontalSpeed, float VerticalSpeed);
+
+	// [2026-11-04 feel/spam] Walk clip rate from ground speed alone: a
+	// [2026-11-04 feel/spam] 300 cm/s stride plays at 1.0, clamped so a
+	// [2026-11-04 feel/spam] shuffle never freezes and a charge never strobes.
+	static float ComputeWalkPlayRate(float GroundSpeed);
 
 	// [2026-11-01 T-068] Additive alphas for the future AnimBP layers (and the
 	// [2026-11-01 T-068] contract the baked clips already satisfy): Fold 1 =
@@ -123,6 +142,14 @@ class UNDERTHEMOUNTAIN_API UDragonAnimInstance : public UAnimInstance
 	// [2026-11-04 T-126] Fire head-aim: clamp a desired head pitch (deg) to the
 	// [2026-11-04 T-126] readable aim band the fire pose additive may use.
 	static float ComputeFireAimPitchDegrees(float DesiredPitchDeg);
+	// [2026-11-04 feel/spam] One additive bone rotation (component-space
+	// [2026-11-04 feel/spam] yaw only) for a spine/tail segment: slither
+	// [2026-11-04 feel/spam] offset + tail lag combined, so an ABP
+	// [2026-11-04 feel/spam] ModifyBone node needs no graph math — it binds
+	// [2026-11-04 feel/spam] one published FRotator below per bone.
+	static FRotator ComputeSlitherBoneRotation(int32 SegmentIndex, float PhaseRadians,
+											   float AmplitudeDeg, float YawRateDegPerSec,
+											   float HorizontalSpeed);
 
 	// [2026-11-01 T-068] Published pose facts, refreshed in
 	// [2026-11-01 T-068] NativeUpdateAnimation when an ABP uses this class and
@@ -143,6 +170,8 @@ class UNDERTHEMOUNTAIN_API UDragonAnimInstance : public UAnimInstance
 	bool bDiving = false;
 	UPROPERTY(BlueprintReadOnly, Category = "Dragon|Anim")
 	float FlapPlayRate = 1.0f;
+	UPROPERTY(BlueprintReadOnly, Category = "Dragon|Anim")
+	float WalkPlayRate = 1.0f;
 	UPROPERTY(BlueprintReadOnly, Category = "Dragon|Anim")
 	float FoldAlpha = 1.0f;
 	UPROPERTY(BlueprintReadOnly, Category = "Dragon|Anim")
@@ -165,6 +194,18 @@ class UNDERTHEMOUNTAIN_API UDragonAnimInstance : public UAnimInstance
 	float FireAimPitchDegrees = 0.0f;
 	UPROPERTY(BlueprintReadOnly, Category = "Dragon|Anim")
 	bool bFiring = false;
+	// [2026-11-04 feel/spam] Additive ModifyBone rotations (component-space
+	// [2026-11-04 feel/spam] yaw), one per wired bone: pelvis (segment 0),
+	// [2026-11-04 feel/spam] tail.01 (1), tail.03 (3), tail.05 (5). The ABP
+	// [2026-11-04 feel/spam] commandlet binds each to that bone's node.
+	UPROPERTY(BlueprintReadOnly, Category = "Dragon|Anim")
+	FRotator SpineSlitherRotation = FRotator::ZeroRotator;
+	UPROPERTY(BlueprintReadOnly, Category = "Dragon|Anim")
+	FRotator TailBaseSlitherRotation = FRotator::ZeroRotator;
+	UPROPERTY(BlueprintReadOnly, Category = "Dragon|Anim")
+	FRotator TailMidSlitherRotation = FRotator::ZeroRotator;
+	UPROPERTY(BlueprintReadOnly, Category = "Dragon|Anim")
+	FRotator TailTipSlitherRotation = FRotator::ZeroRotator;
 
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
 
@@ -176,4 +217,7 @@ class UNDERTHEMOUNTAIN_API UDragonAnimInstance : public UAnimInstance
 	int32 LastLoggedStateId = -1;
 	float LastUpdateYaw = 0.0f;
 	bool bHasLastYaw = false;
+	// [2026-11-04 feel/spam] Seconds spent in the current LocomotionState;
+	// [2026-11-04 feel/spam] feeds the hysteresis overload's dwell gate.
+	float TimeInLocomotionStateSeconds = 0.0f;
 };

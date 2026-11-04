@@ -139,9 +139,14 @@ to airspeed, pitching up spends airspeed to climb, and **dive is a posture,
 not a powered button**. At low airspeed the model fades to precision thrust:
 camera-relative translation, rise/sink, strafe, and hover-hold for the lair,
 caves, landings, and eating. Brake explicitly forces the precision band.
-**Speed and ground-skimming never regenerate stamina**; ground effect only
-reduces induced drag/sink so a skilful line preserves speed and needs fewer
-paid impulses `[derived: owner feedback + food-loop preservation, docs/FLIGHT-SPIKE.md]`.
+**[2026-11-04 FLIGHT-VIGOR, owner override — supersedes the previous
+no-regen rule and the FLIGHT-SPIKE.md rejection it came from:] speed at
+or above 1800 cm/s DOES regenerate stamina (+3/s, the vigor band
+below)**; ground effect still only reduces induced drag/sink so a
+skilful low line preserves speed and needs fewer paid impulses. The
+flight skill loop is now dive-for-speed → fast line refills → spend on
+Surge/Ascent/climb, priced so ~10 minutes of continuous flight is a
+pilot-skill loop, not a food stop.
 
 | Parameter | Target starting value | Basis |
 |---|---|---|
@@ -151,6 +156,9 @@ paid impulses `[derived: owner feedback + food-loop preservation, docs/FLIGHT-SP
 | Surge ceiling | 3200 cm/s while Surging | `[tuning: PT-STAM]` |
 | Steep-dive terminal | 4000 cm/s starting value; test 3200/4000/4800 | `[tuning: PT-STAM]` `[derived: docs/FLIGHT-SPIKE.md turn-radius/world-crossing calculation]` |
 | Yaw-rate target | 90°/s precision fading to 55°/s at dive speed | `[tuning: PT-STAM]` |
+| Stall sink | 300 cm/s max (was 600) | `[2026-11-04 FLIGHT-VIGOR]` a stall sags, not drops, while the pilot dives or spends an impulse to recover |
+| RMB hold (sailing) | Mouse steers the nose pitch/yaw, rate-limited by the yaw-rate target; release keeps the nose (no camera snap-back); double-click RMB still latches steer-to-look, D-pad Up is its pad twin | `[2026-11-04 FLIGHT-VIGOR]` replaces RMB free-look (frozen nose) |
+| Bank | Commanded by turn input (A/D, pad left-stick X, RMB mouse-X) to ±35°; yaw rate derives from bank (`bank/35 × yaw-rate target`, sign per visual roll), bank is published to animation from the command, not the yaw derivative | `[2026-11-04 FLIGHT-VIGOR]` causal bank: lean first, turn second |
 | Landing Assist | F / gamepad top face near ground: brake to precision, flare, cap descent/drift, settle only inside the safe speed/angle envelope; unsafe approaches brake and warn instead of landing safely by magic | `[derived: owner feedback — a close-to-ground slow/land button is required UX]` |
 
 ### Drain / regen (per second unless stated) — all `[tuning: PT-STAM]`
@@ -160,13 +168,17 @@ paid impulses `[derived: owner feedback + food-loop preservation, docs/FLIGHT-SP
 | Idle / standing | 0/s, regen +4/s after 3 s idle | Idle must be free `[derived: idea.md — a careful dragon survives by barely moving and eating burglars]` |
 | Walk (ground patrol) | −1.5/s | Full pool ≈ 66 s continuous patrol before food pressure `[derived from value]` |
 | Run / charge (ground) | −4/s | — |
-| Glide (unpowered, wings held) | 0/s | Free but loses altitude/speed to physics `[derived: T-075 momentum model — unpowered flight spends the energy already in altitude/airspeed, not new stamina]` |
+| Flight, hovering (near-zero horizontal speed) | −3/s | `[2026-11-04 FLIGHT-VIGOR]` top of the signed speed-band table below; hover outranks speed |
+| Flight, slow (airspeed <1200, not hovering) | −1/s | `[2026-11-04 FLIGHT-VIGOR]` slow flight is cheap but not free — climb out or speed up |
+| Flight, cruise band (1200–1800) | 0/s | `[2026-11-04 FLIGHT-VIGOR]` unpowered travel: energy already in altitude/airspeed pays |
+| Flight, fast (airspeed ≥1800, `VigorRechargeSpeed`) | +3/s | `[2026-11-04 FLIGHT-VIGOR, owner override]` dive/fast line refills; one 10-point Surge refunds in ≈3.3 s at this rate |
+| Glide (unpowered, wings held) | by speed band above (was flat 0/s) | `[2026-11-04 FLIGHT-VIGOR]` glide is priced by the airspeed it holds, not by posture |
 | Ascent (takeoff / climb impulse) | −10 per use (one HUD segment) | Discrete energy purchase `[tuning: PT-STAM]` `[derived: cost attaches to the impulse input, readable as one reserve; 20 → 10 in T-124, 2026-11-04]` |
 | Surge (forward impulse) | −10 per use (one HUD segment) | Discrete energy purchase `[tuning: PT-STAM]` `[derived: 20 → 10 with Ascent in T-124, 2026-11-04]` |
 | Brake | 0/s to engage | Safety verb must always be available `[derived: high speed is only usable if stopping is never resource-gated]`; resulting hover then pays hover rate |
 | Precision rise / sustained precision climb | −3/s | Uses the hover rate `[derived: low-speed vertical thrust is hovering with a climb bias; 8 → 3 with hover in T-124, 2026-11-04]` |
-| Dive (nose-down posture) | 0/s drain, +speed | Dive converts altitude to speed `[derived: flight physics, idea.md]`; pull-out is paid by the airspeed already bought with altitude |
-| Hover | −3/s | Priciest sustained flight state `[derived: hover removes momentum skill; price the loiter, T-075]` `[tuning: PT-STAM — 8 → 3 in T-124, 2026-11-04: 8/s grounded the dragon in playtest]` |
+| Dive (nose-down posture) | +speed, stamina by speed band (+3/s once ≥1800) | Dive converts altitude to speed `[derived: flight physics, idea.md]`; `[2026-11-04 FLIGHT-VIGOR]` crossing `VigorRechargeSpeed` is what refills the pool — the dive is the refill verb |
+| Hover | −3/s | Priciest sustained flight state `[derived: hover removes momentum skill; price the loiter, T-075]` `[tuning: PT-STAM — 8 → 3 in T-124, 2026-11-04: 8/s grounded the dragon in playtest]`; `[2026-11-04 FLIGHT-VIGOR]` hover is near-zero horizontal speed only — slow forward flight pays the −1/s slow band, not this |
 | Fire breath | −5/s while held, min 10 to start | `[tuning: PT-THIEF]` (counter balance §5) |
 | Roar | −10 flat, 6 s cooldown | `[tuning: PT-THIEF]` |
 | Claw / tail swipe | −4 per swing | `[tuning: PT-THIEF]` |
@@ -177,7 +189,7 @@ paid impulses `[derived: owner feedback + food-loop preservation, docs/FLIGHT-SP
 
 | Rule | Value | Basis |
 |---|---|---|
-| At 0 stamina | HP drains −2/s only while a draining action continues; unpowered glide, descent, Brake, Landing Assist, and landing always remain available | HP drain at zero `[derived: idea.md/PLAN.md]`; mercy rule `[derived: owner decision 2026-10-31 — exhaustion must not remove the ability to land]`; rate `[tuning: PT-STAM]` |
+| At 0 stamina | HP drains −2/s only while a draining action continues (signed flight rate < 0); unpowered glide, descent, Brake, Landing Assist, and landing always remain available; a cruise/fast line (rate ≥ 0) at 0 keeps flying and refills `[2026-11-04 FLIGHT-VIGOR]` | HP drain at zero `[derived: idea.md/PLAN.md]`; mercy rule `[derived: owner decision 2026-10-31 — exhaustion must not remove the ability to land]`; rate `[tuning: PT-STAM]` |
 | Ascent/Surge below 20 stamina; fire/roar at 0 stamina | Blocked (input acknowledged with audio/visual fail state, never silent) | `[derived: AGENTS.md — errors surfaced, never swallowed]` |
 | Testing: Infinite Stamina (God Mode) | Settings toggle, default off: stamina costs/drains and exhaustion HP burn disabled; HP damage unchanged; HUD shows a testing badge while on | `[derived: owner request 2026-10-31 — playtest flight feel without the food loop confounding it]` |
 | Death | HP 0 → lose path §8 (slink away, not death) | `[derived: idea.md — the dragon does not die on loss]` |
@@ -200,7 +212,9 @@ Design check (must hold after tuning): one exterior livestock run
 (≈ §1 gap length) refills ≥ half a pool; pure lair-camping on burglars is
 sustainable only if catch rate is high; a skilful momentum/skim line costs
 materially fewer paid impulses than a climb-and-hover line on the same route,
-but stamina never increases from speed or skimming (T-075). Verified by `PT-STAM` + automation
+but stamina never increases from ground-skimming alone (T-075; a skim
+only preserves the speed that the ≥1800 vigor band then pays for —
+`[2026-11-04 FLIGHT-VIGOR]`). Verified by `PT-STAM` + automation
 `AT-Stamina` (drain/regen/food math against `DA_DragonStats`, no level
 required).
 

@@ -61,6 +61,45 @@ bool FDragonAnimCurvesTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Glide is state 3"), static_cast<int32>(EDragonAnimState::Glide), 3);
 	TestEqual(TEXT("Hover is state 4"), static_cast<int32>(EDragonAnimState::Hover), 4);
 	TestEqual(TEXT("Dive is state 5"), static_cast<int32>(EDragonAnimState::Dive), 5);
+
+	// [2026-11-04 feel/spam] Hysteresis/dwell: held Glide exits only past
+	// [2026-11-04 feel/spam] VS -50, held Hover outside 350/350, airborne
+	// [2026-11-04 feel/spam] changes wait out the 0.3 s dwell, and Dive /
+	// [2026-11-04 feel/spam] ground switches are never dwell-blocked.
+	using Anim = UDragonAnimInstance;
+	TestTrue(TEXT("held glide survives the -250..-50 band"),
+			 Anim::SelectLocomotionState(EDragonAnimState::Glide, true, false, 900.0f, -100.0f, 1.0f) ==
+				 EDragonAnimState::Glide);
+	TestTrue(TEXT("held glide exits above -50"),
+			 Anim::SelectLocomotionState(EDragonAnimState::Glide, true, false, 900.0f, 0.0f, 1.0f) ==
+				 EDragonAnimState::Fly);
+	TestTrue(TEXT("held hover survives to the 350 exit band"),
+			 Anim::SelectLocomotionState(EDragonAnimState::Hover, true, false, 300.0f, 0.0f, 1.0f) ==
+				 EDragonAnimState::Hover);
+	TestTrue(TEXT("held hover exits past 350"),
+			 Anim::SelectLocomotionState(EDragonAnimState::Hover, true, false, 400.0f, 0.0f, 1.0f) ==
+				 EDragonAnimState::Fly);
+	TestTrue(TEXT("dwell holds Fly against a fresh Hover candidate"),
+			 Anim::SelectLocomotionState(EDragonAnimState::Fly, true, false, 10.0f, 0.0f, 0.1f) ==
+				 EDragonAnimState::Fly);
+	TestTrue(TEXT("dwell elapsed lets Hover in"),
+			 Anim::SelectLocomotionState(EDragonAnimState::Fly, true, false, 10.0f, 0.0f, 0.3f) ==
+				 EDragonAnimState::Hover);
+	TestTrue(TEXT("dive is never dwell-blocked"),
+			 Anim::SelectLocomotionState(EDragonAnimState::Fly, true, true, 900.0f, -500.0f, 0.0f) ==
+				 EDragonAnimState::Dive);
+	TestTrue(TEXT("landing is never dwell-blocked"),
+			 Anim::SelectLocomotionState(EDragonAnimState::Fly, false, false, 0.0f, 0.0f, 0.0f) ==
+				 EDragonAnimState::Idle);
+
+	// [2026-11-04 feel/spam] Walk rate + combined slither bone rotation.
+	TestEqual(TEXT("walk rate floors at 0.5"), Anim::ComputeWalkPlayRate(0.0f), 0.5f);
+	TestEqual(TEXT("walk rate is 1.0 at 300 cm/s"), Anim::ComputeWalkPlayRate(300.0f), 1.0f);
+	TestEqual(TEXT("walk rate caps at 1.5"), Anim::ComputeWalkPlayRate(900.0f), 1.5f);
+	TestTrue(TEXT("slither bone segment 0 is neutral at phase 0"),
+			 FMath::Abs(Anim::ComputeSlitherBoneRotation(0, 0.0f, 6.0f, 0.0f, 0.0f).Yaw) < 0.01f);
+	TestTrue(TEXT("slither bone yaw lags with segment index"),
+			 Anim::ComputeSlitherBoneRotation(3, 0.0f, 6.0f, 0.0f, 0.0f).Yaw < 0.0f);
 	return true;
 }
 

@@ -104,15 +104,14 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	FName GetLockedTargetId() const;
 	bool GetLockedTargetCategory(int32& OutCategory) const;
 
-	// [2026-11-04 T-102] Right-face multiplex, pure (Option A as
-	// completed by T-076 in this batch — see BuildInputActions):
-	// a press shorter than the hold threshold is a tap, anything
-	// longer is a hold; a tap claws when a claw target is in the
-	// arc and otherwise toggles tint, a hold is Eat/context on the
-	// ground and sink in the air. Static so DragonInputTest pins
-	// the timing/context table without a pawn.
+	// [2026-11-04] Hold threshold shared by the Circle (right-face)
+	// and D-pad Down multiplexes: a press shorter than 0.35 s is a
+	// tap, anything at/over it is a hold. Static so DragonInputTest
+	// pins the timing without a pawn.
 	static bool IsRightFaceTap(float PressSeconds);
-	static bool RightFaceTapIsClaw(bool bClawTargetInArc);
+	// [2026-11-04] Wing-buffet chord (L1+R1): the second shoulder
+	// counts as a chord when it lands within 0.15 s of the first.
+	static bool IsWingBuffetChord(float OtherShoulderPressTime, float Now);
 	// [2026-11-04 T-071] Audio seam: verbs call this, never PlaySound.
 	UPROPERTY(VisibleAnywhere, Category = "Dragon")
 	TObjectPtr<class UAudioDirectorComponent> AudioDirector;
@@ -205,8 +204,18 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	bool IsPrototypeFlying() const;
 
 	// [2026-11-03 T-075] Nose direction the prototype integrator steers onto
-	// (free-look freezes it, steer-latch turns it at the yaw limit).
+	// [2026-11-04 FLIGHT-VIGOR] (RMB-hold sails it rate-limited, steer-latch
+	// turns it at the yaw limit; neither release snaps it back).
 	FRotator GetProtoNose() const;
+
+	// [2026-11-04 FLIGHT-VIGOR] Commanded bank (degrees, visual roll sign):
+	// turn input banks first and yaw derives from this in
+	// UpdatePrototypeFlight. AnimInstance + the single-node driver prefer
+	// it over the old yaw-derivative bank while prototype-flying.
+	float GetProtoBankDegrees() const
+	{
+		return ProtoBankDegrees;
+	}
 
 	// [2026-11-03 T-075] Per-tick prototype housekeeping: enter/exit the custom
 	// mode, feed brake state, capture CSV rows. No-op when scheme is shipped (0).
@@ -356,6 +365,10 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// [2026-11-04 T-126] it through PlayOneShot (ABP slot or single-node).
 	UAnimSequence* ClipForFamily(EDragonClipFamily Family) const;
 	void PlayClipFamily(EDragonClipFamily Family);
+	// [2026-11-04 feel/spam] Stops a looping family's slot playback
+	// [2026-11-04 feel/spam] (FirePose on fire end); one-shot families and
+	// [2026-11-04 feel/spam] missing clips make this a safe no-op.
+	void StopClipFamily(EDragonClipFamily Family);
 
 	// [2026-11-01 T-068] Play a one-shot clip (takeoff/land/roar/hit) over
 	// [2026-11-01 T-068] locomotion for its length, then locomotion resumes.
@@ -365,7 +378,11 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// call-site-identical PlayOneShot plays through the graph's slots as
 	// a dynamic montage; without ABP_Dragon on disk the shipped
 	// single-node play runs. bUsingABP is set once in the constructor.
-	void PlayOneShot(UAnimSequence* Clip);
+	// [2026-11-04 feel/spam] bLoop plays indefinitely (looping families —
+	// [2026-11-04 feel/spam] FirePose while firing) until StopClipFamily;
+	// [2026-11-04 feel/spam] a re-press restarts the slot cleanly (stop,
+	// [2026-11-04 feel/spam] then play with a 0.05 s blend-in).
+	void PlayOneShot(UAnimSequence* Clip, bool bLoop = false);
 
 	// [2026-11-04 T-125] ABP montage slot names (must match the Slot nodes
 	// in ABP_Dragon — see docs/ABP-DRAGON-BUILDSHEET.md).
@@ -381,23 +398,30 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// [2026-11-01 T-068] UDragonCombatComponent; the pawn gathers targets.
 	void HandleWingBuffet();
 	void HandleTailSlam();
-	// [2026-11-04 T-076] Claw (Q / right-face tap with a target in arc).
+	// [2026-11-04 T-076] Claw (Q / Square direct).
 	void HandleClaw();
 	// [2026-11-04 T-070] Pickup-or-drop toggle (P / right-face hold
 	// context): carrying drops (deposits inside the lair), empty
 	// claws pick up the locked treasure or the nearest in range.
 	void HandlePickupOrDrop();
-	// [2026-11-04 T-102] Pad trigger verbs: RT Surge (press edge,
-	// shares W-tap's gate), LT Brake (held latch into bBraking).
-	void HandleSurge();
+	// [2026-11-04] Pad trigger verbs, Axis1D analog: R2 Surge (fires
+	// on the pull crossing the engage threshold, shares W-tap's
+	// gate), L2 Brake (bBraking + BrakeAnalog scale with the pull).
+	void HandleSurge(const struct FInputActionValue& Value);
+	void HandleSurgeEnd();
 	void HandleBrake(const struct FInputActionValue& Value);
 	void HandleBrakeEnd();
-	// [2026-11-04 T-102] Right-face multiplex handlers (see the
-	// pure IsRightFaceTap/RightFaceTapIsClaw decisions above).
+	// [2026-11-04] Circle (right-face) interact handlers: hold only
+	// (ground eat/pickup-drop, air sink); a tap does nothing.
 	void HandleRightFaceStarted();
 	void HandleRightFaceEnd();
-	// [2026-11-04 T-069] L3/Tab: cycle (or acquire) the smart lock.
-	void HandleSmartLock();
+	// [2026-11-04] D-pad Down multiplex: tap = scent toggle,
+	// hold (0.35 s) = scale-tint picker.
+	void HandleDPadDownStarted();
+	void HandleDPadDownEnd();
+	// [2026-11-04] Tab (next) / D-pad Left (prev) / Right (next):
+	// cycle the smart lock in the value's direction.
+	void HandleSmartLock(const struct FInputActionValue& Value);
 
 	// [2026-11-01 T-068] Pure animation-state selection, kept as the pawn's
 	// [2026-11-01 T-068] public seam; delegates to
@@ -438,14 +462,17 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	UPROPERTY()
 	TObjectPtr<UInputAction> FlapAction;
 	UPROPERTY()
-	TObjectPtr<UInputAction> ToggleFlightAction;
-	UPROPERTY()
-	TObjectPtr<UInputAction> DiveAction;
+	// [2026-11-04 PAD-V2] IA_ToggleFlight renamed IA_LandingAssist and
+	// dead IA_Dive deleted (dive is a nose-down posture, no button).
+	// [2026-11-03 T-075] Prototype-only actions (T-075/T-063): RMB steer-held
+	// [2026-11-04 FLIGHT-VIGOR] (sailing, was free-look), Ctrl sink, D-pad Up
+	// steer latch. Shipped leaves them unbound-equivalent
+	TObjectPtr<UInputAction> LandingAssistAction;
 	// [2026-11-03 T-075] Prototype-only actions (T-075/T-063): RMB free-look,
 	// Ctrl sink, D-pad Up steer latch. Shipped leaves them unbound-equivalent
 	// (handlers gate on the scheme), so shipped behavior is unchanged.
 	UPROPERTY()
-	TObjectPtr<UInputAction> FreeLookAction;
+	TObjectPtr<UInputAction> SteerHeldAction;
 	UPROPERTY()
 	TObjectPtr<UInputAction> SinkAction;
 	UPROPERTY()
@@ -478,6 +505,10 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// shipped binding from the single onboarding table.
 	UPROPERTY()
 	TObjectPtr<UInputAction> HelpAction;
+	// [2026-11-04 T-084] Sleep verb (keyboard Y; no gamepad binding —
+	// every pad face/DPad slot is already owned, see BuildInputActions).
+	UPROPERTY()
+	TObjectPtr<UInputAction> SleepAction;
 	// Fire is held (Triggered/Completed), Roar and Eat are presses.
 	UPROPERTY()
 	TObjectPtr<UInputAction> FireAction;
@@ -498,9 +529,8 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// the right-face hold multiplex — context interact — below).
 	UPROPERTY()
 	TObjectPtr<UInputAction> PickupAction;
-	// [2026-11-04 T-102] Adopted pad triggers: RT Surge / LT Brake.
-	// Brake replaces DiveAction's pad/shift role (dive is a posture
-	// since T-064); DiveAction itself is kept unbound for compat.
+	// [2026-11-04] Adopted pad triggers: R2 Surge / L2 Brake, Axis1D
+	// analog (IA_Dive is deleted: dive is a posture since T-064).
 	UPROPERTY()
 	TObjectPtr<UInputAction> SurgeAction;
 	UPROPERTY()
@@ -510,10 +540,14 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// HandleRightFace*), so no verb is ever double-bound to it.
 	UPROPERTY()
 	TObjectPtr<UInputAction> RightFaceAction;
-	// [2026-11-04 T-069] Smart-lock cycle (Tab / L3, the FLIGHT-SPIKE
-	// reservation): acquires or steps the targeting lock.
+	// [2026-11-04] Smart-lock cycle, Axis1D: Tab / D-pad Right step
+	// next (+1), D-pad Left steps prev (-1 via Negate modifier).
 	UPROPERTY()
 	TObjectPtr<UInputAction> SmartLockAction;
+	// [2026-11-04] D-pad Down multiplex action (tap scent / hold tint;
+	// neither verb is bound to the key directly).
+	UPROPERTY()
+	TObjectPtr<UInputAction> DPadDownAction;
 	UPROPERTY()
 	TObjectPtr<UDragonTintWidget> TintWidget;
 	bool bTintPickerOpen = false;
@@ -548,16 +582,22 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	void HandleLook(const struct FInputActionValue& Value);
 	void HandlePadLook(const struct FInputActionValue& Value);
 	void HandleCameraCycle();
+	// [2026-11-04 T-084] Sleep verb: grounded on/near the hoard
+	// mound only; FSleepRules decides, this applies the outcome
+	// (clock jump, notoriety decay, wake HP/stamina, hoard loss).
+	void HandleSleep();
 	void HandleFlap();
-	void HandleToggleFlight();
-	void HandleDive(const struct FInputActionValue& Value);
-	// [2026-10-28 T-030] Dive release: Triggered alone never fires on key-up,
-	// so bDiving latched forever; Completed/Canceled clear it.
-	void HandleDiveEnd();
+	void HandleLandingAssist();
+	// [2026-11-04] L1+R1 chord tracking: shoulder press edges record
+	// times; the second shoulder inside the window fires the buffet
+	// instead of its own verb (fire is suppressed, roar is skipped
+	// when it is the second press).
+	void HandleFireStarted();
+	void HandleRoarEnd();
 
 	// [2026-11-03 T-075] Prototype inputs (T-075/T-063): W-tap Surge, Space-hold
-	// rise, RMB free-look + double-click steer latch, D-pad Up steer latch,
-	// Ctrl sink. Shipped since T-062 (Scheme C default); legacy scheme 0
+	// rise, RMB steer-held sailing + double-click steer latch, D-pad Up steer
+	// latch, Ctrl sink. Shipped since T-062 (Scheme C default); legacy scheme 0
 	// keeps the old map.
 	void HandleMoveStarted(const struct FInputActionValue& Value);
 	// [2026-11-03 T-062] Release edge for the remembered move axis (S-flare /
@@ -581,18 +621,26 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// still show: run started, intro done, onboarding incomplete.
 	void TickOnboarding(float DeltaSeconds);
 	void LoadOnboardingProgress();
-	void HandleFreeLook(const struct FInputActionValue& Value);
-	void HandleFreeLookEnd();
+	void HandleSteerHeld(const struct FInputActionValue& Value);
+	void HandleSteerHeldEnd();
 	void HandleSteerLatch();
 	void HandleSink(const struct FInputActionValue& Value);
 	void HandleSinkEnd();
 
 	// [2026-11-03 T-075] Prototype nose + latch state (see UpdatePrototypeFlight:
-	// nose follows control rotation except while free-looking; the latch turns it
-	// toward the view at the airspeed-limited yaw rate).
+	// [2026-11-04 FLIGHT-VIGOR] nose follows control rotation except while
+	// RMB steer-held sails it rate-limited; the latch turns it toward the
+	// view at the airspeed-limited yaw rate).
 	FRotator ProtoNose = FRotator::ZeroRotator;
-	bool bFreeLook = false;
+	bool bSteerHeld = false;
 	bool bSteerLatch = false;
+	// [2026-11-04 FLIGHT-VIGOR] Commanded bank + queued RMB mouse demand
+	// (degrees not yet consumed by the rate limit) + the last mouse-X
+	// turn sample for latched sailing. Bank is written before yaw in
+	// UpdatePrototypeFlight; Anim reads it via GetProtoBankDegrees.
+	float ProtoBankDegrees = 0.0f;
+	FVector2D PendingSteerDegrees = FVector2D::ZeroVector;
+	float LastMouseTurnInput = 0.0f;
 	bool bRiseHeld = false;
 	bool bSinkHeld = false;
 	float LastRMBReleaseTime = -10.0f;
@@ -757,25 +805,37 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// this 0.5 s debounce (checked in NotifyHit) makes one pass one
 	// crush per half-second instead of per-physics-step damage.
 	float LastCrushTimeSeconds = -1000.0f;
-	// [2026-11-04 T-102] LT/Shift brake latch (prototype integrator
-	// reads it beside bDiving in UpdatePrototypeFlight).
+	// [2026-11-04] L2/Shift brake: latch + analog pull (keyboard
+	// Shift reads 1.0 on the Axis1D action; the integrator's brake
+	// decel scales with BrakeAnalog).
 	bool bBraking = false;
-	// [2026-11-04 T-102] Right-face multiplex press state: world
-	// time the press started, whether the button is still down,
-	// and whether the hold verb already fired for this press.
+	float BrakeAnalog = 0.0f;
+	// [2026-11-04] R2 Surge analog edge state (engage at 0.5 pull).
+	float SurgeAnalog = 0.0f;
+	bool bSurgeWasEngaged = false;
+	// [2026-11-04] L1+R1 chord state: last press time per shoulder
+	// and the fire suppression latched by a completed chord.
+	float LastFirePressTime = -1000.0f;
+	float LastRoarPressTime = -1000.0f;
+	bool bChordFireSuppressed = false;
+	// [2026-11-04] Circle multiplex press state: world time the
+	// press started, whether still down, whether hold already fired.
 	float RightFacePressTime = -1000.0f;
 	bool bRightFaceDown = false;
 	bool bRightFaceHoldFired = false;
+	// [2026-11-04] D-pad Down multiplex press state (same shape).
+	float DPadDownPressTime = -1000.0f;
+	bool bDPadDownDown = false;
+	bool bDPadDownHoldFired = false;
 	// [2026-11-04 T-070] The carried treasure actor (presentation
 	// follow only — registry truth lives in UDragonCarryComponent).
 	UPROPERTY()
 	TObjectPtr<AActor> CarriedTreasureActor = nullptr;
-	// [2026-11-04 T-076/T-102] Claw helpers: one gather for the
-	// pending window, one arc probe for the right-face tap choice.
+	// [2026-11-04 T-076] Claw target gather for the pending window.
 	void GatherClawTargets(TArray<UThiefBrain*>& OutBrains, TArray<FVector>& OutLocations,
 						   TArray<FVector>& OutForwards);
-	bool HasClawTargetInArc();
 	void TickRightFaceHold();
+	void TickDPadDownHold();
 	void TickCarryFollow();
 
 	bool bDiving = false;
@@ -816,6 +876,9 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	float MeshBankDegrees = 0.0f;
 	float MeshPitchDegrees = 0.0f;
 	float LastActorYaw = 0.0f;
+	// [2026-11-04 feel/spam] True while the looping FirePose presentation
+	// [2026-11-04 feel/spam] is up (Combat->IsFiring() edge-tracked in Tick).
+	bool bFirePosePlaying = false;
 
 	// [2026-10-28 T-011] Last Tick's vertical velocity (cm/s, signed).
 	// Captured before Tick's flight logic runs so Landed() can recover

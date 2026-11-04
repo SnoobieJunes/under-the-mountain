@@ -43,6 +43,8 @@
 #include "Treasure/TreasureRegistry.h"
 #include "Treasure/TreasureSubsystem.h"
 #include "Waves/WaveSubsystem.h"
+#include "World/SleepRules.h" // [2026-11-04 T-084]
+#include "World/WorldClock.h" // [2026-11-04 T-084]
 #include "World/BurnablePropActor.h"
 #include "World/ScorchMarkActor.h"
 
@@ -479,17 +481,20 @@ void ADragonCharacter::FlightStateFlags(bool& bOutDiving, bool& bOutBraking, boo
 			const float Airspeed = Proto->Velocity.Size();
 			bOutDiving = UDragonMovementComponent::IsDivePosture(
 				GetControlRotation().Pitch, Airspeed, Proto->FlightParams);
-			bOutBraking = bDiving && !bOutDiving;
+			// [2026-11-04] Brake is the L2/Shift input (bBraking), not
+			// the deleted dive input; bDiving now carries posture only.
+			bOutBraking = bBraking && !bOutDiving;
 			bOutHovering = !bOutDiving && !bOutBraking &&
 						   UDragonMovementComponent::PrecisionAuthorityWeight(Airspeed, Proto->FlightParams) > 0.5f;
 		}
 	}
 	else if (IsFlying())
 	{
-		// Legacy scheme 0: the held Shift input IS the dive (camera-forward
-		// rocket, preserved as the baseline); hover is the slow band.
-		bOutDiving = bDiving;
-		bOutHovering = !bDiving && GetCharacterMovement()->Velocity.Size2D() < Stats->HoverSpeedThreshold;
+		// [2026-11-04] Legacy scheme 0 after IA_Dive's deletion: no
+		// dive input remains (dive is posture); Shift/L2 reads as
+		// brake, hover is the slow band.
+		bOutBraking = bBraking;
+		bOutHovering = !bBraking && GetCharacterMovement()->Velocity.Size2D() < Stats->HoverSpeedThreshold;
 	}
 }
 
@@ -563,6 +568,128 @@ void ADragonCharacter::HandleHelp()
 	{
 		OnboardingWidget->ToggleHelp();
 	}
+}
+
+void ADragonCharacter::HandleSleep()
+{
+	// [2026-11-04 T-084] Minimal in-world verb (Y): grounded on/near
+	// the hoard mound only. FSleepRules owns the decision; here we
+	// gather the signals, apply the outcome through its owners
+	// (clock, notoriety single writer, Stats, hoard ledger) and log
+	// one line. Hoard risk: BulkGold is the uncarried <400-gold bulk
+	// in the registry; the loss is recorded as a theft so the hoard
+	// total the HUD/scoring read actually drops. No artifact-equip
+	// seam exists in-world yet, so bHasUnequippedArtifact stays
+	// false (deep plunder cannot fire) — named, not hidden.
+	UWorld* World = GetWorld();
+	if (World == nullptr || Stats == nullptr || GetCharacterMovement() == nullptr)
+	{
+		return;
+	}
+	if (IsFlying() || IsPrototypeFlying() || !GetCharacterMovement()->IsMovingOnGround())
+	{
+		UE_LOG(LogUnderTheMountain, Log, TEXT("Sleep refused: not grounded"));
+		return;
+	}
+	if (!IsValid(HoardMoundActor.Get()))
+	{
+		TArray<AActor*> MeshActors;
+		UGameplayStatics::GetAllActorsOfClass(World, AStaticMeshActor::StaticClass(), MeshActors);
+		for (AActor* Actor : MeshActors)
+		{
+			if (Actor != nullptr && Actor->GetActorNameOrLabel().StartsWith(TEXT("HoardMound")))
+			{
+				HoardMoundActor = Cast<AStaticMeshActor>(Actor);
+				if (HoardMoundActor != nullptr)
+				{
+					HoardMoundBaseScale = HoardMoundActor->GetActorScale3D();
+				}
+				break;
+			}
+		}
+	}
+	const bool bAtMound = HoardMoundActor != nullptr &&
+						  FSleepRules::IsNearHoardMound(GetActorLocation(), HoardMoundActor->GetActorLocation(),
+														FSleepRules::HoardMoundSleepRadiusCm);
+	bool bWaveInProgress = false;
+	if (const UWaveSubsystem* Waves = World->GetSubsystem<UWaveSubsystem>())
+	{
+		const EWaveState WS = Waves->GetWaveState();
+		bWaveInProgress = WS == EWaveState::Active || WS == EWaveState::Spawning;
+	}
+	bool bThiefInLair = false;
+	TArray<AActor*> ThiefActors;
+	UGameplayStatics::GetAllActorsOfClass(World, AThiefCharacter::StaticClass(), ThiefActors);
+	for (AActor* Actor : ThiefActors)
+	{
+		AThiefCharacter* Thief = Cast<AThiefCharacter>(Actor);
+		if (Thief == nullptr || Thief->GetBrain() == nullptr)
+		{
+			continue;
+		}
+		if (Thief->GetBrain()->State() != EThiefState::Dead &&
+			UNotorietySubsystem::IsInsideLair(Thief->GetActorLocation()))
+		{
+			bThiefInLair = true;
+			break;
+		}
+	}
+	switch (FSleepRules::CanSleep(bAtMound, bWaveInProgress, bThiefInLair))
+	{
+	case ESleepRefusal::NotAtHoardMound:
+		UE_LOG(LogUnderTheMountain, Log, TEXT("Sleep refused: not at the hoard mound"));
+		return;
+	case ESleepRefusal::WaveInProgress:
+		UE_LOG(LogUnderTheMountain, Log, TEXT("Sleep refused: wave in progress"));
+		return;
+	case ESleepRefusal::ThiefInLair:
+		UE_LOG(LogUnderTheMountain, Log, TEXT("Sleep refused: thief in the lair"));
+		return;
+	default:
+		break;
+	}
+	UNotorietySubsystem* Notoriety = World->GetSubsystem<UNotorietySubsystem>();
+	UHoardSubsystem* Hoard = World->GetSubsystem<UHoardSubsystem>();
+	UTreasureSubsystem* TreasureSub = World->GetSubsystem<UTreasureSubsystem>();
+	FSleepRequest Request;
+	Request.NotorietyPoints = Notoriety != nullptr ? Notoriety->GetPoints() : 0;
+	if (TreasureSub != nullptr && TreasureSub->Registry() != nullptr)
+	{
+		for (const TPair<FName, FTreasureEntry>& Pair : TreasureSub->Registry()->Entries())
+		{
+			if (!Pair.Value.bCarried && Pair.Value.GoldValue < 400)
+			{
+				Request.BulkGold += Pair.Value.GoldValue;
+			}
+		}
+	}
+	Request.CurrentHP = Stats->HP;
+	Request.MaxHP = Stats->MaxHP;
+	Request.MaxStamina = Stats->MaxStamina;
+	Request.Random01 = FMath::FRand();
+	const FSleepOutcome Outcome = FSleepRules::ResolveSleep(Request);
+	float SkippedHours = 0.0f;
+	if (UWorldClockSubsystem* Clock = World->GetSubsystem<UWorldClockSubsystem>())
+	{
+		SkippedHours = Clock->SleepToNextDawn();
+	}
+	if (Notoriety != nullptr)
+	{
+		Notoriety->ApplySleepDecay();
+	}
+	if (Outcome.HPOnWake > Stats->HP)
+	{
+		Stats->RestoreHP(Outcome.HPOnWake - Stats->HP);
+	}
+	Stats->ApplyStaminaDelta(Outcome.StaminaOnWake - Stats->Stamina);
+	if (Hoard != nullptr && Outcome.BulkGoldLost > 0)
+	{
+		Hoard->RecordTheft(Outcome.BulkGoldLost, TEXT("sleep plunder"));
+	}
+	UE_LOG(LogUnderTheMountain, Log,
+		   TEXT("Sleep: skipped %.1f h to dawn, notoriety -> %d pts (%d stars), HP %.0f, stamina %.0f, bulk gold lost %lld, artifact taken %d"),
+		   SkippedHours, Outcome.NotorietyPoints, Outcome.Stars, Stats->HP, Stats->Stamina,
+		   Outcome.BulkGoldLost, Outcome.bArtifactTaken ? 1 : 0);
 }
 
 void ADragonCharacter::LoadOnboardingProgress()
@@ -995,8 +1122,8 @@ bool ADragonCharacter::HasInputActions() const
 	// [2026-10-28 T-015] Fire/Roar/Eat join the contract: Ensure must
 	// not report ready while a combat action is still null.
 	return MoveAction != nullptr && LookAction != nullptr && FlapAction != nullptr &&
-		   ToggleFlightAction != nullptr && DiveAction != nullptr && TrueSightAction != nullptr &&
-		   ScentToggleAction != nullptr &&
+		   LandingAssistAction != nullptr && TrueSightAction != nullptr &&
+		   ScentToggleAction != nullptr && DPadDownAction != nullptr &&
 		   TintAction != nullptr && FireAction != nullptr && RoarAction != nullptr &&
 		   EatAction != nullptr && WingBuffetAction != nullptr && TailSlamAction != nullptr &&
 		   // [2026-11-04 T-069/T-070/T-076/T-102] Claw, pickup, pad
@@ -1004,10 +1131,10 @@ bool ADragonCharacter::HasInputActions() const
 		   // contract on the same terms as the older verbs.
 		   ClawAction != nullptr && PickupAction != nullptr && SurgeAction != nullptr &&
 		   BrakeAction != nullptr && RightFaceAction != nullptr && SmartLockAction != nullptr &&
-		   FreeLookAction != nullptr && SinkAction != nullptr && SteerLatchAction != nullptr &&
+		   SteerHeldAction != nullptr && SinkAction != nullptr && SteerLatchAction != nullptr &&
 		   // [2026-11-03 T-065] Split look/move + camera cycle join the contract.
 		   PadLookAction != nullptr && PadMoveAction != nullptr && CameraCycleAction != nullptr &&
-		   PauseAction != nullptr && HelpAction != nullptr &&
+		   PauseAction != nullptr && HelpAction != nullptr && SleepAction != nullptr &&
 		   MappingContext != nullptr;
 }
 
@@ -1184,12 +1311,18 @@ void ADragonCharacter::BuildInputActions()
 	MoveAction = MakeAction(TEXT("IA_Move"), EInputActionValueType::Axis2D);
 	LookAction = MakeAction(TEXT("IA_Look"), EInputActionValueType::Axis2D);
 	FlapAction = MakeAction(TEXT("IA_Flap"), EInputActionValueType::Boolean);
-	ToggleFlightAction = MakeAction(TEXT("IA_ToggleFlight"), EInputActionValueType::Boolean);
-	DiveAction = MakeAction(TEXT("IA_Dive"), EInputActionValueType::Boolean);
+	// [2026-11-03 T-075] Prototype-only actions (T-075/T-063): RMB steer-held
+	// [2026-11-04 FLIGHT-VIGOR] (sailing, was free-look), Ctrl sink, D-pad Up
+	// steer latch. Handlers gate on the scheme, so the
+	// [2026-11-04] Renamed from IA_ToggleFlight: in the shipped scheme
+	// F/Triangle is Landing Assist in the air (Tail Slam grounded,
+	// legacy toggle only in scheme 0). IA_Dive is deleted outright —
+	// dive has been a posture (T-064), never a live binding, since T-102.
+	LandingAssistAction = MakeAction(TEXT("IA_LandingAssist"), EInputActionValueType::Boolean);
 	// [2026-11-03 T-075] Prototype-only actions (T-075/T-063): RMB free-look,
 	// Ctrl sink, D-pad Up steer latch. Handlers gate on the scheme, so the
 	// shipped map gains bindings but no behavior.
-	FreeLookAction = MakeAction(TEXT("IA_FreeLook"), EInputActionValueType::Boolean);
+	SteerHeldAction = MakeAction(TEXT("IA_SteerHeld"), EInputActionValueType::Boolean);
 	SinkAction = MakeAction(TEXT("IA_Sink"), EInputActionValueType::Boolean);
 	SteerLatchAction = MakeAction(TEXT("IA_SteerLatch"), EInputActionValueType::Boolean);
 	TrueSightAction = MakeAction(TEXT("IA_TrueSight"), EInputActionValueType::Boolean);
@@ -1209,10 +1342,15 @@ void ADragonCharacter::BuildInputActions()
 	// right-face multiplex, smart-lock cycle.
 	ClawAction = MakeAction(TEXT("IA_Claw"), EInputActionValueType::Boolean);
 	PickupAction = MakeAction(TEXT("IA_PickupCarry"), EInputActionValueType::Boolean);
-	SurgeAction = MakeAction(TEXT("IA_Surge"), EInputActionValueType::Boolean);
-	BrakeAction = MakeAction(TEXT("IA_Brake"), EInputActionValueType::Boolean);
+	// [2026-11-04] Triggers are Axis1D now: Surge engages on the pull
+	// crossing a threshold, Brake scales with the pull. SmartLock is
+	// Axis1D so D-pad Left can step prev (Negate) against Right next.
+	SurgeAction = MakeAction(TEXT("IA_Surge"), EInputActionValueType::Axis1D);
+	BrakeAction = MakeAction(TEXT("IA_Brake"), EInputActionValueType::Axis1D);
 	RightFaceAction = MakeAction(TEXT("IA_RightFace"), EInputActionValueType::Boolean);
-	SmartLockAction = MakeAction(TEXT("IA_SmartLock"), EInputActionValueType::Boolean);
+	SmartLockAction = MakeAction(TEXT("IA_SmartLock"), EInputActionValueType::Axis1D);
+	// [2026-11-04] D-pad Down multiplex (tap scent / hold tint).
+	DPadDownAction = MakeAction(TEXT("IA_DPadDown"), EInputActionValueType::Boolean);
 	// [2026-11-03 T-065] Split look/move (mouse vs sticks need separate
 	// pitch-invert choices; the left stick needs its own flight-pitch
 	// feed) plus the camera-cycle action. All Axis2D/Boolean like the
@@ -1241,17 +1379,13 @@ void ADragonCharacter::BuildInputActions()
 	}
 	Map(LookAction, EKeys::Mouse2D);
 	Map(FlapAction, EKeys::SpaceBar);
-	Map(ToggleFlightAction, EKeys::F);
-	// [2026-11-04 T-102] Left Shift leaves IA_Dive for IA_Brake (the
-	// adopted map: dive is a posture, Shift brakes). IA_Dive keeps no
-	// binding; bDiving now means only the posture classification.
+	Map(LandingAssistAction, EKeys::F);
+	// [2026-11-04] Left Shift is IA_Brake (Axis1D: a digital key reads
+	// 1.0, the L2 analog pull reads its travel). Dive is a posture.
 	Map(BrakeAction, EKeys::LeftShift);
-	// [2026-11-03 T-075] Prototype keys: RMB free-look, Ctrl sink.
-	Map(FreeLookAction, EKeys::RightMouseButton);
+	// [2026-11-03 T-075] Prototype keys: RMB steer-held, Ctrl sink.
+	Map(SteerHeldAction, EKeys::RightMouseButton);
 	Map(SinkAction, EKeys::LeftControl);
-	// [2026-11-03 T-075] D-pad Up was reserved for T-063 steer-to-camera —
-	// the prototype claims it; T-061 keeps D-pad Down.
-	Map(SteerLatchAction, EKeys::Gamepad_DPad_Up);
 	Map(TrueSightAction, EKeys::T);
 	// [2026-11-03 T-061] N (nose) is free in both the shipped map and
 	// the adopted flight map; D-pad Down was reserved for this toggle
@@ -1280,31 +1414,30 @@ void ADragonCharacter::BuildInputActions()
 	Map(PadMoveAction, EKeys::Gamepad_Left2D);
 	Map(PadLookAction, EKeys::Gamepad_Right2D);
 	Map(FlapAction, EKeys::Gamepad_FaceButton_Bottom);
-	Map(ToggleFlightAction, EKeys::Gamepad_FaceButton_Top);
-	// [2026-11-04 T-102] Adopted pad map (docs/FLIGHT-SPIKE.md):
-	// RT Surge / LT Brake replace RT-dive, and fire moves LT -> RB
-	// because LT is now the analog brake. Roar stays LB; Eat leaves
-	// RB for the right-face hold multiplex (E keeps it on keyboard).
+	Map(LandingAssistAction, EKeys::Gamepad_FaceButton_Top);
+	// [2026-11-04] DualSense pad map v2 (T-102 remap kept: R2 Surge /
+	// L2 Brake analog, R1 Fire): Square is a DIRECT Claw (no longer
+	// through Circle), TrueSight moves Square -> D-pad Up, SteerLatch
+	// moves D-pad Up -> L3 click, and targeting cycles on D-pad
+	// Left (prev) / Right (next). Circle stays bound ONCE to the
+	// interact multiplex (hold only). D-pad Down is bound ONCE to
+	// its own multiplex (tap scent / hold 0.35 s tint). WingBuffet
+	// has NO single pad key: it is the L1+R1 chord, tracked from the
+	// Roar/Fire press edges in HandleRoar/HandleFireStarted.
 	Map(SurgeAction, EKeys::Gamepad_RightTrigger);
 	Map(BrakeAction, EKeys::Gamepad_LeftTrigger);
-	Map(TrueSightAction, EKeys::Gamepad_FaceButton_Left);
-	Map(ScentToggleAction, EKeys::Gamepad_DPad_Down);
-	// [2026-11-04 T-102] Right face is bound ONCE, to the multiplex
-	// action: tap = Claw (target in arc) or Tint, hold = sink in
-	// the air / Eat-context (incl. pickup) on the ground. Tint and
-	// Eat get NO direct pad binding any more — double-binding the
-	// button to IA_TintPicker/IA_Eat as well was the old map's bug
-	// this task removes (keyboard C/E unchanged).
+	Map(ClawAction, EKeys::Gamepad_FaceButton_Left);
+	Map(TrueSightAction, EKeys::Gamepad_DPad_Up);
+	Map(SteerLatchAction, EKeys::Gamepad_LeftThumbstick);
+	Map(DPadDownAction, EKeys::Gamepad_DPad_Down);
 	Map(RightFaceAction, EKeys::Gamepad_FaceButton_Right);
-	// [2026-11-04 T-069] L3 = smart-lock cycle (FLIGHT-SPIKE's
-	// "reserved for smart lock-on", claimed).
-	Map(SmartLockAction, EKeys::Gamepad_LeftThumbstick);
+	{
+		FEnhancedActionKeyMapping& M = *Map(SmartLockAction, EKeys::Gamepad_DPad_Left);
+		M.Modifiers.Add(NewObject<UInputModifierNegate>(this));
+	}
+	Map(SmartLockAction, EKeys::Gamepad_DPad_Right);
 	Map(FireAction, EKeys::Gamepad_RightShoulder);
 	Map(RoarAction, EKeys::Gamepad_LeftShoulder);
-	// [2026-11-01 T-068] Pad: DPad Left/Right (Down/Up stay reserved for
-	// [2026-11-01 T-068] T-061 scent toggle and T-063 steer-to-camera).
-	Map(WingBuffetAction, EKeys::Gamepad_DPad_Left);
-	Map(TailSlamAction, EKeys::Gamepad_DPad_Right);
 	// [2026-11-03 T-065] Camera cycle: V on keyboard, R3 (right-stick press)
 	// on gamepad (adopted set: head chase / wide scenic / first-person).
 	Map(CameraCycleAction, EKeys::V);
@@ -1319,6 +1452,11 @@ void ADragonCharacter::BuildInputActions()
 	HelpAction = MakeAction(TEXT("IA_Help"), EInputActionValueType::Boolean);
 	Map(HelpAction, EKeys::H);
 	Map(HelpAction, EKeys::Gamepad_Special_Left);
+	// [2026-11-04 T-084] Sleep: keyboard Y only. No gamepad binding:
+	// faces are flap/flight/right-face-multiplex, DPad Up/Down/Left/
+	// Right are steer/scent/buffet/slam, Specials are pause/help.
+	SleepAction = MakeAction(TEXT("IA_Sleep"), EInputActionValueType::Boolean);
+	Map(SleepAction, EKeys::Y);
 }
 
 void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -1371,6 +1509,10 @@ void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	{
 		EIC->BindAction(HelpAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleHelp);
 	}
+	if (SleepAction != nullptr)
+	{
+		EIC->BindAction(SleepAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleSleep);
+	}
 	if (FlapAction != nullptr)
 	{
 		EIC->BindAction(FlapAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleFlap);
@@ -1398,11 +1540,11 @@ void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 		EIC->BindAction(PadMoveAction, ETriggerEvent::Completed, this, &ADragonCharacter::HandleMoveEnd);
 		EIC->BindAction(PadMoveAction, ETriggerEvent::Canceled, this, &ADragonCharacter::HandleMoveEnd);
 	}
-	if (FreeLookAction != nullptr)
+	if (SteerHeldAction != nullptr)
 	{
-		EIC->BindAction(FreeLookAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleFreeLook);
-		EIC->BindAction(FreeLookAction, ETriggerEvent::Completed, this, &ADragonCharacter::HandleFreeLookEnd);
-		EIC->BindAction(FreeLookAction, ETriggerEvent::Canceled, this, &ADragonCharacter::HandleFreeLookEnd);
+		EIC->BindAction(SteerHeldAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleSteerHeld);
+		EIC->BindAction(SteerHeldAction, ETriggerEvent::Completed, this, &ADragonCharacter::HandleSteerHeldEnd);
+		EIC->BindAction(SteerHeldAction, ETriggerEvent::Canceled, this, &ADragonCharacter::HandleSteerHeldEnd);
 	}
 	if (SinkAction != nullptr)
 	{
@@ -1414,17 +1556,10 @@ void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	{
 		EIC->BindAction(SteerLatchAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleSteerLatch);
 	}
-	if (ToggleFlightAction != nullptr)
+	if (LandingAssistAction != nullptr)
 	{
-		EIC->BindAction(ToggleFlightAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleToggleFlight);
-	}
-	if (DiveAction != nullptr)
-	{
-		EIC->BindAction(DiveAction, ETriggerEvent::Triggered, this, &ADragonCharacter::HandleDive);
-		// [2026-10-28 T-030] Release paths: without these, bDiving stayed true
-		// after Shift/trigger release and the dragon kept accelerating.
-		EIC->BindAction(DiveAction, ETriggerEvent::Completed, this, &ADragonCharacter::HandleDiveEnd);
-		EIC->BindAction(DiveAction, ETriggerEvent::Canceled, this, &ADragonCharacter::HandleDiveEnd);
+		EIC->BindAction(LandingAssistAction, ETriggerEvent::Started, this,
+						&ADragonCharacter::HandleLandingAssist);
 	}
 	if (TrueSightAction != nullptr)
 	{
@@ -1443,6 +1578,8 @@ void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	// never latch on after button-up (T-030).
 	if (FireAction != nullptr)
 	{
+		// [2026-11-04] Press edge feeds the L1+R1 WingBuffet chord.
+		EIC->BindAction(FireAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleFireStarted);
 		EIC->BindAction(FireAction, ETriggerEvent::Triggered, this, &ADragonCharacter::HandleFire);
 		EIC->BindAction(FireAction, ETriggerEvent::Completed, this, &ADragonCharacter::HandleFireEnd);
 		EIC->BindAction(FireAction, ETriggerEvent::Canceled, this, &ADragonCharacter::HandleFireEnd);
@@ -1450,11 +1587,21 @@ void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	if (RoarAction != nullptr)
 	{
 		EIC->BindAction(RoarAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleRoar);
+		// [2026-11-04] Release clears the chord press time: a stale L1
+		// tap must not chord with an R1 pressed after L1 came up.
+		EIC->BindAction(RoarAction, ETriggerEvent::Completed, this, &ADragonCharacter::HandleRoarEnd);
+		EIC->BindAction(RoarAction, ETriggerEvent::Canceled, this, &ADragonCharacter::HandleRoarEnd);
 	}
 	if (EatAction != nullptr)
 	{
 		EIC->BindAction(EatAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleEat);
+	}
+	if (WingBuffetAction != nullptr)
+	{
 		EIC->BindAction(WingBuffetAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleWingBuffet);
+	}
+	if (TailSlamAction != nullptr)
+	{
 		EIC->BindAction(TailSlamAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleTailSlam);
 	}
 	// [2026-11-04 T-076/T-070/T-069/T-102] New verbs, same
@@ -1472,9 +1619,22 @@ void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	{
 		EIC->BindAction(SmartLockAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleSmartLock);
 	}
+	if (DPadDownAction != nullptr)
+	{
+		EIC->BindAction(DPadDownAction, ETriggerEvent::Started, this,
+						&ADragonCharacter::HandleDPadDownStarted);
+		EIC->BindAction(DPadDownAction, ETriggerEvent::Completed, this,
+						&ADragonCharacter::HandleDPadDownEnd);
+		EIC->BindAction(DPadDownAction, ETriggerEvent::Canceled, this,
+						&ADragonCharacter::HandleDPadDownEnd);
+	}
 	if (SurgeAction != nullptr)
 	{
-		EIC->BindAction(SurgeAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleSurge);
+		// [2026-11-04] Axis1D: Triggered samples the pull; the handler
+		// fires the verb once on the engage-threshold crossing.
+		EIC->BindAction(SurgeAction, ETriggerEvent::Triggered, this, &ADragonCharacter::HandleSurge);
+		EIC->BindAction(SurgeAction, ETriggerEvent::Completed, this, &ADragonCharacter::HandleSurgeEnd);
+		EIC->BindAction(SurgeAction, ETriggerEvent::Canceled, this, &ADragonCharacter::HandleSurgeEnd);
 	}
 	if (BrakeAction != nullptr)
 	{
@@ -1537,6 +1697,19 @@ void ADragonCharacter::HandleLook(const FInputActionValue& Value)
 {
 	// [2026-11-03 T-065] Mouse path: pitch follows the mouse invert choice.
 	const FVector2D Axis = Value.Get<FVector2D>();
+	// [2026-11-04 FLIGHT-VIGOR] RMB sailing: while steer-held the mouse
+	// does not roam the camera; its demand (degrees, pitch-invert
+	// applied) queues for the rate-limited nose in
+	// UpdatePrototypeFlight, and mouse-X is remembered as turn input
+	// for the commanded bank. Normal look resumes on release.
+	if (bSteerHeld && IsPrototypeFlying())
+	{
+		PendingSteerDegrees.X += Axis.X;
+		PendingSteerDegrees.Y += Axis.Y * (InvertMousePitch() ? -1.0f : 1.0f);
+		LastMouseTurnInput = FMath::Clamp(Axis.X, -1.0f, 1.0f);
+		return;
+	}
+	LastMouseTurnInput = FMath::Clamp(Axis.X, -1.0f, 1.0f);
 	AddControllerYawInput(Axis.X);
 	AddControllerPitchInput(Axis.Y * (InvertMousePitch() ? -1.0f : 1.0f));
 }
@@ -1611,7 +1784,7 @@ void ADragonCharacter::HandleFlap()
 	}
 }
 
-void ADragonCharacter::HandleToggleFlight()
+void ADragonCharacter::HandleLandingAssist()
 {
 	// [2026-11-03 T-075] Course program owns its inputs (assist is scripted).
 	if (bCourseFlying)
@@ -1646,17 +1819,6 @@ void ADragonCharacter::HandleToggleFlight()
 	{
 		PlayOneShot(TakeoffAnim);
 	}
-}
-
-void ADragonCharacter::HandleDive(const FInputActionValue& Value)
-{
-	bDiving = Value.Get<bool>();
-}
-
-void ADragonCharacter::HandleDiveEnd()
-{
-	// [2026-10-28 T-030] See SetupPlayerInputComponent: release clears dive.
-	bDiving = false;
 }
 
 void ADragonCharacter::HandleTrueSight()
@@ -2296,11 +2458,31 @@ void ADragonCharacter::AuditGameLoop(float DeltaSeconds)
 	}
 }
 
+void ADragonCharacter::HandleFireStarted()
+{
+	// [2026-11-04] R1 press edge for the L1+R1 WingBuffet chord: if
+	// L1 landed inside the chord window, this press is the buffet —
+	// fire is suppressed for the whole press (HandleFire checks).
+	LastFirePressTime = GetWorld() != nullptr ? GetWorld()->GetTimeSeconds() : 0.0f;
+	if (IsWingBuffetChord(LastRoarPressTime, LastFirePressTime))
+	{
+		bChordFireSuppressed = true;
+		HandleWingBuffet();
+		UE_LOG(LogUnderTheMountain, Log, TEXT("Wing buffet (L1+R1 chord)"));
+	}
+}
+
+void ADragonCharacter::HandleRoarEnd()
+{
+	LastRoarPressTime = -1000.0f;
+}
+
 void ADragonCharacter::HandleFire(const FInputActionValue& Value)
 {
 	// [2026-10-28 T-015] Latch only — Tick owns starting/ticking the
 	// breath so stamina gating and target gathering happen once.
-	bWantsFire = Value.Get<bool>();
+	// [2026-11-04] A chorded R1 press never breathes (see above).
+	bWantsFire = !bChordFireSuppressed && Value.Get<bool>();
 	if (bWantsFire)
 	{
 		// [2026-11-03 T-073] First trigger pull dismisses the fire
@@ -2314,13 +2496,15 @@ void ADragonCharacter::HandleFireEnd()
 	// [2026-10-28 T-015] Release path (Completed/Canceled): clear the
 	// latch and stop the breath now, not next tick.
 	bWantsFire = false;
+	bChordFireSuppressed = false;
+	LastFirePressTime = -1000.0f;
 	if (Combat != nullptr)
 	{
 		Combat->StopFire();
 	}
 }
 
-void ADragonCharacter::PlayOneShot(UAnimSequence* Clip)
+void ADragonCharacter::PlayOneShot(UAnimSequence* Clip, bool bLoop)
 {
 	// [2026-11-01 T-068] Null clip = no-op (un-imported checkout): the verb
 	// [2026-11-01 T-068] still happened, only its presentation is absent.
@@ -2338,10 +2522,24 @@ void ADragonCharacter::PlayOneShot(UAnimSequence* Clip)
 		if (bUsingABP)
 		{
 			UAnimInstance* ABP = Mesh->GetAnimInstance();
-			UAnimMontage* DynMontage = ABP != nullptr
-										   ? ABP->PlaySlotAnimationAsDynamicMontage(Clip, OneShotSlotFor(Clip), 0.15f, 0.25f)
-										   : nullptr;
-			if (DynMontage == nullptr)
+			if (ABP != nullptr)
+			{
+				// [2026-11-04 feel/spam] Re-press restarts cleanly: stop the
+				// [2026-11-04 feel/spam] slot's current montage first, then
+				// [2026-11-04 feel/spam] replay with a 0.05 s blend-in (was
+				// [2026-11-04 feel/spam] 0.15, which ate fast spam presses).
+				const FName Slot = OneShotSlotFor(Clip);
+				ABP->StopSlotAnimation(0.05f, Slot);
+				UAnimMontage* DynMontage = ABP->PlaySlotAnimationAsDynamicMontage(
+					Clip, Slot, 0.05f, 0.25f, 1.0f, bLoop ? -1 : 1);
+				if (DynMontage == nullptr)
+				{
+					UE_LOG(LogUnderTheMountain, Warning,
+						   TEXT("Dragon one-shot FAILED via ABP slot %s: %s (slot missing from graph?)"),
+						   *Slot.ToString(), *Clip->GetName());
+				}
+			}
+			else
 			{
 				UE_LOG(LogUnderTheMountain, Warning,
 					   TEXT("Dragon one-shot FAILED via ABP slot %s: %s (slot missing from graph?)"),
@@ -2349,9 +2547,36 @@ void ADragonCharacter::PlayOneShot(UAnimSequence* Clip)
 			}
 			return;
 		}
-		Mesh->PlayAnimation(Clip, false);
+		Mesh->PlayAnimation(Clip, bLoop);
 		Mesh->SetPlayRate(1.0f);
-		OneShotTimeRemaining = Clip->GetPlayLength();
+		// [2026-11-04 feel/spam] A looping play has no suppression clock:
+		// [2026-11-04 feel/spam] StopClipFamily / the fire-pose edge ends it.
+		OneShotTimeRemaining = bLoop ? 0.0f : Clip->GetPlayLength();
+	}
+}
+
+void ADragonCharacter::StopClipFamily(EDragonClipFamily Family)
+{
+	UAnimSequence* Clip = ClipForFamily(Family);
+	if (Clip == nullptr)
+	{
+		return;
+	}
+	if (USkeletalMeshComponent* Mesh = GetMesh())
+	{
+		if (bUsingABP)
+		{
+			if (UAnimInstance* ABP = Mesh->GetAnimInstance())
+			{
+				ABP->StopSlotAnimation(0.25f, OneShotSlotFor(Clip));
+			}
+			return;
+		}
+		// [2026-11-04 feel/spam] Single-node: stop the looping clip and
+		// [2026-11-04 feel/spam] force locomotion re-entry next tick.
+		Mesh->Stop();
+		OneShotTimeRemaining = 0.0f;
+		CurrentAnimState = static_cast<EDragonAnimState>(255);
 	}
 }
 
@@ -2417,7 +2642,9 @@ void ADragonCharacter::PlayClipFamily(EDragonClipFamily Family)
 {
 	// [2026-11-04 T-126] Null-safe via PlayOneShot: an un-imported family
 	// [2026-11-04 T-126] is a no-op presentation, never a blocked verb.
-	PlayOneShot(ClipForFamily(Family));
+	// [2026-11-04 feel/spam] Looping families (FirePose/SleepIdle) loop
+	// [2026-11-04 feel/spam] until StopClipFamily; the rest are one-shots.
+	PlayOneShot(ClipForFamily(Family), UDragonAnimInstance::IsLoopingClipFamily(Family));
 }
 
 void ADragonCharacter::HandleWingBuffet()
@@ -2434,22 +2661,24 @@ void ADragonCharacter::HandleWingBuffet()
 	int32 NumDazed = 0;
 	const bool bBuffeted = Combat->TryWingBuffet(Now, Stats, GetActorLocation(), GetActorForwardVector(),
 												 Brains, Locations, NumDazed);
+	// [2026-11-04 feel/spam] Presentation plays on EVERY press: Try* keeps
+	// [2026-11-04 feel/spam] gating damage/daze + stamina only, so a press
+	// [2026-11-04 feel/spam] inside the cooldown still swings and sounds.
+	if (!IsFlying())
+	{
+		if (WingBuffetAnim != nullptr)
+		{
+			PlayClipFamily(EDragonClipFamily::WingBuffet);
+		}
+		else
+		{
+			PlayOneShot(RoarAnim);
+		}
+	}
+	if (AudioDirector)
+		AudioDirector->PlayDragonVerb(TEXT("WingBuffet"));
 	if (bBuffeted)
 	{
-		// [2026-11-01 T-068] Grounded buffet mantles like the roar clip;
-		// [2026-11-01 T-068] airborne it must not interrupt flight locomotion.
-		// [2026-11-04 T-126] Its own clip family wins when imported.
-		if (!IsFlying())
-		{
-			if (WingBuffetAnim != nullptr)
-			{
-				PlayClipFamily(EDragonClipFamily::WingBuffet);
-			}
-			else
-			{
-				PlayOneShot(RoarAnim);
-			}
-		}
 		UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon wing buffet: dazed %d"), NumDazed);
 	}
 }
@@ -2468,11 +2697,13 @@ void ADragonCharacter::HandleTailSlam()
 	int32 NumHit = 0;
 	const bool bSlammed = Combat->TryTailSlam(Now, Stats, GetActorLocation(), GetActorForwardVector(),
 											  Brains, Locations, NumHit);
+	// [2026-11-04 feel/spam] Presentation on every press (see HandleWingBuffet):
+	// [2026-11-04 feel/spam] cooldown gates the rear-arc damage, not the swing.
+	PlayClipFamily(EDragonClipFamily::TailWhip);
+	if (AudioDirector)
+		AudioDirector->PlayDragonVerb(TEXT("TailSlam"));
 	if (bSlammed)
 	{
-		// [2026-11-04 T-126] Tail-whip clip family presentation (null-safe
-		// [2026-11-04 T-126] until imported); damage already applied above.
-		PlayClipFamily(EDragonClipFamily::TailWhip);
 		UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon tail slam: hit %d"), NumHit);
 	}
 }
@@ -2496,19 +2727,17 @@ bool ADragonCharacter::GetLockedTargetCategory(int32& OutCategory) const
 
 bool ADragonCharacter::IsRightFaceTap(float PressSeconds)
 {
-	// [2026-11-04 T-102] 0.35 s split: shorter is a deliberate tap,
-	// longer a deliberate hold. This replaces Tint's old Started
-	// (press-edge) timing on pad — tint now fires on tap RELEASE.
+	// [2026-11-04] 0.35 s split shared by the Circle and D-pad Down
+	// multiplexes: shorter is a tap, at/over it a hold.
 	return PressSeconds >= 0.0f && PressSeconds < 0.35f;
 }
 
-bool ADragonCharacter::RightFaceTapIsClaw(bool bClawTargetInArc)
+bool ADragonCharacter::IsWingBuffetChord(float OtherShoulderPressTime, float Now)
 {
-	// [2026-11-04 T-102] Option A, completed by T-076 landing in
-	// the same batch: combat context wins the tap (claw), cosmetic
-	// context keeps it otherwise (tint). FLIGHT-SPIKE's end-state
-	// map (tap = Claw) and T-102's "Tint stays tap" both hold.
-	return bClawTargetInArc;
+	// [2026-11-04] L1+R1 chord window: the second shoulder must land
+	// within 0.15 s of the first (and not before it).
+	return OtherShoulderPressTime >= 0.0f && Now >= OtherShoulderPressTime &&
+		   Now - OtherShoulderPressTime <= 0.15f;
 }
 
 void ADragonCharacter::GatherClawTargets(TArray<UThiefBrain*>& OutBrains,
@@ -2539,29 +2768,6 @@ void ADragonCharacter::GatherClawTargets(TArray<UThiefBrain*>& OutBrains,
 	}
 }
 
-bool ADragonCharacter::HasClawTargetInArc()
-{
-	if (Combat == nullptr)
-	{
-		return false;
-	}
-	TArray<UThiefBrain*> Brains;
-	TArray<FVector> Locations;
-	TArray<FVector> Forwards;
-	GatherClawTargets(Brains, Locations, Forwards);
-	for (int32 Index = 0; Index < Brains.Num() && Index < Locations.Num(); ++Index)
-	{
-		if (Brains[Index] != nullptr && Brains[Index]->State() != EThiefState::Dead &&
-			UDragonCombatComponent::IsInArc2D(GetActorLocation(), GetActorForwardVector(),
-											  Locations[Index], Combat->ClawRange,
-											  Combat->ClawHalfAngleDeg))
-		{
-			return true;
-		}
-	}
-	return false;
-}
-
 void ADragonCharacter::HandleClaw()
 {
 	if (Combat == nullptr)
@@ -2570,11 +2776,16 @@ void ADragonCharacter::HandleClaw()
 		return;
 	}
 	const float Now = GetWorld() != nullptr ? GetWorld()->GetTimeSeconds() : 0.0f;
+	// [2026-11-04 feel/spam] Claw presentation on EVERY press (the missing
+	// [2026-11-04 feel/spam] half of T-076: HandleClaw played no clip at
+	// [2026-11-04 feel/spam] all). TryClaw still gates cost + the damage
+	// [2026-11-04 feel/spam] window, so spam swings free and hits at most
+	// [2026-11-04 feel/spam] once per ClawCooldownSeconds.
+	PlayClipFamily(EDragonClipFamily::Claw);
+	if (AudioDirector)
+		AudioDirector->PlayDragonVerb(TEXT("Claw"));
 	if (Combat->TryClaw(Now, Stats))
 	{
-		// [2026-11-04 T-076] No claw clip/montage notify exists
-		// (T-068 set has none): the damage window is verb timing
-		// (Combat->ClawDamageDelaySeconds), driven in Tick.
 		UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon claw swing (hit lands in %.2fs)"),
 			   Combat->ClawDamageDelaySeconds);
 	}
@@ -2667,10 +2878,20 @@ void ADragonCharacter::HandlePickupOrDrop()
 	CarriedTreasureActor = TargetActor;
 }
 
-void ADragonCharacter::HandleSurge()
+void ADragonCharacter::HandleSurge(const FInputActionValue& Value)
 {
-	// [2026-11-04 T-102] RT Surge: the W-tap gate verbatim (momentum
-	// band only, 1/s, one impulse reserve), on a press edge.
+	// [2026-11-04] R2 Axis1D: sample the pull every Triggered tick and
+	// fire the W-tap gate verbatim (momentum band only, 1/s, one
+	// impulse reserve) once, on the 0.5 engage-threshold crossing —
+	// an analog trigger held down must not re-fire per tick.
+	SurgeAnalog = FMath::Clamp(Value.Get<float>(), 0.0f, 1.0f);
+	const bool bEngaged = SurgeAnalog >= 0.5f;
+	const bool bCrossed = bEngaged && !bSurgeWasEngaged;
+	bSurgeWasEngaged = bEngaged;
+	if (!bCrossed)
+	{
+		return;
+	}
 	if (!IsPrototypeFlying() || bCourseFlying)
 	{
 		return;
@@ -2694,21 +2915,30 @@ void ADragonCharacter::HandleSurge()
 	{
 		LastSurgeTime = Now;
 		Proto->ApplySurge();
-		UE_LOG(LogUnderTheMountain, Log, TEXT("Surge (RT): +%.0f cm/s (stamina %.1f)"),
+		UE_LOG(LogUnderTheMountain, Log, TEXT("Surge (R2): +%.0f cm/s (stamina %.1f)"),
 			   Proto->FlightParams.SurgeDeltaV, Stats->Stamina);
 	}
 }
 
+void ADragonCharacter::HandleSurgeEnd()
+{
+	SurgeAnalog = 0.0f;
+	bSurgeWasEngaged = false;
+}
+
 void ADragonCharacter::HandleBrake(const FInputActionValue& Value)
 {
-	// [2026-11-04 T-102] LT/Shift held: latch only; the integrator
-	// reads bBraking in UpdatePrototypeFlight (T-030 release lesson:
-	// Completed/Canceled clear it in HandleBrakeEnd).
-	bBraking = Value.Get<bool>();
+	// [2026-11-04] L2/Shift Axis1D: the pull IS the brake strength;
+	// the integrator reads bBraking + BrakeAnalog in
+	// UpdatePrototypeFlight (T-030 release lesson: Completed/
+	// Canceled clear both in HandleBrakeEnd).
+	BrakeAnalog = FMath::Clamp(Value.Get<float>(), 0.0f, 1.0f);
+	bBraking = BrakeAnalog > 0.05f;
 }
 
 void ADragonCharacter::HandleBrakeEnd()
 {
+	BrakeAnalog = 0.0f;
 	bBraking = false;
 }
 
@@ -2750,37 +2980,69 @@ void ADragonCharacter::HandleRightFaceEnd()
 		return;
 	}
 	bRightFaceDown = false;
-	if (bRightFaceHoldFired)
+	// [2026-11-04] Circle is interact ONLY: the hold already acted at
+	// the threshold (air sink / ground eat-pickup); a tap release
+	// deliberately does nothing — Claw is Square, Tint is D-pad
+	// Down hold, so no verb hides behind a Circle tap any more.
+	bSinkHeld = false;
+	bRightFaceHoldFired = false;
+}
+
+void ADragonCharacter::HandleDPadDownStarted()
+{
+	bDPadDownDown = true;
+	bDPadDownHoldFired = false;
+	DPadDownPressTime = GetWorld() != nullptr ? GetWorld()->GetTimeSeconds() : 0.0f;
+}
+
+void ADragonCharacter::TickDPadDownHold()
+{
+	// [2026-11-04] Hold half fires once at the threshold, while still
+	// down (the TickRightFaceHold shape): D-pad Down hold = tint.
+	if (!bDPadDownDown || bDPadDownHoldFired || GetWorld() == nullptr)
 	{
-		// [2026-11-04 T-102] Hold already acted: release only ends
-		// the air sink (ground Eat/context fired at the threshold).
-		bSinkHeld = false;
-		bRightFaceHoldFired = false;
 		return;
 	}
-	const float Now = GetWorld() != nullptr ? GetWorld()->GetTimeSeconds() : 0.0f;
-	if (IsRightFaceTap(Now - RightFacePressTime))
+	if (IsRightFaceTap(GetWorld()->GetTimeSeconds() - DPadDownPressTime))
 	{
-		if (RightFaceTapIsClaw(HasClawTargetInArc()))
-		{
-			HandleClaw();
-		}
-		else
-		{
-			HandleToggleTintPicker();
-		}
+		return;
+	}
+	bDPadDownHoldFired = true;
+	HandleToggleTintPicker();
+}
+
+void ADragonCharacter::HandleDPadDownEnd()
+{
+	if (!bDPadDownDown)
+	{
+		return;
+	}
+	bDPadDownDown = false;
+	if (bDPadDownHoldFired)
+	{
+		bDPadDownHoldFired = false;
+		return;
+	}
+	// [2026-11-04] Tap (released before the hold threshold) = scent.
+	const float Now = GetWorld() != nullptr ? GetWorld()->GetTimeSeconds() : 0.0f;
+	if (IsRightFaceTap(Now - DPadDownPressTime))
+	{
+		HandleToggleScent();
 	}
 }
 
-void ADragonCharacter::HandleSmartLock()
+void ADragonCharacter::HandleSmartLock(const FInputActionValue& Value)
 {
 	if (Targeting == nullptr)
 	{
 		return;
 	}
+	// [2026-11-04] Axis1D direction: D-pad Left was Negate-mapped
+	// (-1 = prev); Tab / D-pad Right read +1 (next).
+	const int32 Direction = Value.Get<float>() < 0.0f ? -1 : 1;
 	const bool bLocked =
-		Targeting->CycleTarget(Targeting->LastCandidates(), GetActorLocation());
-	UE_LOG(LogUnderTheMountain, Log, TEXT("Smart lock: %s"),
+		Targeting->CycleTarget(Targeting->LastCandidates(), GetActorLocation(), Direction);
+	UE_LOG(LogUnderTheMountain, Log, TEXT("Smart lock (%s): %s"), Direction < 0 ? TEXT("prev") : TEXT("next"),
 		   bLocked ? *Targeting->CurrentTargetId().ToString() : TEXT("none in range"));
 }
 
@@ -2818,6 +3080,19 @@ void ADragonCharacter::TickCarryFollow()
 
 void ADragonCharacter::HandleRoar()
 {
+	// [2026-11-04] L1 press edge for the L1+R1 chord: record it, and
+	// if R1 landed inside the window this press is the buffet, not
+	// a roar (the breath it may have started is stopped).
+	LastRoarPressTime = GetWorld() != nullptr ? GetWorld()->GetTimeSeconds() : 0.0f;
+	if (IsWingBuffetChord(LastFirePressTime, LastRoarPressTime))
+	{
+		bChordFireSuppressed = true;
+		HandleFireEnd();
+		bChordFireSuppressed = true;
+		HandleWingBuffet();
+		UE_LOG(LogUnderTheMountain, Log, TEXT("Wing buffet (L1+R1 chord)"));
+		return;
+	}
 	// [2026-10-28 T-015] The pawn supplies world facts (time, origin,
 	// targets); TryRoar owns cost/cooldown and logs any refusal.
 	if (Combat == nullptr)
@@ -2836,14 +3111,12 @@ void ADragonCharacter::HandleRoar()
 		// the roar prompt (a cooldown-blocked press keeps teaching).
 		MarkOnboardingDone(EOnboardingVerb::Roar);
 	}
-	// [2026-11-01 T-068] A roar that actually fired is now visible, not
-	// [2026-11-01 T-068] just audible-in-the-log: mantle + head-throw clip.
-	if (bRoared)
-	{
-		PlayOneShot(RoarAnim);
-		if (AudioDirector)
-			AudioDirector->PlayDragonVerb(TEXT("Roar")); // [2026-11-04 T-071]
-	}
+	// [2026-11-04 feel/spam] Presentation on EVERY press (see HandleClaw):
+	// [2026-11-04 feel/spam] TryRoar gates scare/stamina/notoriety below,
+	// [2026-11-04 feel/spam] never the mantle clip or the sound any more.
+	PlayOneShot(RoarAnim);
+	if (AudioDirector)
+		AudioDirector->PlayDragonVerb(TEXT("Roar")); // [2026-11-04 T-071]
 	// [2026-11-01 T-016] A roar that scares thieves while the
 	// dragon is OUTSIDE the lair is a witnessed act (+4, once per
 	// roar); inside, nobody outside hears about it.
@@ -3171,10 +3444,12 @@ void ADragonCharacter::UpdatePrototypeFlight(float DeltaSeconds)
 			// IS the flare, and the Brake rule (forced precision) covers both.
 			// [2026-11-03 T-065] Keyboard S only: pad stick-back pitches
 			// instead of flaring (device tag on the sample).
-			// [2026-11-04 T-102] LT/Shift brake (bBraking) joins the
-			// legacy bDiving latch here; posture dive is separate.
+			// [2026-11-04] L2/Shift brake (bBraking, analog-scaled via
+			// BrakeStrength) joins the S-flare; posture dive is
+			// separate and never brakes by itself.
 			Proto->bProtoBraking =
-				bDiving || bBraking || (!bLastMoveFromGamepad && LastMoveAxis.Y < -0.5f);
+				bBraking || (!bLastMoveFromGamepad && LastMoveAxis.Y < -0.5f);
+			Proto->BrakeStrength = bBraking ? BrakeAnalog : 1.0f;
 			Proto->bProtoRise = bRiseHeld;
 			Proto->bProtoSink = bSinkHeld;
 			if (!IsPrototypeFlying())
@@ -3185,29 +3460,63 @@ void ADragonCharacter::UpdatePrototypeFlight(float DeltaSeconds)
 		}
 		if (IsPrototypeFlying())
 		{
-			// [2026-11-03 T-075] Nose follows control rotation except while
-			// free-looking (frozen); latched, it turns toward the view at
-			// the airspeed-limited yaw rate (T-063 steer-to-look). The course
-			// program owns the nose while bCourseFlying.
-			if (!bFreeLook && !bCourseFlying)
+			// [2026-11-04 FLIGHT-VIGOR] Steering, in causal order: turn
+			// input commands ProtoBankDegrees first, yaw derives from
+			// the bank (YawRateForBank), and the nose follows. RMB-hold
+			// sails: mouse demand queued by HandleLook steers ProtoNose
+			// pitch/yaw rate-limited by YawRateForAirspeed, with the
+			// control rotation kept on the nose so release has nothing
+			// to snap back. Latched, the nose turns toward the view at
+			// the same limit (T-063 steer-to-look). The course program
+			// owns the nose while bCourseFlying.
+			if (!bCourseFlying)
 			{
-				// [2026-11-03 T-062] A/D yaws at the airspeed-limited rate in
-				// the momentum band (adopted bank/turn): the controller turns
-				// so camera and nose agree, and the nose follows below. The
-				// precision band keeps A/D as strafe thrust (integrator
-				// PendingInput), so no branch is needed there.
-				if (Controller != nullptr && FMath::Abs(LastMoveAxis.X) > 0.1f &&
-					UDragonMovementComponent::PrecisionAuthorityWeight(
-						Move->Velocity.Size(), Proto->FlightParams) < 0.5f)
+				const float AirspeedNow = Move->Velocity.Size();
+				const bool bMomentumBand =
+					UDragonMovementComponent::PrecisionAuthorityWeight(AirspeedNow, Proto->FlightParams) < 0.5f;
+				// Turn sources, in authority order: RMB mouse-X while
+				// sailing, A/D or pad left-stick X, latched mouse-X.
+				float TurnInput = 0.0f;
+				if (bSteerHeld && !FMath::IsNearlyZero(PendingSteerDegrees.X))
 				{
-					// [2026-11-03 T-103] Trap slow widens turns: yaw scales
-					// with the thrust factor.
-					AddControllerYawInput(LastMoveAxis.X *
-										  UDragonMovementComponent::YawRateForAirspeed(
-											  Move->Velocity.Size(), Proto->FlightParams) *
-										  Proto->TrapSlowFactor * DeltaSeconds);
+					TurnInput = FMath::Clamp(PendingSteerDegrees.X, -1.0f, 1.0f);
 				}
-				if (bSteerLatch)
+				else if (FMath::Abs(LastMoveAxis.X) > 0.1f)
+				{
+					TurnInput = FMath::Clamp(LastMoveAxis.X, -1.0f, 1.0f);
+				}
+				else if (bSteerLatch)
+				{
+					TurnInput = LastMouseTurnInput;
+				}
+				const float TargetBank = UDragonMovementComponent::CommandedBankDegrees(TurnInput);
+				ProtoBankDegrees =
+					FMath::FInterpConstantTo(ProtoBankDegrees, TargetBank, DeltaSeconds, 180.0f);
+				// [2026-11-03 T-103] Trap slow widens turns (bank yaw
+				// scales with the thrust factor, as the old direct yaw did).
+				const float DerivedYawRate =
+					UDragonMovementComponent::YawRateForBank(ProtoBankDegrees, AirspeedNow, Proto->FlightParams) *
+					Proto->TrapSlowFactor;
+				if (bSteerHeld)
+				{
+					const float SteerRate = UDragonMovementComponent::YawRateForAirspeed(
+												AirspeedNow, Proto->FlightParams) *
+											Proto->TrapSlowFactor;
+					const float StepYaw = UDragonMovementComponent::SteerStepDegrees(
+						PendingSteerDegrees.X, SteerRate, DeltaSeconds);
+					const float StepPitch = UDragonMovementComponent::SteerStepDegrees(
+						PendingSteerDegrees.Y, SteerRate, DeltaSeconds);
+					PendingSteerDegrees.X -= StepYaw;
+					PendingSteerDegrees.Y -= StepPitch;
+					ProtoNose.Yaw = FMath::UnwindDegrees(ProtoNose.Yaw + StepYaw);
+					ProtoNose.Pitch = FMath::Clamp(ProtoNose.Pitch + StepPitch, -89.0f, 89.0f);
+					ProtoNose.Roll = 0.0f;
+					if (Controller != nullptr)
+					{
+						Controller->SetControlRotation(ProtoNose);
+					}
+				}
+				else if (bSteerLatch)
 				{
 					// [2026-11-03 T-103] Latch turns widen under trap slow too.
 					const float MaxTurn = UDragonMovementComponent::YawRateForAirspeed(
@@ -3217,6 +3526,15 @@ void ADragonCharacter::UpdatePrototypeFlight(float DeltaSeconds)
 				}
 				else
 				{
+					// [2026-11-03 T-062] A/D in the momentum band: bank
+					// (above) yaws the controller so camera and nose
+					// agree, and the nose follows below. The precision
+					// band keeps A/D as strafe thrust (integrator
+					// PendingInput), so no branch is needed there.
+					if (Controller != nullptr && FMath::Abs(LastMoveAxis.X) > 0.1f && bMomentumBand)
+					{
+						AddControllerYawInput(DerivedYawRate * DeltaSeconds);
+					}
 					// [2026-11-03 T-065] Pad left-stick aims the nose in the
 					// momentum band (adopted flight grammar): forward stick
 					// pitches down toward a dive, back stick pitches up to
@@ -3224,8 +3542,7 @@ void ADragonCharacter::UpdatePrototypeFlight(float DeltaSeconds)
 					// Runs before the nose-follow below so the nose picks
 					// up the pitched view the same tick.
 					if (bLastMoveFromGamepad && Controller != nullptr && FMath::Abs(LastMoveAxis.Y) > 0.2f &&
-						UDragonMovementComponent::PrecisionAuthorityWeight(
-							Move->Velocity.Size(), Proto->FlightParams) < 0.5f)
+						bMomentumBand)
 					{
 						AddControllerPitchInput(LastMoveAxis.Y *
 												UDragonMovementComponent::YawRateForAirspeed(
@@ -3234,27 +3551,31 @@ void ADragonCharacter::UpdatePrototypeFlight(float DeltaSeconds)
 					}
 					ProtoNose = GetControlRotation();
 				}
+				LastMouseTurnInput = 0.0f;
+			}
+			else
+			{
+				ProtoBankDegrees = FMath::FInterpConstantTo(ProtoBankDegrees, 0.0f, DeltaSeconds, 180.0f);
 			}
 			Proto->bProtoAutoThrust = bSteerLatch;
-			// [2026-11-03 T-075] Prototype stamina classification (spike
-			// economy: dive posture costs 0, precision/hover band the
-			// hover rate, glide free).
-			// [2026-11-04 T-124] Restamped: hover 8/s -> 3/s (and glide
-			// has been 0/s, not 1/s, since T-062). Zero stamina keeps
-			// glide/brake/land (mercy rule) and
-			// burns HP only on draining actions — mirroring the shipped block.
+			// [2026-11-04 FLIGHT-VIGOR] Signed speed-band stamina (owner
+			// override): hover -3/s, slow flight -1/s, 1200-1800 free,
+			// >=1800 (dive/fast line) +3/s refill — the 10-minute flight
+			// skill loop is dive-to-refill, Surge (10) refunds in ~3.3 s
+			// at full vigor rate. Hover is the Stats definition
+			// (horizontal speed under HoverSpeedThreshold, near-zero);
+			// the old AuthorityW > 0.5 test misclassified everything
+			// under ~1125 cm/s as hover and is removed. Zero stamina
+			// forces a fall / burns HP only while the signed rate is
+			// draining (rate < 0); a fast or cruise line at empty pool
+			// keeps flying and refills.
 			const float Airspeed = Move->Velocity.Size();
-			const float AuthorityW = UDragonMovementComponent::PrecisionAuthorityWeight(
-				Airspeed, Proto->FlightParams);
-			// [2026-11-03 T-064] Dive is the shared posture rule now (one
-			// definition for drain, naming, and tests).
-			const bool bDivePosture = UDragonMovementComponent::IsDivePosture(
-				GetControlRotation().Pitch, Airspeed, Proto->FlightParams);
-			const bool bHoverBand = AuthorityW > 0.5f || Move->Velocity.Size2D() < Stats->HoverSpeedThreshold;
-			const float ProtoDrainRate = bDivePosture ? 0.0f
-													  : (bHoverBand ? Stats->HoverDrainPerSecond : Stats->GlideDrainPerSecond);
-			Stats->DrainForFlight(DeltaSeconds, ProtoDrainRate);
-			if (Stats->Stamina <= 0.0f && Stats->ShouldForceFallAtZeroStamina(ProtoDrainRate))
+			const bool bHovering = Move->Velocity.Size2D() < Stats->HoverSpeedThreshold;
+			const float SignedFlightRate =
+				UDragonStatsComponent::FlightStaminaRatePerSecond(Airspeed, bHovering);
+			Stats->ApplyFlightStaminaRate(DeltaSeconds, SignedFlightRate);
+			if (SignedFlightRate < 0.0f && Stats->Stamina <= 0.0f &&
+				Stats->ShouldForceFallAtZeroStamina(-SignedFlightRate))
 			{
 				Stats->DrainHPForExhaustion(DeltaSeconds);
 				Move->SetMovementMode(MOVE_Falling);
@@ -3263,6 +3584,12 @@ void ADragonCharacter::UpdatePrototypeFlight(float DeltaSeconds)
 			{
 				Proto->CaptureFlightCsvRow(GetWorld()->GetTimeSeconds(), Stats->Stamina);
 			}
+		}
+		else
+		{
+			// [2026-11-04 FLIGHT-VIGOR] No commanded bank off the
+			// prototype wing: anim falls back to its yaw-derivative.
+			ProtoBankDegrees = 0.0f;
 		}
 	}
 }
@@ -3343,11 +3670,12 @@ void ADragonCharacter::HandleRiseEnd()
 	bRiseHeld = false;
 }
 
-void ADragonCharacter::HandleFreeLook(const FInputActionValue& Value)
+void ADragonCharacter::HandleSteerHeld(const FInputActionValue& Value)
 {
-	// [2026-11-03 T-063] RMB hold = free look (nose frozen, camera
-	// roams); double-click toggles latched steer-to-look. Shipped since
-	// T-062 (Scheme C default).
+	// [2026-11-04 FLIGHT-VIGOR] RMB hold = sailing: the mouse steers
+	// the nose rate-limited (see UpdatePrototypeFlight), replacing
+	// free-look's frozen nose. Double-click still toggles latched
+	// steer-to-look. Shipped since T-062 (Scheme C default).
 	(void)Value;
 	if (UDragonMovementComponent::GetFlightScheme() == 0)
 	{
@@ -3357,34 +3685,36 @@ void ADragonCharacter::HandleFreeLook(const FInputActionValue& Value)
 	if (Now - LastRMBReleaseTime < 0.35f)
 	{
 		bSteerLatch = !bSteerLatch;
-		bFreeLook = false;
+		bSteerHeld = false;
+		PendingSteerDegrees = FVector2D::ZeroVector;
 		UE_LOG(LogUnderTheMountain, Log, TEXT("Steer-to-look %s"),
 			   bSteerLatch ? TEXT("LATCHED") : TEXT("released"));
 	}
 	else
 	{
-		bFreeLook = true;
+		bSteerHeld = true;
 	}
 }
 
-void ADragonCharacter::HandleFreeLookEnd()
+void ADragonCharacter::HandleSteerHeldEnd()
 {
-	// [2026-11-03 T-075] Camera returns to the nose on release so the next
-	// tick's nose-follow has nothing to snap.
-	bFreeLook = false;
+	// [2026-11-04 FLIGHT-VIGOR] Release keeps the nose: control
+	// rotation already rides ProtoNose while sailing, so there is
+	// nothing to snap back — the old free-look release snapped the
+	// camera to the frozen nose and is deliberately gone. Queued
+	// mouse demand dies with the hold (next hold starts clean).
+	bSteerHeld = false;
+	PendingSteerDegrees = FVector2D::ZeroVector;
 	if (GetWorld() != nullptr)
 	{
 		LastRMBReleaseTime = GetWorld()->GetTimeSeconds();
-	}
-	if (!bSteerLatch && Controller != nullptr)
-	{
-		Controller->SetControlRotation(ProtoNose);
 	}
 }
 
 void ADragonCharacter::HandleSteerLatch()
 {
-	// [2026-11-03 T-063] Gamepad D-pad Up equivalent of double-click RMB:
+	// [2026-11-04] L3 click (was D-pad Up): the pad equivalent of
+	// double-click RMB steer-to-look:
 	// toggles the latch (a second press releases, like the double-click).
 	// Shipped on the T-062 hybrid; IsPrototypeFlying is true in MOVE_Custom.
 	if (IsPrototypeFlying())
@@ -3796,6 +4126,7 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 	// [2026-11-04 T-102/T-070] Right-face hold threshold + carried
 	// item follow (both latch/timer work, no actor scans).
 	TickRightFaceHold();
+	TickDPadDownHold();
 	TickCarryFollow();
 	// [2026-11-03 T-065] Camera rig follows every tick (walk and flight):
 	// head-anchored pivot, precision-shortened arm, first-person mesh hide.
@@ -3886,6 +4217,19 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 				FireLight->SetIntensity(9000.0f * Flicker);
 			}
 		}
+		// [2026-11-04 feel/spam] FirePose presentation: looping UpperBody
+		// [2026-11-04 feel/spam] layer follows IsFiring edges (start on fire
+		// [2026-11-04 feel/spam] start incl. stamina-out, stop on fire end).
+		if (Combat->IsFiring() && !bFirePosePlaying)
+		{
+			bFirePosePlaying = true;
+			PlayClipFamily(EDragonClipFamily::FirePose);
+		}
+		else if (!Combat->IsFiring() && bFirePosePlaying)
+		{
+			bFirePosePlaying = false;
+			StopClipFamily(EDragonClipFamily::FirePose);
+		}
 		// [2026-10-28 T-015] The component exposes no IsEating(): TickEat
 		// is called every tick and its result is the state (None = no
 		// meal). AteThief is the corpse-consumed signal — hide the
@@ -3952,7 +4296,13 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 		// [2026-11-04 T-125] ABP mode skips the single-node driver (the
 		// graph selects + blends locomotion off LocomotionState); the
 		// guards below keep the shipped driver byte-identical otherwise.
-		if (!bUsingABP && OneShotTimeRemaining > 0.0f)
+		if (!bUsingABP && bFirePosePlaying)
+		{
+			// [2026-11-04 feel/spam] Single-node has no UpperBody layer: the
+			// [2026-11-04 feel/spam] looping fire pose holds the mesh until
+			// [2026-11-04 feel/spam] StopClipFamily forces locomotion re-entry.
+		}
+		else if (!bUsingABP && OneShotTimeRemaining > 0.0f)
 		{
 			OneShotTimeRemaining -= DeltaSeconds;
 			if (OneShotTimeRemaining <= 0.0f)
@@ -3963,6 +4313,11 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 		}
 		else if (!bUsingABP)
 		{
+			// [2026-11-04] bDiving is posture now (IA_Dive deleted):
+			// refresh it from the shared classifier before selecting.
+			bool bAnimBrake = false;
+			bool bAnimHover = false;
+			FlightStateFlags(bDiving, bAnimBrake, bAnimHover);
 			const EDragonAnimState DesiredState =
 				SelectAnimState(bAirborne, bDiving, AnimHS, AnimVelocity.Z);
 			if (DesiredState != CurrentAnimState)
@@ -4007,25 +4362,36 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 					Mesh->Stop();
 				}
 			}
-			Mesh->SetPlayRate(
-				UDragonAnimInstance::ComputeFlapPlayRate(CurrentAnimState, AnimHS, AnimVelocity.Z));
+			// [2026-11-04 feel/spam] Walk strides scale with ground speed in
+			// [2026-11-04 feel/spam] both drivers (ABP binds WalkPlayRate).
+			Mesh->SetPlayRate(CurrentAnimState == EDragonAnimState::Walk
+								  ? UDragonAnimInstance::ComputeWalkPlayRate(AnimHS)
+								  : UDragonAnimInstance::ComputeFlapPlayRate(CurrentAnimState, AnimHS,
+																			 AnimVelocity.Z));
 		}
 		// [2026-11-01 T-068] Visual body tilt: pitch with the flight path,
 		// [2026-11-01 T-068] bank into turns. Mesh-only (base yaw -90 from the
 		// [2026-11-01 T-068] constructor); the capsule and movement never tilt,
 		// [2026-11-01 T-068] so collision truth is untouched. Smoothed so a
 		// [2026-11-01 T-068] velocity step can never snap the body.
-		// [2026-11-04 T-125] Skipped in ABP mode: bank/pitch ride the
-		// graph's RotateRootBone off the same C++ vars (build sheet).
-		if (!bUsingABP)
+		// [2026-11-04 feel/spam] Tilt now applies in BOTH modes: in ABP mode
+		// [2026-11-04 feel/spam] the mesh-relative smoothed Roll/Pitch below is
+		// [2026-11-04 feel/spam] the bank (the graph's RotateRootBone Yaw wiring
+		// [2026-11-04 feel/spam] is left as-is, harmless, but not relied on).
 		{
 			const float Yaw = GetActorRotation().Yaw;
 			const float YawRate = DeltaSeconds > 0.0f
 									  ? FMath::FindDeltaAngleDegrees(LastActorYaw, Yaw) / DeltaSeconds
 									  : 0.0f;
 			LastActorYaw = Yaw;
+			// [2026-11-04 FLIGHT-VIGOR] Prototype flight publishes the
+			// commanded bank (turn input first, yaw second); prefer it
+			// over the yaw-derivative bank, which only remains for the
+			// legacy/ground paths.
 			const float TargetBank =
-				bAirborne ? UDragonAnimInstance::ComputeBankDegrees(YawRate, AnimHS) : 0.0f;
+				bAirborne && IsPrototypeFlying()
+					? ProtoBankDegrees
+					: (bAirborne ? UDragonAnimInstance::ComputeBankDegrees(YawRate, AnimHS) : 0.0f);
 			const float TargetPitch =
 				bAirborne ? UDragonAnimInstance::ComputeMeshPitchDegrees(AnimHS, AnimVelocity.Z) : 0.0f;
 			const float Blend = FMath::Clamp(DeltaSeconds * 5.0f, 0.0f, 1.0f);
@@ -4047,21 +4413,18 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 	// hybrid (default) drains in UpdatePrototypeFlight above.
 	const FVector Velocity = GetCharacterMovement()->Velocity;
 	const float HorizontalSpeed = Velocity.Size2D();
-	const bool bHovering = IsFlying() && !bDiving && HorizontalSpeed < Stats->HoverSpeedThreshold;
+	// [2026-11-04] Legacy scheme 0 has no dive input left: drain is
+	// hover/glide only and no input accelerates along the nose here.
+	const bool bHovering = IsFlying() && HorizontalSpeed < Stats->HoverSpeedThreshold;
 	const float FlightDrainRate =
-		bDiving ? 0.0f : (bHovering ? Stats->HoverDrainPerSecond : Stats->GlideDrainPerSecond);
+		bHovering ? Stats->HoverDrainPerSecond : Stats->GlideDrainPerSecond;
 	const TCHAR* FlightModeName = TEXT("Ground");
 	if (IsFlying())
 	{
-		FlightModeName = bDiving ? TEXT("Dive") : (bHovering ? TEXT("Hover") : TEXT("Glide"));
+		FlightModeName = bHovering ? TEXT("Hover") : TEXT("Glide");
 		// [2026-10-28 T-011] DrainForFlight clamps at 0, so calling it at
 		// empty is harmless; the exhaustion branch below owns empty.
 		Stats->DrainForFlight(DeltaSeconds, FlightDrainRate);
-		if (bDiving)
-		{
-			const FVector DiveDir = GetControlRotation().Vector();
-			GetCharacterMovement()->Velocity += DiveDir * DiveAcceleration * DeltaSeconds;
-		}
 		if (Stats->Stamina <= 0.0f && Stats->ShouldForceFallAtZeroStamina(FlightDrainRate))
 		{
 			// [2026-10-28 T-036] Only a stamina-spending action has an

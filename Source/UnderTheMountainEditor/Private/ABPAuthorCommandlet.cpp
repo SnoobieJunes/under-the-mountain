@@ -6,6 +6,9 @@
 #include "ABPAuthorCommandlet.h"
 
 #include "AnimGraphNode_LayeredBoneBlend.h"
+#include "AnimGraphNode_ComponentToLocalSpace.h"
+#include "AnimGraphNode_LocalToComponentSpace.h"
+#include "AnimGraphNode_ModifyBone.h"
 #include "AnimGraphNode_Root.h"
 #include "AnimGraphNode_RotateRootBone.h"
 #include "AnimGraphNode_SequencePlayer.h"
@@ -371,8 +374,9 @@ int32 UABPAuthorCommandlet::Main(const FString& Params)
 	LogPins(RootNode, TEXT("root"));
 
 	// ---- (1) AnimGraph chain ----
-	// OutputPose <- RotateRootBone <- LayeredBoneBlend; base = Slot
-	// FullBody wrapping the state machine, branch 0 = Slot UpperBody.
+	// OutputPose <- RotateRootBone <- slither ModifyBone chain (below) <-
+	// LayeredBoneBlend; base = Slot FullBody wrapping the state machine,
+	// branch 0 = Slot UpperBody.
 	UAnimGraphNode_StateMachine* StateMachineNode =
 		SpawnNode<UAnimGraphNode_StateMachine>(AnimGraph, -600.0f, 0.0f);
 	UAnimGraphNode_Slot* FullBodySlot = SpawnNode<UAnimGraphNode_Slot>(AnimGraph, -300.0f, 0.0f);
@@ -381,6 +385,40 @@ int32 UABPAuthorCommandlet::Main(const FString& Params)
 		SpawnNode<UAnimGraphNode_LayeredBoneBlend>(AnimGraph, 0.0f, 0.0f);
 	UAnimGraphNode_RotateRootBone* RotateNode =
 		SpawnNode<UAnimGraphNode_RotateRootBone>(AnimGraph, 300.0f, 0.0f);
+	// [2026-11-04 feel/spam] Slither/tail-lag chain: additive ModifyBone
+	// [2026-11-04 feel/spam] (TransformBone) nodes, Layered -> pelvis ->
+	// [2026-11-04 feel/spam] tail.01 -> tail.03 -> tail.05 -> Rotate. Each
+	// [2026-11-04 feel/spam] binds one published FRotator from the
+	// [2026-11-04 feel/spam] AnimInstance (component-space yaw, slither +
+	// [2026-11-04 feel/spam] lag pre-combined in C++), so the graph needs
+	// [2026-11-04 feel/spam] no math nodes and the statics stay the rule.
+	struct FSlitherBoneSpec
+	{
+		const TCHAR* BoneName;
+		const TCHAR* RotationVariable;
+	};
+	const FSlitherBoneSpec SlitherBones[] = {
+		{TEXT("pelvis"), TEXT("SpineSlitherRotation")},
+		{TEXT("tail.01"), TEXT("TailBaseSlitherRotation")},
+		{TEXT("tail.03"), TEXT("TailMidSlitherRotation")},
+		{TEXT("tail.05"), TEXT("TailTipSlitherRotation")},
+	};
+	TArray<UAnimGraphNode_ModifyBone*> SlitherNodes;
+	for (int32 Index = 0; Index < UE_ARRAY_COUNT(SlitherBones); ++Index)
+	{
+		UAnimGraphNode_ModifyBone* ModifyNode = SpawnNode<UAnimGraphNode_ModifyBone>(
+			AnimGraph, 80.0f + 60.0f * Index, -220.0f - 60.0f * Index);
+		if (!ModifyNode)
+		{
+			return Fail(TEXT("failed to spawn a slither ModifyBone node"));
+		}
+		ModifyNode->Node.BoneToModify.BoneName = FName(SlitherBones[Index].BoneName);
+		ModifyNode->Node.RotationMode = BMM_Additive;
+		ModifyNode->Node.TranslationMode = BMM_Ignore;
+		ModifyNode->Node.ScaleMode = BMM_Ignore;
+		ModifyNode->Node.RotationSpace = BCS_ComponentSpace;
+		SlitherNodes.Add(ModifyNode);
+	}
 	if (!StateMachineNode || !FullBodySlot || !UpperBodySlot || !LayeredNode || !RotateNode)
 	{
 		return Fail(TEXT("failed to spawn an AnimGraph chain node"));
@@ -441,8 +479,46 @@ int32 UABPAuthorCommandlet::Main(const FString& Params)
 		}
 		bLinked &= Link(AnimGraph, PoseOut(UpperBodySlot), BlendPosePin, TEXT("UpperBodySlot->Layered.BlendPose0"));
 	}
-	bLinked &= Link(AnimGraph, PoseOut(LayeredNode), PoseIn(RotateNode, TEXT("BasePose")),
-					TEXT("Layered->Rotate.BasePose"));
+	// [2026-11-04 T-139 fix] ModifyBone is a component-space skeletal
+	// control: the local-space Layered pose must convert in/out around
+	// the chain or the schema refuses the link (proven by ABP_AUTHOR
+	// link errors). Chain: Layered -> LocalToComponent -> ModifyBones
+	// -> ComponentToLocal -> RotateRootBone.
+	UAnimGraphNode_LocalToComponentSpace* ToComponent =
+		SpawnNode<UAnimGraphNode_LocalToComponentSpace>(AnimGraph, 1330.0f, -120.0f);
+	UAnimGraphNode_ComponentToLocalSpace* ToLocal =
+		SpawnNode<UAnimGraphNode_ComponentToLocalSpace>(AnimGraph, 1330.0f, 260.0f);
+	if (!ToComponent || !ToLocal)
+	{
+		return Fail(TEXT("failed to spawn pose space conversion nodes"));
+	}
+	bLinked &= Link(AnimGraph, PoseOut(LayeredNode), PoseIn(ToComponent, TEXT("Pose")),
+					TEXT("Layered->LocalToComponent"));
+	UEdGraphNode* ChainTail = ToComponent;
+	for (int32 Index = 0; Index < SlitherNodes.Num(); ++Index)
+	{
+		UAnimGraphNode_ModifyBone* ModifyNode = SlitherNodes[Index];
+		bLinked &= Link(AnimGraph, PoseOut(ChainTail), PoseIn(ModifyNode, TEXT("ComponentPose")),
+						TEXT("SlitherChain pose"));
+		if (UEdGraphPin* RotationPin = FindPin(ModifyNode, TEXT("Rotation"), EGPD_Input))
+		{
+			UK2Node_VariableGet* GetRotation = SpawnVariableGet(
+				AnimGraph, FName(SlitherBones[Index].RotationVariable), 80.0f, -360.0f - 60.0f * Index);
+			bLinked &= Link(AnimGraph, VariableOut(GetRotation), RotationPin,
+							TEXT("SlitherRotation->ModifyBone.Rotation"));
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("ABP_AUTHOR slither bone %s: no Rotation pin"),
+				   SlitherBones[Index].BoneName);
+			bLinked = false;
+		}
+		ChainTail = ModifyNode;
+	}
+	bLinked &= Link(AnimGraph, PoseOut(ChainTail), PoseIn(ToLocal, TEXT("ComponentPose")),
+					TEXT("SlitherChain->ComponentToLocal"));
+	bLinked &= Link(AnimGraph, PoseOut(ToLocal), PoseIn(RotateNode, TEXT("BasePose")),
+					TEXT("ComponentToLocal->Rotate.BasePose"));
 	bLinked &= Link(AnimGraph, PoseOut(RotateNode), PoseIn(RootNode, TEXT("Result")),
 					TEXT("Rotate->OutputPose"));
 	if (!bLinked)
@@ -545,10 +621,15 @@ int32 UABPAuthorCommandlet::Main(const FString& Params)
 		SequencePlayer->ReconstructNode();
 		if (UEdGraphPin* PlayRatePin = FindPin(SequencePlayer, TEXT("PlayRate"), EGPD_Input))
 		{
+			// [2026-11-04 feel/spam] Per-state rate variable: Walk strides
+			// [2026-11-04 feel/spam] bind WalkPlayRate, every other state
+			// [2026-11-04 feel/spam] keeps the FlapPlayRate wingbeat curve.
+			const TCHAR* RateVariable =
+				Spec.EnumValue == EDragonAnimState::Walk ? TEXT("WalkPlayRate") : TEXT("FlapPlayRate");
 			UK2Node_VariableGet* GetFlap =
-				SpawnVariableGet(StateGraph, TEXT("FlapPlayRate"), -420.0f, 140.0f);
+				SpawnVariableGet(StateGraph, FName(RateVariable), -420.0f, 140.0f);
 			bPlayRateBound = Link(StateGraph, VariableOut(GetFlap), PlayRatePin,
-								  TEXT("FlapPlayRate->SequencePlayer.PlayRate"));
+								  TEXT("PlayRate->SequencePlayer.PlayRate"));
 		}
 		if (!bPlayRateBound)
 		{

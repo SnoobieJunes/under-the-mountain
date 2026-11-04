@@ -14,6 +14,7 @@
 
 class AUnderTheMountainGameMode;
 class UButton;
+class USettingsWidget;
 class UTextBlock;
 class UWidget;
 
@@ -31,6 +32,12 @@ class UNDERTHEMOUNTAIN_API UGameFlowWidget : public UUserWidget
 	// [2026-11-03 T-072] The game mode that receives the clicks (weak:
 	// a UI widget never keeps its game mode alive).
 	void BindToGameMode(AUnderTheMountainGameMode* Mode);
+
+	// [2026-11-04] The settings screen (created by the game mode one
+	// viewport layer above this one). SETTINGS buttons on title and
+	// pause open it; its OnClosed returns here, and the originating
+	// panel (title or pause) is re-shown with pad focus restored.
+	void BindSettingsWidget(USettingsWidget* Settings);
 
 	// [2026-11-03 T-072] Screen switches; each hides the other two.
 	// ShowEnd renders the run outcome into the end screen.
@@ -75,6 +82,15 @@ class UNDERTHEMOUNTAIN_API UGameFlowWidget : public UUserWidget
 	void HandleQuitToTitle();
 	UFUNCTION()
 	void HandleQuit();
+	// [2026-11-04] SETTINGS entries (title / pause) + the settings
+	// close return (not a button handler: the settings widget's
+	// plain multicast delegate calls it via AddUObject).
+	UFUNCTION()
+	void HandleOpenSettingsFromTitle();
+	UFUNCTION()
+	void HandleOpenSettingsFromPause();
+	void HandleSettingsClosed();
+	void OpenSettings(bool bFromTitle);
 
 	// [2026-11-03 T-072] One canvas, three switchable panels (only one
 	// visible at a time); the end screen's outcome line is rewritten
@@ -89,6 +105,19 @@ class UNDERTHEMOUNTAIN_API UGameFlowWidget : public UUserWidget
 	TObjectPtr<UWidget> EndPanel = nullptr;
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> EndOutcomeText = nullptr;
+	// [2026-11-04] First button of each panel: Show* points pad
+	// keyboard focus here so D-pad navigation starts somewhere sane.
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> TitleFirstButton = nullptr;
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> PauseFirstButton = nullptr;
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> EndFirstButton = nullptr;
+	UPROPERTY(Transient)
+	TObjectPtr<USettingsWidget> BoundSettings = nullptr;
+	// [2026-11-04] Which panel opened settings (its panel + focus are
+	// restored on close). True = title, false = pause.
+	bool bSettingsFromTitle = true;
 
 	void ShowOnly(UWidget* Panel);
 

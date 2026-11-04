@@ -14,6 +14,7 @@
 #include "Core/GameFlowMachine.h"
 #include "Hoard/HoardSubsystem.h"
 #include "UI/GameFlowWidget.h"
+#include "UI/SettingsWidget.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -348,11 +349,11 @@ bool FFlowWidgetRenderTest::RunTest(const FString& Parameters)
 
 	// Every screen button exists with its click bound (the binding is what
 	// carries START RUN -> StartRun; T-030 owns the live click feel-check).
-	const TCHAR* Buttons[10] = {TEXT("FlowStart"), TEXT("FlowStartSandbox"), TEXT("FlowTitleQuit"),
-								TEXT("FlowResume"), TEXT("FlowPauseRestart"), TEXT("FlowPauseTitle"),
-								TEXT("FlowPauseQuit"), TEXT("FlowEndRestart"), TEXT("FlowEndTitle"),
-								TEXT("FlowEndQuit")};
-	for (int32 I = 0; I < 10; ++I)
+	const TCHAR* Buttons[12] = {TEXT("FlowStart"), TEXT("FlowStartSandbox"), TEXT("FlowTitleQuit"),
+								TEXT("FlowTitleSettings"), TEXT("FlowResume"), TEXT("FlowPauseRestart"),
+								TEXT("FlowPauseTitle"), TEXT("FlowPauseQuit"), TEXT("FlowPauseSettings"),
+								TEXT("FlowEndRestart"), TEXT("FlowEndTitle"), TEXT("FlowEndQuit")};
+	for (int32 I = 0; I < 12; ++I)
 	{
 		UButton* Button = Tree->FindWidget<UButton>(FName(Buttons[I]));
 		TestNotNull(Buttons[I], Button);
@@ -393,6 +394,55 @@ bool FFlowWidgetRenderTest::RunTest(const FString& Parameters)
 			 Panels[0]->GetVisibility() == ESlateVisibility::Hidden &&
 				 Panels[1]->GetVisibility() == ESlateVisibility::Hidden &&
 				 Panels[2]->GetVisibility() == ESlateVisibility::Hidden);
+
+	// [2026-11-04] Settings round-trip: SETTINGS from title opens the
+	// settings panel and hides the flow panels; its CLOSE returns to
+	// title. Same from pause returns to pause (origin is remembered).
+	{
+		USettingsWidget* Settings = NewObject<USettingsWidget>();
+		TestNotNull(TEXT("settings widget constructs"), Settings);
+		if (Settings != nullptr)
+		{
+			Settings->Initialize();
+			Settings->NativeOnInitialized();
+			Widget->BindSettingsWidget(Settings);
+			UWidgetTree* SettingsTree = Settings->WidgetTree;
+			UWidget* SettingsPanel =
+				SettingsTree != nullptr ? SettingsTree->FindWidget(FName(TEXT("SettingsPanelBorder"))) : nullptr;
+			TestNotNull(TEXT("settings panel exists"), SettingsPanel);
+			UButton* TitleSettings = Tree->FindWidget<UButton>(FName(TEXT("FlowTitleSettings")));
+			UButton* PauseSettings = Tree->FindWidget<UButton>(FName(TEXT("FlowPauseSettings")));
+			UButton* Close = SettingsTree != nullptr
+								 ? SettingsTree->FindWidget<UButton>(FName(TEXT("SettingsClose")))
+								 : nullptr;
+			TestNotNull(TEXT("settings close button exists"), Close);
+			if (SettingsPanel != nullptr && TitleSettings != nullptr && Close != nullptr)
+			{
+				Widget->ShowTitle();
+				TitleSettings->OnClicked.Broadcast();
+				TestTrue(TEXT("title SETTINGS opens settings"),
+						 SettingsPanel->GetVisibility() == ESlateVisibility::Visible);
+				TestTrue(TEXT("opening settings hides the title panel"),
+						 Panels[0]->GetVisibility() == ESlateVisibility::Hidden);
+				Close->OnClicked.Broadcast();
+				TestTrue(TEXT("settings close hides settings"),
+						 SettingsPanel->GetVisibility() == ESlateVisibility::Hidden);
+				TestTrue(TEXT("settings close returns to title"),
+						 Panels[0]->GetVisibility() == ESlateVisibility::Visible);
+			}
+			if (SettingsPanel != nullptr && PauseSettings != nullptr && Close != nullptr)
+			{
+				Widget->ShowPause();
+				PauseSettings->OnClicked.Broadcast();
+				TestTrue(TEXT("pause SETTINGS opens settings"),
+						 SettingsPanel->GetVisibility() == ESlateVisibility::Visible);
+				Close->OnClicked.Broadcast();
+				TestTrue(TEXT("settings close returns to pause (origin remembered)"),
+						 Panels[1]->GetVisibility() == ESlateVisibility::Visible &&
+							 Panels[0]->GetVisibility() == ESlateVisibility::Hidden);
+			}
+		}
+	}
 	return true;
 }
 

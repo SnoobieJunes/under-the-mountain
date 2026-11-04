@@ -12,6 +12,7 @@
 #include "UnderTheMountainGameMode.generated.h"
 
 class UGameFlowWidget;
+class USettingsWidget;
 
 UCLASS()
 class UNDERTHEMOUNTAIN_API AUnderTheMountainGameMode : public AGameModeBase
@@ -73,6 +74,10 @@ class UNDERTHEMOUNTAIN_API AUnderTheMountainGameMode : public AGameModeBase
 	TObjectPtr<UGameFlowMachine> FlowMachine;
 	UPROPERTY()
 	TObjectPtr<UGameFlowWidget> FlowWidget;
+	// [2026-11-04] Settings screen, created beside the flow widget and
+	// added one viewport layer above it (see BeginPlay).
+	UPROPERTY()
+	TObjectPtr<USettingsWidget> SettingsWidget;
 
 	// [2026-11-03 T-110] Proof capture (automation screenshots): when
 	// utm.proof.shotdelay is positive, the game takes one HighResShot

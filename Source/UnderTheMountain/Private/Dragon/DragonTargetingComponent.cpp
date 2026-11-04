@@ -147,7 +147,7 @@ bool UDragonTargetingComponent::UpdateSelection(const TArray<FDragonTargetCandid
 }
 
 bool UDragonTargetingComponent::CycleTarget(const TArray<FDragonTargetCandidate>& Candidates,
-											const FVector& Origin)
+											const FVector& Origin, int32 Direction)
 {
 	CachedCandidates = Candidates;
 	// [2026-11-04 T-069] Rank the eligible field once, in the same
@@ -177,13 +177,16 @@ bool UDragonTargetingComponent::CycleTarget(const TArray<FDragonTargetCandidate>
 		ClearLock();
 		return false;
 	}
-	int32 Next = Ranked[0];
+	// [2026-11-04] Prev (Direction < 0, D-pad Left) with no lock starts
+	// from the far end of the ranked field, mirroring next-from-none.
+	const int32 Step = Direction < 0 ? -1 : 1;
+	int32 Next = Step > 0 ? Ranked[0] : Ranked[Ranked.Num() - 1];
 	for (int32 Rank = 0; Rank < Ranked.Num(); ++Rank)
 	{
 		if (Candidates[Ranked[Rank]].Id == CurrentId &&
 			Candidates[Ranked[Rank]].Category == CurrentCategory)
 		{
-			Next = Ranked[(Rank + 1) % Ranked.Num()];
+			Next = Ranked[(Rank + Step + Ranked.Num()) % Ranked.Num()];
 			break;
 		}
 	}

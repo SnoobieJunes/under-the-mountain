@@ -24,6 +24,15 @@ ESleepRefusal FSleepRules::CanSleep(bool bAtHoardMound, bool bWaveInProgress, bo
 	return ESleepRefusal::None;
 }
 
+bool FSleepRules::IsNearHoardMound(const FVector& DragonLocation, const FVector& MoundLocation, float RadiusCm)
+{
+	if (RadiusCm <= 0.0f)
+	{
+		return false;
+	}
+	return FVector::Dist2D(DragonLocation, MoundLocation) <= RadiusCm;
+}
+
 int64 FSleepRules::BulkGoldLostForStack(int64 StackGold)
 {
 	// [2026-11-04 T-084] 15% of the stack, rounded to nearest gold.

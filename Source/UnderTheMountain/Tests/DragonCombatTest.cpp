@@ -509,6 +509,14 @@ bool FDragonCombatClawTest::RunTest(const FString& Parameters)
 				  Combat->TickClaw(0.2f, Origin, Forward, Brains, Locations, Forwards, bBlocked), 1);
 		TestTrue(TEXT("25 damage one-shots a 20 HP burglar"), Burglar->State() == EThiefState::Dead);
 		TestFalse(TEXT("a clean hit is not a block"), bBlocked);
+		// [2026-11-04 feel/spam] Spam presses inside the cooldown are
+		// [2026-11-04 feel/spam] damage-free and re-arm nothing: the pawn
+		// [2026-11-04 feel/spam] may replay clip/sound, TickClaw stays shut.
+		TestFalse(TEXT("spam press at 10.2s is damage-refused"), Combat->TryClaw(10.2f, Stats));
+		TestFalse(TEXT("spam press at 10.4s is damage-refused"), Combat->TryClaw(10.4f, Stats));
+		TestEqual(TEXT("spam presses spend no stamina"), Stats->Stamina, 96.0f);
+		TestEqual(TEXT("spam presses land no extra claw hit"),
+				  Combat->TickClaw(0.3f, Origin, Forward, Brains, Locations, Forwards, bBlocked), 0);
 	}
 	// Out of range / out of arc whiffs, and the stamina gate.
 	{

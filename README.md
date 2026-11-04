@@ -187,26 +187,29 @@ live (T-016); star-driven gear scaling remains specced in
 Both inputs are first-class (code-built Enhanced Input actions + mapping
 context):
 
-| Action | Keyboard/mouse | Gamepad |
+| Action | Keyboard/mouse | DualSense |
 |---|---|---|
 | Move (S flares at speed, A/D turns at speed) | W A S D | Left stick |
 | Look (aims the nose in flight) | Mouse | Right stick |
-| Takeoff / climb (Ascent; hold to rise in hover) | Space | Bottom face |
-| Landing Assist (air) / Tail Slam (ground) | F | Top face |
-| Brake (S also flares at speed) | Left Shift (hold) | Left trigger (hold) |
-| Surge (momentum band) | W tap | Right trigger |
-| Sink in hover | Left Ctrl (hold) | Right face hold (air) |
+| Takeoff / climb (Ascent; hold to rise in hover) | Space | Cross |
+| Landing Assist (air) / Tail Slam (ground) | F | Triangle |
+| Brake (analog; S also flares at speed) | Left Shift (hold) | L2 (hold, scales with pull) |
+| Surge (momentum band) | W tap | R2 (analog pull) |
+| Sink in hover | Left Ctrl (hold) | Circle hold (air) |
 | Free-look (nose frozen, camera roams) | Right mouse (hold) | — (right stick already looks) |
-| Steer-to-look (latch; any move input cancels) | Double-click right mouse | D-pad Up |
-| Cycle camera (head chase / wide scenic / first-person) | V | R3 (right-stick press) |
-| True-sight (Seeing Stone) | T | Left face (X) |
-| Scent ribbons show/hide | N | D-pad Down |
-| Scale-colour picker | C | Right face tap (no claw target) |
-| Fire breath (hold) | Left mouse (hold) | Right shoulder (hold) |
-| Roar | R | Left shoulder |
-| Eat / pickup-drop (context) | E / P | Right face hold (ground) |
-| Claw | Q | Right face tap (claw target in arc) |
-| Smart lock cycle | Tab | L3 (left-stick press) |
+| Steer-to-look (latch; any move input cancels) | Double-click right mouse | L3 (left-stick click) |
+| Cycle camera (head chase / wide scenic / first-person) | V | R3 (right-stick click) |
+| True-sight (Seeing Stone) | T | D-pad Up |
+| Scent ribbons show/hide | N | D-pad Down tap |
+| Scale-colour picker | C | D-pad Down hold (0.35 s) |
+| Fire breath (hold) | Left mouse (hold) | R1 (hold) |
+| Roar | R | L1 |
+| Wing Buffet | X | L1+R1 chord |
+| Eat / pickup-drop (context) | E / P | Circle hold (ground) |
+| Claw | Q | Square |
+| Smart lock cycle (prev / next) | Tab (next) | D-pad Left (prev) / D-pad Right (next) |
+| Pause | Esc | Options |
+| Help overlay | H | Create |
 
 ## Technical features
 

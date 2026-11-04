@@ -25,7 +25,7 @@ starting tuning values.
 | Decision | Adopted prototype rule | Source |
 |---|---|---|
 | Stamina display/costs | One continuous 0–100 pool, HUD-segmented into five 20-point reserves. Ascent and Surge each require and spend one full 20-point reserve; continuous costs can spend fractions. [2026-11-04 T-124: starting values, since retuned to ten 10-point reserves + hover 3/s — docs/GAMEPLAY.md §2 is normative.] | Owner: "idk whats better" → agent decision: preserves one survival economy while making impulse costs readable. |
-| Fast-flight/skim stamina regen | **None.** Speed never creates stamina. Skimming only gets the physical benefit of ground effect: less induced drag/sink and better speed retention. | Owner questioned the premise; agent rejected WoW-style resource creation for this game's food economy (explained below). |
+| Fast-flight/skim stamina regen | **None.** Speed never creates stamina. Skimming only gets the physical benefit of ground effect: less induced drag/sink and better speed retention. **[2026-11-04 FLIGHT-VIGOR, owner override: SUPERSEDED — fast flight (≥1800 cm/s) now refills +3/s; skimming alone still creates nothing, it only preserves the speed the vigor band pays for. GAMEPLAY.md §2 is normative.]** | Owner questioned the premise; agent rejected WoW-style resource creation for this game's food economy (explained below). |
 | Dive | Dive is nose-down posture, not a powered button. Left Shift becomes Brake. | Owner: "idk whats better UX" → agent decision. |
 | Precision authority | Automatic by airspeed, with Brake as an explicit override into the precision band. Starting bands: precision ≤650 cm/s, blend 650–1600, momentum >1600. | Agent decision under delegation. |
 | Gamepad | Follow the flight-game trigger convention: RT Surge, LT Brake/precision; fire moves to RB. Full starting map below. | Owner: "what do other games do, pick for now" → agent decision. |
@@ -105,6 +105,11 @@ The transferable mechanics are structural, not cosmetic:
   part instead: within roughly a wingspan of a surface, ground effect reduces
   induced drag and sink, so a skim preserves speed and costs fewer future
   impulses — it never adds stamina.
+  **[2026-11-04 FLIGHT-VIGOR, owner override: this rejection is
+  superseded. The shipped economy now adopts the dive/fast-flight
+  refill (+3/s at ≥1800 cm/s) as the continuous-flight skill loop;
+  the skim half of the rejection stands (ground effect alone still
+  creates nothing). GAMEPLAY.md §2 is normative.]**
 - A dependable brake makes very high speed safe enough to use near terrain.
 
 Our design already describes this skill loop. `docs/GAMEPLAY.md:116`
@@ -126,8 +131,10 @@ Controls:
 - Surge input: forward impulse and a temporary higher speed ceiling.
 - Left Shift/LT: hard aerodynamic brake towards controlled glide.
 - Dive is a posture (nose down), not a powered button.
-- RMB free-look decouples camera from nose. Double-click RMB latches
-  steer-to-look; any movement input cancels mouse-steering.
+- RMB hold sails: mouse steers the nose rate-limited; release keeps the
+  nose. Double-click RMB latches steer-to-look; any movement input cancels
+  mouse-steering. **[2026-11-04 FLIGHT-VIGOR: replaces the free-look
+  decoupling below — RMB no longer freezes the nose to roam the camera.]**
 
 Strengths: best open-world sensation, natural speed hierarchy, bank/pitch are
 trivially derived from one velocity vector, and the wide T-049 world gains a
@@ -175,7 +182,9 @@ system works in the world and inside T-066's mountain.
   fully decayed.
 - At low speed, Space-hold can mean rise; at speed, Space remains Ascent. That
   contextual ambiguity must be tested explicitly.
-- RMB free-look remains camera-only. Double-click RMB means "go where I am
+- RMB hold sails (mouse steers the nose, rate-limited; release keeps the
+  nose) **[2026-11-04 FLIGHT-VIGOR — was: free-look remains camera-only]**.
+  Double-click RMB means "go where I am
   looking": re-aim the nose in the high band, latch movement towards the view
   in the low band. Any movement key cancels, per the owner's clarification.
 - Camera arm shortens and pitch decouples in the precision band, allowing the
@@ -228,7 +237,7 @@ flight-path angle, authority band, charges/stamina, and per-run CSV capture.
 | Input | Momentum band | Precision band / ground |
 |---|---|---|
 | Mouse | Aim nose (pitch + turn) | Camera; movement remains camera-relative |
-| RMB hold | Free look without changing nose | Free look |
+| RMB hold | Sail: mouse steers nose, rate-limited (release keeps nose) [2026-11-04 FLIGHT-VIGOR, was free look] | Same sailing steer |
 | Double-click RMB | Latch steer-to-look | Latch move-to-look; WASD cancels |
 | W | Tap = Surge | Hold = move forward |
 | S | Flare / bleed speed | Move backward |
@@ -304,12 +313,19 @@ Adopted mapping:
   10-point segments — docs/GAMEPLAY.md §2 is normative]. Fire, roar, and other continuous costs continue drawing fractions
   from the same pool; Ascent and Surge require and spend a full 20-point
   segment so their cost reads at a glance.
-- Unpowered glide and descent cost nothing.
+- Unpowered glide and descent cost nothing **[2026-11-04 FLIGHT-VIGOR:
+  at cruise-band speeds; slow flight now pays −1/s and hovering −3/s —
+  GAMEPLAY.md §2's signed band table is normative]**.
 - Hover and sustained low-band climb continue to drain; hover remains the
   loiter tax.
 - **No high-speed or skim stamina regeneration.** Ground effect only reduces
   induced drag/sink and preserves speed. Stamina returns by grounded regen,
   eating, and other explicit food/economy rules—not by going fast.
+  **[2026-11-04 FLIGHT-VIGOR, owner override: SUPERSEDED for high speed —
+  ≥1800 cm/s refills +3/s (the dive is the refill verb; ~10 min of
+  continuous flight is the skill loop). Skimming still creates nothing
+  by itself. Zero-stamina force-fall/HP burn applies only while the
+  signed rate drains (< 0).]**
 - At zero stamina, the dragon can still glide, descend, brake, use Landing
   Assist, and land. Only draining actions are blocked or forced out; unpowered
   flight never burns HP by itself.
@@ -340,6 +356,9 @@ the baseline. Record CSV, input counts, and a one-line owner verdict per leg.
    momentum/skim line costs materially fewer impulses than a lazy climb/hover
    line. Stamina must never increase from speed or skimming; the reward is
    preserved speed and reduced sink, paid for by public exposure.
+   **[2026-11-04 FLIGHT-VIGOR, owner override: course criterion updated —
+   stamina now DOES increase at ≥1800 cm/s (+3/s); judge the circuit on
+   whether the dive-to-refill loop, not impulse count alone, carries it.]**
 4. **Dive-bomb and eat:** cruise, dive at a goat, brake into eat range, eat.
    Record overshoots, stop attempts, and landing HP. Pure A is expected to be
    weakest here.

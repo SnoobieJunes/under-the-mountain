@@ -16,6 +16,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Notoriety/NotorietySubsystem.h"
 #include "UI/GameFlowWidget.h"
+#include "UI/SettingsWidget.h"
 #include "Waves/WaveSubsystem.h"
 
 // [2026-11-03 T-072] Headless/scripted runs skip the title screen and
@@ -196,6 +197,20 @@ void AUnderTheMountainGameMode::BeginPlay()
 	{
 		FlowWidget->AddToViewport(100);
 		FlowWidget->BindToGameMode(this);
+	}
+	// [2026-11-04] Settings was built (T-088) but never created: the
+	// mode creates it above the flow widget (101 > 100) and the flow
+	// widget's title/pause SETTINGS buttons open it; Close returns
+	// to the originating panel via the widget pair's own wiring.
+	SettingsWidget = CreateWidget<USettingsWidget>(GetWorld(), USettingsWidget::StaticClass());
+	if (SettingsWidget != nullptr)
+	{
+		SettingsWidget->AddToViewport(101);
+		SettingsWidget->HideSettings();
+		if (FlowWidget != nullptr)
+		{
+			FlowWidget->BindSettingsWidget(SettingsWidget);
+		}
 	}
 
 	// [2026-11-03 T-072] A restart reloads the level with ?autostart=1

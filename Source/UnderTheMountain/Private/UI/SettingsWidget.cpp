@@ -126,6 +126,11 @@ void USettingsWidget::ShowSettings()
 	{
 		Panel->SetVisibility(ESlateVisibility::Visible);
 	}
+	// [2026-11-04] Pad navigation starts on the first row's button.
+	if (FirstButton != nullptr)
+	{
+		FirstButton->SetKeyboardFocus();
+	}
 }
 
 void USettingsWidget::HideSettings()
@@ -236,6 +241,7 @@ void USettingsWidget::NativeOnInitialized()
 	if (UButton* B = MakeSettingsButton(WidgetTree, TEXT("SettingsCycleResolution"), TEXT("CYCLE RESOLUTION"), Slate, 16))
 	{
 		B->OnClicked.AddDynamic(this, &USettingsWidget::HandleCycleResolution);
+		FirstButton = B;
 		Box->AddChild(B);
 	}
 	if (UButton* B = MakeSettingsButton(WidgetTree, TEXT("SettingsToggleFullscreen"), TEXT("TOGGLE FULLSCREEN"), Slate, 16))
@@ -426,4 +432,7 @@ void USettingsWidget::HandleResetDefaults()
 void USettingsWidget::HandleClose()
 {
 	HideSettings();
+	// [2026-11-04] The opener (title/pause via UGameFlowWidget) restores
+	// its panel and pad focus from this broadcast.
+	OnClosed.Broadcast();
 }

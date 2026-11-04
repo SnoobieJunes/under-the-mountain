@@ -106,6 +106,37 @@ float UDragonMovementComponent::YawRateForAirspeed(float Airspeed, const FDragon
 	return Params.DiveYawRateDeg + (Params.PrecisionYawRateDeg - Params.DiveYawRateDeg) * W;
 }
 
+float UDragonMovementComponent::CommandedBankDegrees(float TurnInput)
+{
+	// [2026-11-04 FLIGHT-VIGOR] Full stick/mouse demand banks to the cap;
+	// the negative sign keeps the visual roll the yaw-derivative bank
+	// always produced for a positive (yaw-increasing) turn.
+	return -FMath::Clamp(TurnInput, -1.0f, 1.0f) * MaxBankDegrees;
+}
+
+float UDragonMovementComponent::YawRateForBank(float BankDegrees, float Airspeed,
+											   const FDragonFlightParams& Params)
+{
+	// [2026-11-04 FLIGHT-VIGOR] Yaw is the consequence of bank: full bank
+	// turns at the full airspeed yaw rate, wings-level does not turn.
+	return -BankDegrees / MaxBankDegrees * YawRateForAirspeed(Airspeed, Params);
+}
+
+float UDragonMovementComponent::SteerStepDegrees(float PendingDegrees, float MaxRateDegPerSec,
+												 float DeltaSeconds)
+{
+	// [2026-11-04 FLIGHT-VIGOR] RMB sailing consumes mouse demand at the
+	// airspeed yaw-rate budget per tick; leftover demand stays queued
+	// in the pawn, so a flick keeps turning at the cap instead of
+	// snapping the nose (or being dropped).
+	if (DeltaSeconds <= 0.0f || MaxRateDegPerSec <= 0.0f)
+	{
+		return 0.0f;
+	}
+	const float Budget = MaxRateDegPerSec * DeltaSeconds;
+	return FMath::Clamp(PendingDegrees, -Budget, Budget);
+}
+
 float UDragonMovementComponent::ComputeSteerResponsiveness(float Airspeed, float AuthorityW,
 														   const FDragonFlightParams& Params)
 {
@@ -159,7 +190,18 @@ float UDragonMovementComponent::BrakeStep(float Speed, float DeltaSeconds, const
 	{
 		return FMath::Max(0.0f, Speed);
 	}
-	return FMath::Max(0.0f, Speed - Params.BrakeDecel * DeltaSeconds);
+	return BrakeStep(Speed, DeltaSeconds, Params, 1.0f);
+}
+
+float UDragonMovementComponent::BrakeStep(float Speed, float DeltaSeconds,
+										  const FDragonFlightParams& Params, float Strength)
+{
+	if (DeltaSeconds <= 0.0f)
+	{
+		return FMath::Max(0.0f, Speed);
+	}
+	return FMath::Max(0.0f, Speed - Params.BrakeDecel * FMath::Clamp(Strength, 0.0f, 1.0f) *
+										DeltaSeconds);
 }
 
 float UDragonMovementComponent::LandingSeverity(float Speed, float ImpactAngleDeg,
@@ -246,8 +288,9 @@ void UDragonMovementComponent::PhysCustom(float deltaTime, int32 Iterations)
 
 	// [2026-11-03 T-075] The nose defines the flight path (full pitch) — the
 	// direct fix for root cause 1 (yaw-plane-only move input): aiming up the
-	// chimney now means climbing the chimney. It is pawn state (free-look
-	// freezes it, steer-latch turns it at the yaw limit); non-pawn owners
+	// chimney now means climbing the chimney. It is pawn state
+	// [2026-11-04 FLIGHT-VIGOR] (RMB steer-held sails it, steer-latch
+	// turns it at the yaw limit); non-pawn owners
 	// fall back to control rotation.
 	FRotator NoseRot = CharacterOwner->GetControlRotation();
 	if (const ADragonCharacter* Dragon = Cast<ADragonCharacter>(CharacterOwner))
@@ -279,7 +322,9 @@ void UDragonMovementComponent::PhysCustom(float deltaTime, int32 Iterations)
 	}
 	if (bProtoBraking)
 	{
-		AuthorityW = 1.0f;
+		// [2026-11-04] Analog brake: precision authority scales with
+		// the pull instead of snapping full at any touch of L2.
+		AuthorityW = FMath::Max(AuthorityW, FMath::Clamp(BrakeStrength, 0.0f, 1.0f));
 	}
 	// [2026-11-03 T-075] Landing Assist flies the approach as forced
 	// precision (brake + descent cap below); F toggles, walk/fall clears.
@@ -290,7 +335,7 @@ void UDragonMovementComponent::PhysCustom(float deltaTime, int32 Iterations)
 	NewSpeed = ClampSpeedToCeilings(NewSpeed, NoseRot.Pitch);
 	if (bProtoBraking)
 	{
-		NewSpeed = BrakeStep(NewSpeed, deltaTime, FlightParams);
+		NewSpeed = BrakeStep(NewSpeed, deltaTime, FlightParams, BrakeStrength);
 	}
 
 	// [2026-11-03 T-075] Precision thrust from the pending move input
@@ -430,8 +475,9 @@ void UDragonMovementComponent::ApplySurge()
 	{
 		return;
 	}
-	// [2026-11-03 T-075] Slice 2c: the nose is pawn state (free-look freezes
-	// it, steer-latch turns it at the yaw limit); non-pawn owners fall back
+	// [2026-11-03 T-075] Slice 2c: the nose is pawn state
+	// [2026-11-04 FLIGHT-VIGOR] (RMB steer-held sails it, steer-latch
+	// turns it at the yaw limit); non-pawn owners fall back
 	// to control rotation.
 	FRotator NoseRot = CharacterOwner->GetControlRotation();
 	if (const ADragonCharacter* Dragon = Cast<ADragonCharacter>(CharacterOwner))
@@ -455,8 +501,9 @@ void UDragonMovementComponent::ApplyAscent()
 	{
 		return;
 	}
-	// [2026-11-03 T-075] Slice 2c: the nose is pawn state (free-look freezes
-	// it, steer-latch turns it at the yaw limit); non-pawn owners fall back
+	// [2026-11-03 T-075] Slice 2c: the nose is pawn state
+	// [2026-11-04 FLIGHT-VIGOR] (RMB steer-held sails it, steer-latch
+	// turns it at the yaw limit); non-pawn owners fall back
 	// to control rotation.
 	FRotator NoseRot = CharacterOwner->GetControlRotation();
 	if (const ADragonCharacter* Dragon = Cast<ADragonCharacter>(CharacterOwner))

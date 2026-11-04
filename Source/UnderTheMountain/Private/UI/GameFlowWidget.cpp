@@ -14,6 +14,7 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Core/UnderTheMountainGameMode.h"
+#include "UI/SettingsWidget.h"
 #include "Styling/SlateBrush.h"
 #include "Styling/SlateColor.h"
 
@@ -114,6 +115,50 @@ void UGameFlowWidget::BindToGameMode(AUnderTheMountainGameMode* Mode)
 	BoundMode = Mode;
 }
 
+void UGameFlowWidget::BindSettingsWidget(USettingsWidget* Settings)
+{
+	if (Settings == nullptr || BoundSettings == Settings)
+	{
+		return;
+	}
+	BoundSettings = Settings;
+	Settings->OnClosed.AddUObject(this, &UGameFlowWidget::HandleSettingsClosed);
+}
+
+void UGameFlowWidget::OpenSettings(bool bFromTitle)
+{
+	bSettingsFromTitle = bFromTitle;
+	if (BoundSettings != nullptr)
+	{
+		HideAll();
+		BoundSettings->ShowSettings();
+	}
+}
+
+void UGameFlowWidget::HandleOpenSettingsFromTitle()
+{
+	OpenSettings(true);
+}
+
+void UGameFlowWidget::HandleOpenSettingsFromPause()
+{
+	OpenSettings(false);
+}
+
+void UGameFlowWidget::HandleSettingsClosed()
+{
+	// [2026-11-04] Return to the originating panel; Show* restores
+	// pad focus to that panel's first button.
+	if (bSettingsFromTitle)
+	{
+		ShowTitle();
+	}
+	else
+	{
+		ShowPause();
+	}
+}
+
 void UGameFlowWidget::ShowOnly(UWidget* Panel)
 {
 	for (UWidget* Candidate : {TitlePanel.Get(), PausePanel.Get(), EndPanel.Get()})
@@ -129,11 +174,20 @@ void UGameFlowWidget::ShowOnly(UWidget* Panel)
 void UGameFlowWidget::ShowTitle()
 {
 	ShowOnly(TitlePanel.Get());
+	// [2026-11-04] Pad focus starts on the first button (pad nav).
+	if (TitleFirstButton != nullptr)
+	{
+		TitleFirstButton->SetKeyboardFocus();
+	}
 }
 
 void UGameFlowWidget::ShowPause()
 {
 	ShowOnly(PausePanel.Get());
+	if (PauseFirstButton != nullptr)
+	{
+		PauseFirstButton->SetKeyboardFocus();
+	}
 }
 
 FString UGameFlowWidget::FormatOutcomeVerdict(EGameFlowOutcome Outcome)
@@ -182,6 +236,10 @@ void UGameFlowWidget::ShowEnd(const FGameFlowResult& Result)
 		EndOutcomeText->SetText(FText::FromString(FormatEndScreen(Result)));
 	}
 	ShowOnly(EndPanel.Get());
+	if (EndFirstButton != nullptr)
+	{
+		EndFirstButton->SetKeyboardFocus();
+	}
 }
 
 void UGameFlowWidget::HideAll()
@@ -222,6 +280,7 @@ void UGameFlowWidget::NativeOnInitialized()
 											Ember, 20))
 		{
 			Start->OnClicked.AddDynamic(this, &UGameFlowWidget::HandleStart);
+			TitleFirstButton = Start;
 			TitleBox->AddChild(Start);
 		}
 		// [2026-11-04 T-138] Sandbox sits under Start on the title:
@@ -232,6 +291,15 @@ void UGameFlowWidget::NativeOnInitialized()
 		{
 			Sandbox->OnClicked.AddDynamic(this, &UGameFlowWidget::HandleStartSandbox);
 			TitleBox->AddChild(Sandbox);
+		}
+		// [2026-11-04] SETTINGS on the title (the pause panel has its
+		// own below): opens the game mode's settings widget, whose
+		// Close returns to this panel with focus restored.
+		if (UButton* Settings = MakeFlowButton(WidgetTree, TEXT("FlowTitleSettings"),
+											   TEXT("SETTINGS"), Slate, 20))
+		{
+			Settings->OnClicked.AddDynamic(this, &UGameFlowWidget::HandleOpenSettingsFromTitle);
+			TitleBox->AddChild(Settings);
 		}
 		if (UButton* Quit = MakeFlowButton(WidgetTree, TEXT("FlowTitleQuit"), TEXT("QUIT"),
 										   Slate, 20))
@@ -250,7 +318,15 @@ void UGameFlowWidget::NativeOnInitialized()
 											 Ember, 20))
 		{
 			Resume->OnClicked.AddDynamic(this, &UGameFlowWidget::HandleResume);
+			PauseFirstButton = Resume;
 			PauseBox->AddChild(Resume);
+		}
+		// [2026-11-04] SETTINGS on pause, same return contract as title.
+		if (UButton* Settings = MakeFlowButton(WidgetTree, TEXT("FlowPauseSettings"),
+											   TEXT("SETTINGS"), Slate, 20))
+		{
+			Settings->OnClicked.AddDynamic(this, &UGameFlowWidget::HandleOpenSettingsFromPause);
+			PauseBox->AddChild(Settings);
 		}
 		if (UButton* Restart = MakeFlowButton(WidgetTree, TEXT("FlowPauseRestart"),
 											  TEXT("RESTART RUN"), Slate, 20))
@@ -284,6 +360,7 @@ void UGameFlowWidget::NativeOnInitialized()
 											  TEXT("RESTART RUN"), Ember, 20))
 		{
 			Restart->OnClicked.AddDynamic(this, &UGameFlowWidget::HandleRestart);
+			EndFirstButton = Restart;
 			EndBox->AddChild(Restart);
 		}
 		if (UButton* Title = MakeFlowButton(WidgetTree, TEXT("FlowEndTitle"),

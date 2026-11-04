@@ -55,6 +55,39 @@ void UDragonStatsComponent::ApplyStaminaDelta(float Delta)
 	Stamina = FMath::Clamp(Stamina + Delta, 0.0f, MaxStamina);
 }
 
+float UDragonStatsComponent::FlightStaminaRatePerSecond(float Airspeed, bool bHovering)
+{
+	// [2026-11-04 FLIGHT-VIGOR] Hover outranks speed: a near-stationary
+	// dragon is working to stay up at any (near-zero) airspeed. The -3
+	// mirrors HoverDrainPerSecond's default (pinned equal in tests);
+	// a static cannot read that instance tuning, so the shipped band
+	// values live here as the single flight-band definition.
+	if (bHovering)
+	{
+		return -3.0f;
+	}
+	if (Airspeed < SlowFlightBandMaxSpeed)
+	{
+		return -1.0f;
+	}
+	if (Airspeed < VigorRechargeSpeed)
+	{
+		return 0.0f;
+	}
+	return 3.0f;
+}
+
+void UDragonStatsComponent::ApplyFlightStaminaRate(float DeltaSeconds, float SignedRatePerSecond)
+{
+	// [2026-11-04 FLIGHT-VIGOR] God mode gates signed flight stamina
+	// (drain and refill alike) at this one seam, like DrainForFlight.
+	if (IsInfiniteStaminaEnabled())
+	{
+		return;
+	}
+	ApplyStaminaDelta(SignedRatePerSecond * FMath::Max(0.0f, DeltaSeconds));
+}
+
 void UDragonStatsComponent::DrainForFlight(float DeltaSeconds)
 {
 	// [2026-10-28 T-011] Legacy overload kept verbatim in behaviour

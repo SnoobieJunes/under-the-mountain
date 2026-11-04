@@ -15,6 +15,7 @@
 #include "InputAction.h"
 #include "InputCoreTypes.h"
 #include "InputMappingContext.h"
+#include "Dragon/DragonMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -50,9 +51,9 @@ bool FDragonInputTest::RunTest(const FString& Parameters)
 	// [2026-11-03 T-075] Prototype actions join the GC contract with the rest:
 	// an unreflected action is collectable mid-flight (same T-004 lesson).
 	for (const TCHAR* Member :
-		 {TEXT("MoveAction"), TEXT("LookAction"), TEXT("FlapAction"), TEXT("ToggleFlightAction"),
-		  TEXT("DiveAction"), TEXT("TrueSightAction"), TEXT("TintAction"), TEXT("TintWidget"),
-		  TEXT("FreeLookAction"), TEXT("SinkAction"), TEXT("SteerLatchAction"),
+		 {TEXT("MoveAction"), TEXT("LookAction"), TEXT("FlapAction"), TEXT("LandingAssistAction"),
+		  TEXT("TrueSightAction"), TEXT("TintAction"), TEXT("TintWidget"), TEXT("DPadDownAction"),
+		  TEXT("SteerHeldAction"), TEXT("SinkAction"), TEXT("SteerLatchAction"),
 		  TEXT("ScentToggleAction"),
 		  TEXT("PadLookAction"), TEXT("PadMoveAction"), TEXT("CameraCycleAction"),
 		  TEXT("FireAction"), TEXT("RoarAction"), TEXT("EatAction"), TEXT("WingBuffetAction"),
@@ -68,6 +69,8 @@ bool FDragonInputTest::RunTest(const FString& Parameters)
 		  // the GC contract (same T-004 lesson).
 		  TEXT("ClawAction"), TEXT("PickupAction"), TEXT("SurgeAction"), TEXT("BrakeAction"),
 		  TEXT("RightFaceAction"), TEXT("SmartLockAction"),
+		  // [2026-11-04 T-084] Sleep verb joins the GC contract.
+		  TEXT("SleepAction"),
 		  TEXT("OnboardingWidget"),
 		  TEXT("MappingContext")})
 	{
@@ -131,20 +134,26 @@ bool FDragonScentToggleBindingTest::RunTest(const FString& Parameters)
 		}
 	}
 	TestTrue(TEXT("N key drives the scent toggle"), bHasN);
-	TestTrue(TEXT("gamepad D-pad Down drives the scent toggle"), bHasPadDown);
+	// [2026-11-04] D-pad Down is the IA_DPadDown multiplex now (tap
+	// scent / hold tint), never a direct scent binding.
+	TestFalse(TEXT("gamepad D-pad Down no longer drives scent directly"), bHasPadDown);
 	return true;
 }
 
-// [2026-11-03 T-063] The RMB free-look / D-pad-Up steer-latch wiring,
-// proven headless: the mapping table must bind IA_FreeLook to the right
+// [2026-11-04 FLIGHT-VIGOR] The RMB steer-held (sailing, was free-look) / D-pad-Up steer-latch wiring,
+// proven headless: the mapping table must bind IA_SteerHeld to the right
 // mouse button and IA_SteerLatch to gamepad D-pad Up (the adopted T-063
 // map). This plus the latch/cancel logic proves everything short of Slate
+// [2026-11-03 T-063] The RMB free-look / steer-latch wiring,
+// proven headless: the mapping table must bind IA_FreeLook to the right
+// mouse button and IA_SteerLatch to L3 (moved from D-pad Up 2026-11-04).
+// This plus the latch/cancel logic proves everything short of Slate
 // delivering a live button press, which rides with the next PIE session.
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDragonFreeLookBindingTest,
-								 "UnderTheMountain.Dragon.FreeLookBinding",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDragonSteerHeldBindingTest,
+								 "UnderTheMountain.Dragon.SteerHeldBinding",
 								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FDragonFreeLookBindingTest::RunTest(const FString& Parameters)
+bool FDragonSteerHeldBindingTest::RunTest(const FString& Parameters)
 {
 	ADragonCharacter* Pawn = NewObject<ADragonCharacter>();
 	TestNotNull(TEXT("pawn constructs for binding check"), Pawn);
@@ -155,49 +164,54 @@ bool FDragonFreeLookBindingTest::RunTest(const FString& Parameters)
 	Pawn->EnsureInputActions();
 
 	UClass* PawnClass = ADragonCharacter::StaticClass();
-	const FObjectProperty* FreeLookProp =
-		FindFProperty<FObjectProperty>(PawnClass, TEXT("FreeLookAction"));
+	const FObjectProperty* SteerHeldProp =
+		FindFProperty<FObjectProperty>(PawnClass, TEXT("SteerHeldAction"));
 	const FObjectProperty* LatchProp =
 		FindFProperty<FObjectProperty>(PawnClass, TEXT("SteerLatchAction"));
 	const FObjectProperty* ContextProp =
 		FindFProperty<FObjectProperty>(PawnClass, TEXT("MappingContext"));
-	TestNotNull(TEXT("FreeLookAction member reflects"), FreeLookProp);
+	TestNotNull(TEXT("SteerHeldAction member reflects"), SteerHeldProp);
 	TestNotNull(TEXT("SteerLatchAction member reflects"), LatchProp);
 	TestNotNull(TEXT("MappingContext member reflects"), ContextProp);
-	if (FreeLookProp == nullptr || LatchProp == nullptr || ContextProp == nullptr)
+	if (SteerHeldProp == nullptr || LatchProp == nullptr || ContextProp == nullptr)
 	{
 		return false;
 	}
 
-	const UInputAction* FreeLookAction =
-		Cast<UInputAction>(FreeLookProp->GetObjectPropertyValue_InContainer(Pawn));
+	const UInputAction* SteerHeldAction =
+		Cast<UInputAction>(SteerHeldProp->GetObjectPropertyValue_InContainer(Pawn));
 	const UInputAction* LatchAction =
 		Cast<UInputAction>(LatchProp->GetObjectPropertyValue_InContainer(Pawn));
 	const UInputMappingContext* Context =
 		Cast<UInputMappingContext>(ContextProp->GetObjectPropertyValue_InContainer(Pawn));
-	TestNotNull(TEXT("ensured pawn owns the free-look action"), FreeLookAction);
+	TestNotNull(TEXT("ensured pawn owns the steer-held action"), SteerHeldAction);
 	TestNotNull(TEXT("ensured pawn owns the steer-latch action"), LatchAction);
 	TestNotNull(TEXT("ensured pawn owns the mapping context"), Context);
-	if (FreeLookAction == nullptr || LatchAction == nullptr || Context == nullptr)
+	if (SteerHeldAction == nullptr || LatchAction == nullptr || Context == nullptr)
 	{
 		return false;
 	}
 
 	bool bHasRMB = false;
+	bool bHasL3 = false;
 	bool bHasPadUp = false;
 	for (const FEnhancedActionKeyMapping& Mapping : Context->GetMappings())
 	{
-		if (Mapping.Action == FreeLookAction)
+		if (Mapping.Action == SteerHeldAction)
 		{
 			bHasRMB = bHasRMB || Mapping.Key == EKeys::RightMouseButton;
 		}
 		if (Mapping.Action == LatchAction)
 		{
+			bHasL3 = bHasL3 || Mapping.Key == EKeys::Gamepad_LeftThumbstick;
 			bHasPadUp = bHasPadUp || Mapping.Key == EKeys::Gamepad_DPad_Up;
 		}
 	}
-	TestTrue(TEXT("right mouse button drives free look"), bHasRMB);
-	TestTrue(TEXT("gamepad D-pad Up drives the steer latch"), bHasPadUp);
+	TestTrue(TEXT("right mouse button drives steer-held sailing"), bHasRMB);
+	// [2026-11-04] SteerLatch moved D-pad Up -> L3 click (D-pad Up is
+	// TrueSight now).
+	TestTrue(TEXT("L3 click drives the steer latch"), bHasL3);
+	TestFalse(TEXT("D-pad Up no longer drives the steer latch"), bHasPadUp);
 	return true;
 }
 
@@ -561,13 +575,14 @@ bool FDragonHelpBindingTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-// [2026-11-04 T-102] The adopted pad remap, proven headless from
-// the mapping table (the scent/camera binding pattern): RT Surge /
-// LT Brake / RB Fire live, the old LT-fire / RT-dive / RB-eat
-// bindings are gone, and gamepad right face is bound exactly once
-// (to the multiplex action — no verb is double-bound to it). The
-// tap/hold split itself is pinned through the pawn's pure helpers:
-// tint's old Started timing is now a tap judged at release.
+// [2026-11-04] DualSense pad map v2, proven headless from the
+// mapping table (the scent/camera binding pattern; T-102 kept: R2
+// Surge / L2 Brake / R1 Fire): Square claws directly, Circle is the
+// hold-only interact multiplex, D-pad carries TrueSight (Up),
+// tint/scent (Down tap/hold) and targeting (Left prev / Right
+// next), L3 is the steer latch, and each multiplex key is bound
+// exactly once. Pure helpers pin tap/hold, the L1+R1 chord window,
+// and the analog brake step.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDragonPadRemapBindingTest,
 								 "UnderTheMountain.Dragon.PadRemapBinding",
 								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -595,11 +610,25 @@ bool FDragonPadRemapBindingTest::RunTest(const FString& Parameters)
 	const UInputAction* Roar = ActionOf(TEXT("RoarAction"));
 	const UInputAction* Eat = ActionOf(TEXT("EatAction"));
 	const UInputAction* Tint = ActionOf(TEXT("TintAction"));
-	const UInputAction* Dive = ActionOf(TEXT("DiveAction"));
 	const UInputAction* Claw = ActionOf(TEXT("ClawAction"));
 	const UInputAction* Pickup = ActionOf(TEXT("PickupAction"));
 	const UInputAction* RightFace = ActionOf(TEXT("RightFaceAction"));
 	const UInputAction* SmartLock = ActionOf(TEXT("SmartLockAction"));
+	const UInputAction* TrueSight = ActionOf(TEXT("TrueSightAction"));
+	const UInputAction* SteerLatch = ActionOf(TEXT("SteerLatchAction"));
+	const UInputAction* WingBuffet = ActionOf(TEXT("WingBuffetAction"));
+	const UInputAction* TailSlam = ActionOf(TEXT("TailSlamAction"));
+	const UInputAction* DPadDown = ActionOf(TEXT("DPadDownAction"));
+	const UInputAction* LandingAssist = ActionOf(TEXT("LandingAssistAction"));
+	TestTrue(TEXT("IA_Dive action is deleted (no DiveAction member)"),
+			 ActionOf(TEXT("DiveAction")) == nullptr);
+	TestNotNull(TEXT("ensured pawn owns the D-pad Down multiplex"), DPadDown);
+	TestNotNull(TEXT("ensured pawn owns landing assist (renamed toggle-flight)"), LandingAssist);
+	if (LandingAssist != nullptr)
+	{
+		TestEqual(TEXT("landing assist action is named IA_LandingAssist"),
+				  LandingAssist->GetFName().ToString(), FString(TEXT("IA_LandingAssist")));
+	}
 	const FObjectProperty* ContextProp =
 		FindFProperty<FObjectProperty>(PawnClass, TEXT("MappingContext"));
 	const UInputMappingContext* Context =
@@ -631,33 +660,67 @@ bool FDragonPadRemapBindingTest::RunTest(const FString& Parameters)
 		return Keys != nullptr && Keys->Contains(Key);
 	};
 
-	TestTrue(TEXT("RT surges"), Has(Surge, EKeys::Gamepad_RightTrigger));
-	TestTrue(TEXT("LT brakes"), Has(Brake, EKeys::Gamepad_LeftTrigger));
-	TestTrue(TEXT("RB fires"), Has(Fire, EKeys::Gamepad_RightShoulder));
-	TestTrue(TEXT("LB still roars"), Has(Roar, EKeys::Gamepad_LeftShoulder));
-	TestFalse(TEXT("LT no longer fires"), Has(Fire, EKeys::Gamepad_LeftTrigger));
-	TestFalse(TEXT("RT no longer dives"), Has(Dive, EKeys::Gamepad_RightTrigger));
-	TestFalse(TEXT("RB no longer eats directly"), Has(Eat, EKeys::Gamepad_RightShoulder));
+	// [2026-11-04] DualSense v2 pins (T-102 kept: R2 Surge / L2 Brake /
+	// R1 Fire analog-era assignments, now Axis1D).
+	TestTrue(TEXT("R2 surges"), Has(Surge, EKeys::Gamepad_RightTrigger));
+	TestTrue(TEXT("L2 brakes"), Has(Brake, EKeys::Gamepad_LeftTrigger));
+	TestTrue(TEXT("R1 fires"), Has(Fire, EKeys::Gamepad_RightShoulder));
+	TestTrue(TEXT("L1 roars"), Has(Roar, EKeys::Gamepad_LeftShoulder));
+	TestTrue(TEXT("Square claws directly"), Has(Claw, EKeys::Gamepad_FaceButton_Left));
+	TestFalse(TEXT("Square no longer toggles true-sight"), Has(TrueSight, EKeys::Gamepad_FaceButton_Left));
+	TestTrue(TEXT("D-pad Up toggles true-sight"), Has(TrueSight, EKeys::Gamepad_DPad_Up));
+	TestTrue(TEXT("L3 drives the steer latch"), Has(SteerLatch, EKeys::Gamepad_LeftThumbstick));
+	TestFalse(TEXT("L3 no longer cycles the smart lock"), Has(SmartLock, EKeys::Gamepad_LeftThumbstick));
+	TestTrue(TEXT("D-pad Right cycles smart lock next"), Has(SmartLock, EKeys::Gamepad_DPad_Right));
+	TestTrue(TEXT("D-pad Left cycles smart lock prev"), Has(SmartLock, EKeys::Gamepad_DPad_Left));
+	TestFalse(TEXT("D-pad Left no longer wing-buffets directly"), Has(WingBuffet, EKeys::Gamepad_DPad_Left));
+	TestFalse(TEXT("D-pad Right no longer tail-slams directly"), Has(TailSlam, EKeys::Gamepad_DPad_Right));
+	TestTrue(TEXT("X still wing-buffets on keyboard (pad uses the chord)"), Has(WingBuffet, EKeys::X));
+	TestFalse(TEXT("L2 no longer fires"), Has(Fire, EKeys::Gamepad_LeftTrigger));
+	TestFalse(TEXT("R1 no longer eats directly"), Has(Eat, EKeys::Gamepad_RightShoulder));
 	TestFalse(TEXT("right face no longer directly tints"), Has(Tint, EKeys::Gamepad_FaceButton_Right));
 	TestFalse(TEXT("right face is not claw directly"), Has(Claw, EKeys::Gamepad_FaceButton_Right));
-	TestTrue(TEXT("right face drives the multiplex"), Has(RightFace, EKeys::Gamepad_FaceButton_Right));
+	TestTrue(TEXT("right face drives the interact multiplex"), Has(RightFace, EKeys::Gamepad_FaceButton_Right));
 	TestEqual(TEXT("right face is bound exactly once (no double-bound verbs)"),
 			  PadKeyUsers.FindRef(EKeys::Gamepad_FaceButton_Right), 1);
-	TestTrue(TEXT("L3 cycles the smart lock"), Has(SmartLock, EKeys::Gamepad_LeftThumbstick));
+	TestTrue(TEXT("D-pad Down drives its multiplex"), Has(DPadDown, EKeys::Gamepad_DPad_Down));
+	TestEqual(TEXT("D-pad Down is bound exactly once"),
+			  PadKeyUsers.FindRef(EKeys::Gamepad_DPad_Down), 1);
+	TestTrue(TEXT("Cross flaps"), Has(ActionOf(TEXT("FlapAction")), EKeys::Gamepad_FaceButton_Bottom));
+	TestTrue(TEXT("Triangle is landing assist"), Has(LandingAssist, EKeys::Gamepad_FaceButton_Top));
 	TestTrue(TEXT("Tab cycles the smart lock"), Has(SmartLock, EKeys::Tab));
 	TestTrue(TEXT("Q claws on keyboard"), Has(Claw, EKeys::Q));
 	TestTrue(TEXT("P picks up on keyboard"), Has(Pickup, EKeys::P));
 	TestTrue(TEXT("Left Shift brakes on keyboard"), Has(Brake, EKeys::LeftShift));
-	TestFalse(TEXT("Left Shift no longer dives"), Has(Dive, EKeys::LeftShift));
+	if (Surge != nullptr && Brake != nullptr && SmartLock != nullptr)
+	{
+		TestTrue(TEXT("surge is Axis1D (analog pull)"),
+				 Surge->ValueType == EInputActionValueType::Axis1D);
+		TestTrue(TEXT("brake is Axis1D (analog pull)"),
+				 Brake->ValueType == EInputActionValueType::Axis1D);
+		TestTrue(TEXT("smart lock is Axis1D (prev/next direction)"),
+				 SmartLock->ValueType == EInputActionValueType::Axis1D);
+	}
 
-	// Tap/hold timing + context (the pure half of the multiplex):
-	// under 0.35 s is a tap; a tap claws only with a target in arc.
+	// Tap/hold timing (the pure half of both multiplexes) and the
+	// L1+R1 chord window: under 0.35 s is a tap; a second shoulder
+	// within 0.15 s of the first is a WingBuffet chord.
 	TestTrue(TEXT("a 0.1s press is a tap"), ADragonCharacter::IsRightFaceTap(0.1f));
 	TestTrue(TEXT("a 0.34s press is still a tap"), ADragonCharacter::IsRightFaceTap(0.34f));
 	TestFalse(TEXT("a 0.35s press is a hold"), ADragonCharacter::IsRightFaceTap(0.35f));
 	TestFalse(TEXT("a 1s press is a hold"), ADragonCharacter::IsRightFaceTap(1.0f));
-	TestTrue(TEXT("tap with a claw target claws"), ADragonCharacter::RightFaceTapIsClaw(true));
-	TestFalse(TEXT("tap without a target tints instead"), ADragonCharacter::RightFaceTapIsClaw(false));
+	TestTrue(TEXT("second shoulder at +0.10s chords"), ADragonCharacter::IsWingBuffetChord(10.0f, 10.10f));
+	TestTrue(TEXT("second shoulder at +0.15s chords"), ADragonCharacter::IsWingBuffetChord(10.0f, 10.15f));
+	TestFalse(TEXT("second shoulder at +0.16s is its own verb"), ADragonCharacter::IsWingBuffetChord(10.0f, 10.16f));
+	TestFalse(TEXT("no first shoulder, no chord"), ADragonCharacter::IsWingBuffetChord(-1000.0f, 10.0f));
+	// Analog brake scales with the pull: half pull, half decel.
+	{
+		const FDragonFlightParams Params;
+		const float Full = UDragonMovementComponent::BrakeStep(2400.0f, 0.5f, Params, 1.0f);
+		const float Half = UDragonMovementComponent::BrakeStep(2400.0f, 0.5f, Params, 0.5f);
+		TestEqual(TEXT("full-pull brake step"), Full, 1200.0f);
+		TestEqual(TEXT("half-pull brake step is half the decel"), Half, 1800.0f);
+	}
 	return true;
 }
 
