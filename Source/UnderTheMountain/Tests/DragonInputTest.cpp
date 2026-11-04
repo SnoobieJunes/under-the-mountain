@@ -64,6 +64,10 @@ bool FDragonInputTest::RunTest(const FString& Parameters)
 		  // [2026-11-03 T-073] Help action + onboarding widget join the GC
 		  // contract (same lesson).
 		  TEXT("HelpAction"),
+		  // [2026-11-04 T-069/T-070/T-076/T-102] New verb actions join
+		  // the GC contract (same T-004 lesson).
+		  TEXT("ClawAction"), TEXT("PickupAction"), TEXT("SurgeAction"), TEXT("BrakeAction"),
+		  TEXT("RightFaceAction"), TEXT("SmartLockAction"),
 		  TEXT("OnboardingWidget"),
 		  TEXT("MappingContext")})
 	{
@@ -554,6 +558,106 @@ bool FDragonHelpBindingTest::RunTest(const FString& Parameters)
 	}
 	TestTrue(TEXT("H toggles the help overlay"), bH);
 	TestTrue(TEXT("gamepad Back toggles the help overlay"), bPadBack);
+	return true;
+}
+
+// [2026-11-04 T-102] The adopted pad remap, proven headless from
+// the mapping table (the scent/camera binding pattern): RT Surge /
+// LT Brake / RB Fire live, the old LT-fire / RT-dive / RB-eat
+// bindings are gone, and gamepad right face is bound exactly once
+// (to the multiplex action — no verb is double-bound to it). The
+// tap/hold split itself is pinned through the pawn's pure helpers:
+// tint's old Started timing is now a tap judged at release.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDragonPadRemapBindingTest,
+								 "UnderTheMountain.Dragon.PadRemapBinding",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDragonPadRemapBindingTest::RunTest(const FString& Parameters)
+{
+	ADragonCharacter* Pawn = NewObject<ADragonCharacter>();
+	TestNotNull(TEXT("pawn constructs for remap check"), Pawn);
+	if (Pawn == nullptr)
+	{
+		return false;
+	}
+	Pawn->EnsureInputActions();
+	UClass* PawnClass = ADragonCharacter::StaticClass();
+	auto ActionOf = [Pawn, PawnClass](const TCHAR* Member) -> const UInputAction*
+	{
+		const FObjectProperty* Prop = FindFProperty<FObjectProperty>(PawnClass, Member);
+		return Prop != nullptr
+				   ? Cast<UInputAction>(Prop->GetObjectPropertyValue_InContainer(Pawn))
+				   : nullptr;
+	};
+	const UInputAction* Surge = ActionOf(TEXT("SurgeAction"));
+	const UInputAction* Brake = ActionOf(TEXT("BrakeAction"));
+	const UInputAction* Fire = ActionOf(TEXT("FireAction"));
+	const UInputAction* Roar = ActionOf(TEXT("RoarAction"));
+	const UInputAction* Eat = ActionOf(TEXT("EatAction"));
+	const UInputAction* Tint = ActionOf(TEXT("TintAction"));
+	const UInputAction* Dive = ActionOf(TEXT("DiveAction"));
+	const UInputAction* Claw = ActionOf(TEXT("ClawAction"));
+	const UInputAction* Pickup = ActionOf(TEXT("PickupAction"));
+	const UInputAction* RightFace = ActionOf(TEXT("RightFaceAction"));
+	const UInputAction* SmartLock = ActionOf(TEXT("SmartLockAction"));
+	const FObjectProperty* ContextProp =
+		FindFProperty<FObjectProperty>(PawnClass, TEXT("MappingContext"));
+	const UInputMappingContext* Context =
+		ContextProp != nullptr
+			? Cast<UInputMappingContext>(ContextProp->GetObjectPropertyValue_InContainer(Pawn))
+			: nullptr;
+	TestNotNull(TEXT("ensured pawn owns surge"), Surge);
+	TestNotNull(TEXT("ensured pawn owns brake"), Brake);
+	TestNotNull(TEXT("ensured pawn owns right-face multiplex"), RightFace);
+	TestNotNull(TEXT("ensured pawn owns the mapping context"), Context);
+	if (Surge == nullptr || Brake == nullptr || RightFace == nullptr || Context == nullptr)
+	{
+		return false;
+	}
+
+	TMap<const UInputAction*, TArray<FKey>> KeysByAction;
+	TMap<FKey, int32> PadKeyUsers;
+	for (const FEnhancedActionKeyMapping& Mapping : Context->GetMappings())
+	{
+		KeysByAction.FindOrAdd(Mapping.Action).Add(Mapping.Key);
+		if (Mapping.Key.GetFName().ToString().StartsWith(TEXT("Gamepad")))
+		{
+			PadKeyUsers.FindOrAdd(Mapping.Key)++;
+		}
+	}
+	auto Has = [&KeysByAction](const UInputAction* Action, const FKey& Key)
+	{
+		const TArray<FKey>* Keys = KeysByAction.Find(Action);
+		return Keys != nullptr && Keys->Contains(Key);
+	};
+
+	TestTrue(TEXT("RT surges"), Has(Surge, EKeys::Gamepad_RightTrigger));
+	TestTrue(TEXT("LT brakes"), Has(Brake, EKeys::Gamepad_LeftTrigger));
+	TestTrue(TEXT("RB fires"), Has(Fire, EKeys::Gamepad_RightShoulder));
+	TestTrue(TEXT("LB still roars"), Has(Roar, EKeys::Gamepad_LeftShoulder));
+	TestFalse(TEXT("LT no longer fires"), Has(Fire, EKeys::Gamepad_LeftTrigger));
+	TestFalse(TEXT("RT no longer dives"), Has(Dive, EKeys::Gamepad_RightTrigger));
+	TestFalse(TEXT("RB no longer eats directly"), Has(Eat, EKeys::Gamepad_RightShoulder));
+	TestFalse(TEXT("right face no longer directly tints"), Has(Tint, EKeys::Gamepad_FaceButton_Right));
+	TestFalse(TEXT("right face is not claw directly"), Has(Claw, EKeys::Gamepad_FaceButton_Right));
+	TestTrue(TEXT("right face drives the multiplex"), Has(RightFace, EKeys::Gamepad_FaceButton_Right));
+	TestEqual(TEXT("right face is bound exactly once (no double-bound verbs)"),
+			  PadKeyUsers.FindRef(EKeys::Gamepad_FaceButton_Right), 1);
+	TestTrue(TEXT("L3 cycles the smart lock"), Has(SmartLock, EKeys::Gamepad_LeftThumbstick));
+	TestTrue(TEXT("Tab cycles the smart lock"), Has(SmartLock, EKeys::Tab));
+	TestTrue(TEXT("Q claws on keyboard"), Has(Claw, EKeys::Q));
+	TestTrue(TEXT("P picks up on keyboard"), Has(Pickup, EKeys::P));
+	TestTrue(TEXT("Left Shift brakes on keyboard"), Has(Brake, EKeys::LeftShift));
+	TestFalse(TEXT("Left Shift no longer dives"), Has(Dive, EKeys::LeftShift));
+
+	// Tap/hold timing + context (the pure half of the multiplex):
+	// under 0.35 s is a tap; a tap claws only with a target in arc.
+	TestTrue(TEXT("a 0.1s press is a tap"), ADragonCharacter::IsRightFaceTap(0.1f));
+	TestTrue(TEXT("a 0.34s press is still a tap"), ADragonCharacter::IsRightFaceTap(0.34f));
+	TestFalse(TEXT("a 0.35s press is a hold"), ADragonCharacter::IsRightFaceTap(0.35f));
+	TestFalse(TEXT("a 1s press is a hold"), ADragonCharacter::IsRightFaceTap(1.0f));
+	TestTrue(TEXT("tap with a claw target claws"), ADragonCharacter::RightFaceTapIsClaw(true));
+	TestFalse(TEXT("tap without a target tints instead"), ADragonCharacter::RightFaceTapIsClaw(false));
 	return true;
 }
 

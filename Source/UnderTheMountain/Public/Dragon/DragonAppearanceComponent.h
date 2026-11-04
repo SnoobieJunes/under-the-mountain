@@ -8,9 +8,11 @@
 // below is a public UPROPERTY, so the editor/tests can write it
 // directly, bypassing clamp/apply/save. In production code paths
 // only this component's methods write the tint and the save slot.
-// C++ only ever sets the 'ScaleTint' VectorParameter on M_DragonScales —
-// the crimson membranes are protected inside that material's graph, so
-// no code here needs (or gets) a way to recolour them.
+// [2026-11-04 T-119] C++ only ever sets the 'ScaleTint' VectorParameter,
+// which only the body material M_DragonScalesV6 exposes (body base x
+// ScaleTint); the wing membranes use the separate, untinted
+// M_DragonWingV6 material, which has no such parameter, so setting it
+// on every slot leaves the wings exactly as authored.
 
 #pragma once
 
@@ -54,9 +56,11 @@ class UNDERTHEMOUNTAIN_API UDragonAppearanceComponent : public UActorComponent
   public:
 	UDragonAppearanceComponent();
 
-	// [2026-10-28 T-027] The material contract in one place: M_DragonScales
-	// exposes a VectorParameter with exactly this name. Callers and tests
-	// ask here instead of spelling the string, so a rename is one edit.
+	// [2026-11-04 T-119] The material contract in one place:
+	// M_DragonScalesV6 (the body material) exposes a VectorParameter
+	// with exactly this name; the untinted M_DragonWingV6 wing
+	// material does not. Callers and tests ask here instead of
+	// spelling the string, so a rename is one edit.
 	static FName TintParameterName();
 
 	// [2026-10-28 T-039] Separate save slot for automation tests, so the

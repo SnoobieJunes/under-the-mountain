@@ -452,6 +452,139 @@ bool UDragonCombatComponent::TryTailSlam(float CurrentTimeSeconds, UDragonStatsC
 	return true;
 }
 
+int32 UDragonCombatComponent::ClawTargetPriority(EThiefKind Kind, bool bCarryingLoot)
+{
+	// [2026-11-04 T-076] §5.4's "claw vs carrier is the efficient
+	// kill", ranked: the dwarf carrier is the party's loot pipe,
+	// any carrier is next, a non-carrying dwarf still outranks a
+	// bystander of another kind.
+	if (Kind == EThiefKind::Dwarf && bCarryingLoot)
+	{
+		return 30;
+	}
+	if (bCarryingLoot)
+	{
+		return 20;
+	}
+	if (Kind == EThiefKind::Dwarf)
+	{
+		return 10;
+	}
+	return 0;
+}
+
+bool UDragonCombatComponent::IsFrontalClawBlocked(EThiefKind Kind, int32 GearTier,
+												  const FVector& ThiefForward,
+												  const FVector& ThiefLocation,
+												  const FVector& DragonLocation)
+{
+	if (Kind != EThiefKind::Adventurer || GearTier < 2)
+	{
+		return false;
+	}
+	// [2026-11-04 T-076] Frontal = dragon inside the shield's
+	// 120°: reuse the arc test from the thief's seat (zero offset
+	// counts as frontal — a dragon in the shield's face is blocked).
+	return IsInArc2D(ThiefLocation, ThiefForward, DragonLocation, TNumericLimits<float>::Max(),
+					 60.0f);
+}
+
+bool UDragonCombatComponent::TryClaw(float CurrentTimeSeconds, UDragonStatsComponent* Stats)
+{
+	// [2026-11-04 T-076] TryRoar's gating order, verbatim: null,
+	// cooldown, stamina — a blocked swing is free and moves nothing.
+	if (Stats == nullptr)
+	{
+		UE_LOG(LogUnderTheMountain, Warning, TEXT("DragonCombat TryClaw refused: stats is null"));
+		return false;
+	}
+	const float SinceLast = CurrentTimeSeconds - LastClawTime;
+	if (SinceLast < ClawCooldownSeconds)
+	{
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("DragonCombat TryClaw blocked: %.1fs of claw cooldown remain"),
+			   ClawCooldownSeconds - SinceLast);
+		return false;
+	}
+	if (!Stats->TryConsumeStamina(ClawCost))
+	{
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("DragonCombat TryClaw blocked: stamina %.1f below the %.1f claw cost"),
+			   Stats->Stamina, ClawCost);
+		return false;
+	}
+	LastClawTime = CurrentTimeSeconds;
+	// [2026-11-04 T-076] No T-068 claw montage/notify exists, so
+	// the verb timing IS the damage window (header note): the hit
+	// is judged in TickClaw when this delay elapses.
+	ClawTimeRemaining = ClawDamageDelaySeconds;
+	return true;
+}
+
+int32 UDragonCombatComponent::TickClaw(float Dt, const FVector& Origin, const FVector& Forward,
+									   const TArray<UThiefBrain*>& Brains,
+									   const TArray<FVector>& BrainLocations,
+									   const TArray<FVector>& BrainForwards, bool& bOutBlocked)
+{
+	bOutBlocked = false;
+	if (ClawTimeRemaining <= 0.0f)
+	{
+		return 0;
+	}
+	ClawTimeRemaining -= FMath::Max(0.0f, Dt);
+	if (ClawTimeRemaining > 0.0f)
+	{
+		return 0;
+	}
+	ClawTimeRemaining = 0.0f;
+
+	const int32 Count = FMath::Min(Brains.Num(), FMath::Min(BrainLocations.Num(), BrainForwards.Num()));
+	int32 Best = INDEX_NONE;
+	int32 BestPriority = MIN_int32;
+	float BestDistance = TNumericLimits<float>::Max();
+	for (int32 Index = 0; Index < Count; ++Index)
+	{
+		UThiefBrain* Brain = Brains[Index];
+		if (Brain == nullptr || Brain->State() == EThiefState::Dead)
+		{
+			continue;
+		}
+		if (!IsInArc2D(Origin, Forward, BrainLocations[Index], ClawRange, ClawHalfAngleDeg))
+		{
+			continue;
+		}
+		const int32 Priority = ClawTargetPriority(Brain->Kind(), Brain->IsCarryingLoot());
+		const float Distance = FVector::Dist(Origin, BrainLocations[Index]);
+		if (Priority > BestPriority || (Priority == BestPriority && Distance < BestDistance))
+		{
+			Best = Index;
+			BestPriority = Priority;
+			BestDistance = Distance;
+		}
+	}
+	if (Best == INDEX_NONE)
+	{
+		UE_LOG(LogUnderTheMountain, Log, TEXT("DragonCombat claw whiffed (nobody in the arc)"));
+		return 0;
+	}
+	UThiefBrain* Target = Brains[Best];
+	if (IsFrontalClawBlocked(Target->Kind(), Target->GearTier(), BrainForwards[Best],
+							 BrainLocations[Best], Origin))
+	{
+		// [2026-11-04 T-076] The shield eats the whole swing: no
+		// damage, and no fall-through to the thief behind it.
+		bOutBlocked = true;
+		UE_LOG(LogUnderTheMountain, Log,
+			   TEXT("DragonCombat claw BLOCKED frontally by adventurer shield (gear %d)"),
+			   Target->GearTier());
+		return 0;
+	}
+	Target->ApplyDamage(ClawDamage, BrainLocations[Best]);
+	UE_LOG(LogUnderTheMountain, Log, TEXT("DragonCombat claw hit for %.0f (priority %d)"), ClawDamage,
+		   BestPriority);
+	return 1;
+}
+
 bool UDragonCombatComponent::StartEatThief(UThiefBrain* Brain)
 {
 	// [2026-10-28 T-015] Refusals are named, per the component's

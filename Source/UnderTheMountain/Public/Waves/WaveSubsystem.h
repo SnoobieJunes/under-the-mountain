@@ -15,6 +15,7 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
+#include "Thief/ThiefDataAsset.h"
 #include "WaveSubsystem.generated.h"
 
 class AThiefCharacter;
@@ -64,7 +65,9 @@ class UNDERTHEMOUNTAIN_API UWaveSubsystem : public UWorldSubsystem
   private:
 	void BeginWave(int32 Wave);
 	void SpawnNextGroup();
-	AThiefCharacter* SpawnThief(UThiefDataAsset* Data, const FVector& EntryPoint);
+	// [2026-11-04 T-133] Role is per-spawn (dwarf party members differ).
+	AThiefCharacter* SpawnThief(UThiefDataAsset* Data, const FVector& EntryPoint,
+								EThiefRole Role = EThiefRole::None);
 	bool AreWaveThievesResolved() const;
 
 	EWaveState State = EWaveState::Intermission;

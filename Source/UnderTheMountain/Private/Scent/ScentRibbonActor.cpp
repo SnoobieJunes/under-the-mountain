@@ -11,6 +11,9 @@
 
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
+#include "Camera/PlayerCameraManager.h"
+#include "Engine/World.h"
+#include "GameFramework/PlayerController.h"
 #include "UObject/ConstructorHelpers.h"
 
 AScentRibbonActor::AScentRibbonActor()
@@ -72,6 +75,21 @@ void AScentRibbonActor::SetOpacityFactor(float Opacity)
 	}
 }
 
+void AScentRibbonActor::SetAppearanceFactors(float DensityScale, float SheenScale,
+											 const FLinearColor& SheenColor)
+{
+	// [2026-11-04 T-127] Stored even without a system so tests/inspection
+	// [2026-11-04 T-127] see the intended retune on a headless ribbon.
+	RibbonDensityScale = DensityScale;
+	RibbonSheenScale = SheenScale;
+	if (FX != nullptr && RibbonSystem != nullptr)
+	{
+		FX->SetVariableFloat(FName(TEXT("User.RibbonDensity")), RibbonDensityScale);
+		FX->SetVariableFloat(FName(TEXT("User.RibbonSheen")), RibbonSheenScale);
+		FX->SetVariableLinearColor(FName(TEXT("User.RibbonSheenColor")), SheenColor);
+	}
+}
+
 void AScentRibbonActor::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
@@ -108,4 +126,19 @@ void AScentRibbonActor::Tick(float DeltaSeconds)
 		SweepDirection = 1.0f;
 	}
 	FX->SetWorldLocation(FMath::Lerp(SegmentFrom, SegmentTo, SweepPhase));
+	// [2026-11-04 T-127] End-on fade: recompute effective opacity from the
+	// [2026-11-04 T-127] live camera each tick (cheap: one dot product).
+	// [2026-11-04 T-127] No camera (headless) leaves stored opacity alone.
+	if (UWorld* World = GetWorld())
+	{
+		if (APlayerController* PC = World->GetFirstPlayerController())
+		{
+			if (PC->PlayerCameraManager != nullptr)
+			{
+				const FVector CamLoc = PC->PlayerCameraManager->GetCameraLocation();
+				const float Factor = EndOnOpacityFactor(SegmentTo - SegmentFrom, FX->GetComponentLocation() - CamLoc);
+				FX->SetVariableFloat(FName(TEXT("User.RibbonOpacity")), VisibleOpacity * Factor);
+			}
+		}
+	}
 }

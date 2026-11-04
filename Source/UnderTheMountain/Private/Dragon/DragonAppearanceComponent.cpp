@@ -149,9 +149,11 @@ void UDragonAppearanceComponent::ApplyTintToMesh(USkeletalMeshComponent* Mesh)
 		}
 		if (DynamicMaterials[Slot])
 		{
-			// [2026-10-28 T-027] The only parameter C++ ever sets.
-			// Membrane colour is masked inside M_DragonScales itself,
-			// so setting ScaleTint on every slot is safe.
+			// [2026-11-04 T-119] The only parameter C++ ever sets.
+			// Only M_DragonScalesV6 (body) exposes ScaleTint; the
+			// separate M_DragonWingV6 wing material has no such
+			// parameter, so setting it on every slot is a no-op for
+			// the wings and they stay untinted as authored.
 			DynamicMaterials[Slot]->SetVectorParameterValue(TintParameterName(), ScaleTint);
 		}
 	}

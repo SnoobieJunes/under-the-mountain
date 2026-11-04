@@ -13,6 +13,10 @@
 # [2026-11-03 T-110] while the assets exist (loaded-CDO foot-gun: the pawn holds
 # [2026-11-03 T-110] SK_Dragon_v6 once this lands) — it raises naming the asset
 # [2026-11-03 T-110] so a re-import is a deliberate delete-from-disk + restart.
+# [2026-11-04 T-119] Source re-pointed: T-113 retired the old
+# [2026-11-04 T-119] dragon-wings-v6/ drop; the live owner drop is
+# [2026-11-04 T-119] Content/Meshy/dragon-wings-v6(new)/ (textures under
+# [2026-11-04 T-119] exports/textures/, proven md5-identical in T-113).
 # Run headless: "$UE_EDITOR_CMD" "$UPROJECT" -run=pythonscript
 #   -script="<repo>/Scripts/import_dragon_v6.py" -Unattended -NullRHI -NoSplash
 # Exit 0 + DRAGON_V6_IMPORT_DONE iff mesh + skeleton + 6 textures +
@@ -90,7 +94,7 @@ for src, dst in sorted(renames, key=lambda r: 0 if r[1] and r[1].endswith("Skele
 # --- 2. the six 4K textures (T_DragonV6_* — the auto-imported T_DragonBody_*
 # --- partials were backup-moved before this import, so no collision) ---
 SRC_TEX = (unreal.Paths.project_dir()
-           + "Content/Meshy/Dragon/dragon-wings-v6/exports/textures/")
+           + "Content/Meshy/dragon-wings-v6(new)/exports/textures/")
 
 
 def import_tex(png, name, srgb, normalmap=False):

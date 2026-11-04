@@ -21,6 +21,7 @@
 
 class AScentRibbonActor;
 class ATrueSightMarkerActor;
+class UDragonStatsComponent;
 class UTreasureRegistry;
 class UTreasureSubsystem;
 
@@ -41,10 +42,21 @@ class UNDERTHEMOUNTAIN_API UScentComponent : public UActorComponent
 	int32 MaxActiveRibbons = 64;
 
 	// [2026-10-28 T-013] docs/GAMEPLAY.md section 3 charges magic for
-	// true-sight. Stored as tuning now; the drain itself lands with
-	// the magic pool, so nothing reads this yet beyond data.
+	// true-sight (3/s).
+	// [2026-11-04 T-080] Now actually read: TickComponent drains the
+	// owner's UDragonStatsComponent magic pool at this rate while
+	// true-sight is active and shuts true-sight off the tick the
+	// pool empties; activation is refused at an empty pool. Regen
+	// (Stats' 0.5/s base) is paused while active, so this rate is
+	// the net drain, not a rate regen silently offsets.
 	UPROPERTY(EditAnywhere, Category = "Dragon|Scent")
 	float TrueSightMagicDrainPerSecond = 3.0f;
+
+	// [2026-11-04 T-080] Pure magic gate for activation, headless-
+	// tested: true-sight may start only with a reachable magic pool
+	// holding more than zero. No pool fails closed, like the
+	// no-registry Seeing Stone check beside it.
+	static bool CanTrueSightRunWithMagic(bool bHasMagicPool, float Magic);
 
 	// [2026-10-28 T-013] Requests a true-sight state. Activating is
 	// refused — state stays off, a warning is logged, false returned —
@@ -119,6 +131,13 @@ class UNDERTHEMOUNTAIN_API UScentComponent : public UActorComponent
 	// longer matches this component's current world (PIE restart,
 	// level travel) is dropped and re-resolved, never reused.
 	UTreasureRegistry* ResolveRegistry();
+
+	// [2026-11-04 T-080] The owner's magic pool, or nullptr when the
+	// owner (or its UDragonStatsComponent) is missing. Resolved per
+	// call, never cached: components can be added after BeginPlay
+	// and a cached pool from another owner would drain the wrong
+	// dragon.
+	UDragonStatsComponent* ResolveStats();
 
 	// [2026-10-28 T-013] True while any entry is both the Seeing Stone
 	// and carried — the stolen-stone state that blocks true-sight.

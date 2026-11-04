@@ -29,6 +29,8 @@ UDragonStatsComponent::UDragonStatsComponent()
 	Stamina = MaxStamina;
 	// [2026-10-28 T-011] HP starts full, mirroring stamina.
 	HP = MaxHP;
+	// [2026-11-04 T-080] Magic starts full, mirroring the other pools.
+	Magic = MaxMagic;
 }
 
 bool UDragonStatsComponent::TryConsumeStamina(float Cost)
@@ -79,7 +81,20 @@ void UDragonStatsComponent::ApplyHPDamage(float Damage)
 {
 	// [2026-10-28 T-011] Negative damage is not healing — clamp it away
 	// so a bad caller cannot top the pool up through the damage verb.
+	const float Before = HP;
 	HP = FMath::Clamp(HP - FMath::Max(0.0f, Damage), 0.0f, MaxHP);
+	// [2026-11-04 T-074] Hit/defeat events fire only on an effective
+	// drop, so 0-damage probes and overkill past 0 stay silent past the
+	// first defeat broadcast.
+	if (HP < Before)
+	{
+		OnDragonHit.Broadcast(Before - HP, HP);
+		if (HP <= 0.0f && !bDefeatBroadcast)
+		{
+			bDefeatBroadcast = true;
+			OnDragonDefeated.Broadcast();
+		}
+	}
 }
 
 void UDragonStatsComponent::RestoreHP(float Amount)
@@ -90,6 +105,54 @@ void UDragonStatsComponent::RestoreHP(float Amount)
 	// over-generous food value exactly as ApplyHPDamage does for
 	// lethal overkill.
 	HP = FMath::Clamp(HP + FMath::Max(0.0f, Amount), 0.0f, MaxHP);
+	// [2026-11-04 T-074] Healing above 0 re-arms the defeat broadcast.
+	if (HP > 0.0f)
+	{
+		bDefeatBroadcast = false;
+	}
+}
+
+bool UDragonStatsComponent::TryConsumeMagic(float Cost)
+{
+	// [2026-11-04 T-080] Mirrors TryConsumeStamina: negative costs
+	// and costs above the pool are refused with the pool untouched,
+	// so no caller can spend magic it does not have. God mode does
+	// NOT gate magic: the cvar is stamina-only by its own contract.
+	if (Cost < 0.0f || Magic < Cost)
+	{
+		return false;
+	}
+	Magic -= Cost;
+	return true;
+}
+
+void UDragonStatsComponent::ApplyMagicDelta(float Delta)
+{
+	// [2026-11-04 T-080] The one clamped write every magic verb
+	// funnels through, exactly as ApplyStaminaDelta is for stamina.
+	Magic = FMath::Clamp(Magic + Delta, 0.0f, MaxMagic);
+}
+
+bool UDragonStatsComponent::DrainMagic(float DeltaSeconds, float RatePerSecond)
+{
+	// [2026-11-04 T-080] Negative time/rates are free by construction
+	// (never a regen in disguise), matching DrainForFlight. Returns
+	// HasMagic() after the drain: false is the caller's signal to
+	// shut the draining effect off this tick (true-sight, T-080).
+	ApplyMagicDelta(-FMath::Max(0.0f, RatePerSecond) * FMath::Max(0.0f, DeltaSeconds));
+	return HasMagic();
+}
+
+void UDragonStatsComponent::RegenMagic(float DeltaSeconds)
+{
+	// [2026-11-04 T-080] Time-based base regen (0.5/s, S6 basis in
+	// the header). Callers pause it while a drain is active.
+	ApplyMagicDelta(MagicRegenPerSecond * FMath::Max(0.0f, DeltaSeconds));
+}
+
+bool UDragonStatsComponent::HasMagic() const
+{
+	return Magic > 0.0f;
 }
 
 void UDragonStatsComponent::DrainHPForExhaustion(float DeltaSeconds)

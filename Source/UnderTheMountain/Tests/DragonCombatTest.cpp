@@ -445,4 +445,155 @@ bool FDragonCombatCrushTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// [2026-11-04 T-076] Claw contract: §5.4 values (25 dmg / -4
+// stamina / 450 cm / 110° arc), the verb-timing damage window (no
+// T-068 montage notify exists), burglar one-shot, adventurer
+// frontal block at gear >= 2 (flank lands), and dwarf-carrier
+// priority over a nearer non-carrier.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDragonCombatClawTest, "UnderTheMountain.Dragon.CombatClaw",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDragonCombatClawTest::RunTest(const FString& Parameters)
+{
+	auto MakeKindConfig = [](EThiefKind Kind, int32 GearTier, float MaxHP, int32 Cap)
+	{
+		UThiefDataAsset* Config = NewObject<UThiefDataAsset>();
+		Config->Kind = Kind;
+		Config->GearTier = GearTier;
+		Config->MaxHP = MaxHP;
+		Config->GrabTimeSeconds = 1.5f;
+		Config->CarriedCap = Cap;
+		Config->bDropsAllLootOnRoar = true;
+		return Config;
+	};
+	const FVector Origin = FVector::ZeroVector;
+	const FVector Forward(1.0f, 0.0f, 0.0f);
+	const FVector FacingDragon(-1.0f, 0.0f, 0.0f);
+	const FVector FacingAway(1.0f, 0.0f, 0.0f);
+
+	UDragonCombatComponent* Probe = NewObject<UDragonCombatComponent>();
+	TestEqual(TEXT("spec claw damage is 25"), Probe->ClawDamage, 25.0f);
+	TestEqual(TEXT("spec claw cost is 4"), Probe->ClawCost, 4.0f);
+	TestEqual(TEXT("spec claw range is 450"), Probe->ClawRange, 450.0f);
+	TestEqual(TEXT("spec claw half-angle is 55 (110 arc)"), Probe->ClawHalfAngleDeg, 55.0f);
+	TestTrue(TEXT("dwarf carrier outranks any carrier outranks dwarf outranks other"),
+			 UDragonCombatComponent::ClawTargetPriority(EThiefKind::Dwarf, true) >
+					 UDragonCombatComponent::ClawTargetPriority(EThiefKind::Burglar, true) &&
+				 UDragonCombatComponent::ClawTargetPriority(EThiefKind::Burglar, true) >
+					 UDragonCombatComponent::ClawTargetPriority(EThiefKind::Dwarf, false) &&
+				 UDragonCombatComponent::ClawTargetPriority(EThiefKind::Dwarf, false) >
+					 UDragonCombatComponent::ClawTargetPriority(EThiefKind::Burglar, false));
+
+	// One-shot + window timing + stamina/cooldown gates.
+	{
+		UTreasureRegistry* Registry = MakeSingleTreasureRegistry(FVector(300.0f, 0.0f, 0.0f));
+		UThiefBrain* Burglar =
+			MakeCombatBrain(MakeKindConfig(EThiefKind::Burglar, 1, 20.0f, 1), Registry, TEXT("ClawBurglar"));
+		UDragonStatsComponent* Stats = NewObject<UDragonStatsComponent>();
+		Stats->Stamina = 100.0f;
+		UDragonCombatComponent* Combat = NewObject<UDragonCombatComponent>();
+		const TArray<UThiefBrain*> Brains = {Burglar};
+		const TArray<FVector> Locations = {FVector(300.0f, 0.0f, 0.0f)};
+		const TArray<FVector> Forwards = {FacingAway};
+		bool bBlocked = false;
+
+		TestTrue(TEXT("claw swing starts"), Combat->TryClaw(10.0f, Stats));
+		TestEqual(TEXT("claw costs 4 stamina (100 -> 96)"), Stats->Stamina, 96.0f);
+		TestFalse(TEXT("second swing inside the cooldown is refused"),
+				  Combat->TryClaw(10.1f, Stats));
+		TestEqual(TEXT("a refused swing is free"), Stats->Stamina, 96.0f);
+		TestEqual(TEXT("0.1s in, the damage window has not opened"),
+				  Combat->TickClaw(0.1f, Origin, Forward, Brains, Locations, Forwards, bBlocked), 0);
+		TestFalse(TEXT("burglar unhurt before the window"), Burglar->State() == EThiefState::Dead);
+		TestEqual(TEXT("at the window the claw lands once"),
+				  Combat->TickClaw(0.2f, Origin, Forward, Brains, Locations, Forwards, bBlocked), 1);
+		TestTrue(TEXT("25 damage one-shots a 20 HP burglar"), Burglar->State() == EThiefState::Dead);
+		TestFalse(TEXT("a clean hit is not a block"), bBlocked);
+	}
+	// Out of range / out of arc whiffs, and the stamina gate.
+	{
+		UTreasureRegistry* Registry = MakeSingleTreasureRegistry(FVector(300.0f, 0.0f, 0.0f));
+		UThiefBrain* Far = MakeCombatBrain(MakeKindConfig(EThiefKind::Burglar, 1, 20.0f, 1), Registry,
+										   TEXT("ClawFar"));
+		UDragonStatsComponent* Stats = NewObject<UDragonStatsComponent>();
+		Stats->Stamina = 100.0f;
+		UDragonCombatComponent* Combat = NewObject<UDragonCombatComponent>();
+		bool bBlocked = false;
+		TestTrue(TEXT("whiff swing starts"), Combat->TryClaw(20.0f, Stats));
+		TestEqual(TEXT("target at 500cm is beyond the 450 reach"),
+				  Combat->TickClaw(0.3f, Origin, Forward, {Far}, {FVector(500.0f, 0.0f, 0.0f)},
+								   {FacingAway}, bBlocked),
+				  0);
+		TestEqual(TEXT("whiffed target kept full HP"), Far->HP(), 20.0f);
+
+		UDragonStatsComponent* LowStats = NewObject<UDragonStatsComponent>();
+		LowStats->Stamina = 3.0f;
+		UDragonCombatComponent* LowCombat = NewObject<UDragonCombatComponent>();
+		TestFalse(TEXT("claw refuses below its 4 stamina cost"), LowCombat->TryClaw(20.0f, LowStats));
+		TestEqual(TEXT("refused claw spends nothing"), LowStats->Stamina, 3.0f);
+	}
+	// Adventurer shield: frontal at gear 2 blocks, flank and gear 1 land.
+	{
+		UTreasureRegistry* Registry = MakeSingleTreasureRegistry(FVector(300.0f, 0.0f, 0.0f));
+		const FVector At(300.0f, 0.0f, 0.0f);
+		UThiefBrain* Frontal = MakeCombatBrain(MakeKindConfig(EThiefKind::Adventurer, 2, 80.0f, 2),
+											   Registry, TEXT("ClawAdvFront"));
+		UThiefBrain* Flank = MakeCombatBrain(MakeKindConfig(EThiefKind::Adventurer, 2, 80.0f, 2),
+											 Registry, TEXT("ClawAdvFlank"));
+		UThiefBrain* LowGear = MakeCombatBrain(MakeKindConfig(EThiefKind::Adventurer, 1, 80.0f, 2),
+											   Registry, TEXT("ClawAdvGear1"));
+		UDragonStatsComponent* Stats = NewObject<UDragonStatsComponent>();
+		Stats->Stamina = 100.0f;
+		bool bBlocked = false;
+
+		UDragonCombatComponent* C1 = NewObject<UDragonCombatComponent>();
+		TestTrue(TEXT("frontal swing starts"), C1->TryClaw(30.0f, Stats));
+		TestEqual(TEXT("frontal claw vs gear-2 shield hits nothing"),
+				  C1->TickClaw(0.3f, Origin, Forward, {Frontal}, {At}, {FacingDragon}, bBlocked), 0);
+		TestTrue(TEXT("the block is reported"), bBlocked);
+		TestEqual(TEXT("blocked adventurer kept full HP"), Frontal->HP(), 80.0f);
+
+		UDragonCombatComponent* C2 = NewObject<UDragonCombatComponent>();
+		TestTrue(TEXT("flank swing starts"), C2->TryClaw(30.0f, Stats));
+		TestEqual(TEXT("flank claw lands (tail/flank rule)"),
+				  C2->TickClaw(0.3f, Origin, Forward, {Flank}, {At}, {FacingAway}, bBlocked), 1);
+		TestEqual(TEXT("flanked adventurer takes 25 (80 -> 55)"), Flank->HP(), 55.0f);
+
+		UDragonCombatComponent* C3 = NewObject<UDragonCombatComponent>();
+		TestTrue(TEXT("gear-1 frontal swing starts"), C3->TryClaw(30.0f, Stats));
+		TestEqual(TEXT("gear-1 frontal claw lands (block needs tier >= 2)"),
+				  C3->TickClaw(0.3f, Origin, Forward, {LowGear}, {At}, {FacingDragon}, bBlocked), 1);
+		TestEqual(TEXT("gear-1 adventurer takes 25"), LowGear->HP(), 55.0f);
+	}
+	// Dwarf carrier priority: the carrier (farther) is hit, the
+	// nearer non-carrier is not.
+	{
+		UTreasureRegistry* Registry = NewObject<UTreasureRegistry>();
+		FTreasureEntry Loot;
+		Loot.Id = FName(TEXT("CarrierLoot"));
+		Loot.GoldValue = 100;
+		Loot.Location = FVector(320.0f, 0.0f, 0.0f);
+		Registry->Register(Loot);
+		UThiefBrain* Carrier = MakeCombatBrain(MakeKindConfig(EThiefKind::Dwarf, 1, 45.0f, 3),
+											   Registry, TEXT("ClawDwarfCarrier"));
+		GrabBestTreasureForCombat(Carrier, FVector(320.0f, 0.0f, 0.0f));
+		TestTrue(TEXT("dwarf is carrying before the claw"), Carrier->IsCarryingLoot());
+		UThiefBrain* Nearer = MakeCombatBrain(MakeKindConfig(EThiefKind::Burglar, 1, 20.0f, 1),
+											  Registry, TEXT("ClawNearBurglar"));
+		UDragonStatsComponent* Stats = NewObject<UDragonStatsComponent>();
+		Stats->Stamina = 100.0f;
+		UDragonCombatComponent* Combat = NewObject<UDragonCombatComponent>();
+		bool bBlocked = false;
+		TestTrue(TEXT("priority swing starts"), Combat->TryClaw(40.0f, Stats));
+		TestEqual(TEXT("claw hits exactly one target"),
+				  Combat->TickClaw(0.3f, Origin, Forward, {Nearer, Carrier},
+								   {FVector(200.0f, 0.0f, 0.0f), FVector(320.0f, 0.0f, 0.0f)},
+								   {FacingAway, FacingAway}, bBlocked),
+				  1);
+		TestEqual(TEXT("dwarf carrier took the 25 (45 -> 20)"), Carrier->HP(), 20.0f);
+		TestEqual(TEXT("nearer non-carrier is untouched"), Nearer->HP(), 20.0f);
+	}
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

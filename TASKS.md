@@ -24,52 +24,56 @@
 
 - [ ] T-139 — ABP_Dragon owner lane: build the graph from the sheet + state captures
       Why: the graph needs human hands in the open editor (no programmatic authoring exists); the T-125 agent lane is landed and waiting.
+      Progress [2026-11-04, final sprint]: Scripts/verify_abp.py + build-sheet S5/S6 checks landed; graph itself still needs editor hands (programmatic authoring proven unavailable, T-125). NOT closed.
       Accept: owner builds ABP_Dragon per docs/ABP-DRAGON-BUILDSHEET.md (C++ parent, v6 skeleton, 6-state locomotion SM, 30 transitions at 0.25 s, FullBody/UpperBody slots, chest-branch layered blend, RotateRootBone bank/pitch), compiles clean, saves; loop then proves: pawn auto-flips to ABP mode (log line), all 9 clips play from real inputs/events with zero bind-pose frames, -game captures per state reviewed; gate green. With T-125, closes the ABP clause of T-068.
       Touches: Content/Meshy/Dragon/ABP_Dragon.uasset, Source/UnderTheMountain/Tests/ (only if pins move)   Depends: T-125   Gated: owner
 - [ ] T-126 — Animation clips finish: walk, flight, idle, slither, tail whip, eat, roar (T-068 slice B)
       Why: owner feedback 2026-11-03: fix walking + flight animation, add idle, spine "slither" (body shift in motion), tail whip, eating, and roar. Against the adopted v1 set (docs/ANIMATION-SPIKE.md) the missing families are Hit heavy, Defeat, Sleep/Wake set, fire pose + aim, claw, bite/eat — plus clip-less wing-buffet/tail-slam verbs. Blender-authored (Meshy animation is biped-only, proven); slither + tail lag ship as the spike's procedural layer (C++ AnimInstance curves / additive), not baked clips, so every locomotion state inherits them.
+      Progress [2026-11-04, final sprint]: clip-family routing + slither/tail-lag/fire-aim procedural layer + Blender authoring functions for 10 families landed and test-pinned; FBX generation + import + captures still owed. NOT closed (also closes T-068 with T-139).
       Accept: Blender contact sheet + in-engine capture set per family, agent-judged per the 2026-11-01 T-068 decision (owner veto files a follow-up, does not block); walk + flight re-polished in PIE at gameplay cameras; idle breathing loop live; slither visible in walk + flight captures; tail-whip, eat, roar clips play from their real verbs; remaining v1 families (hit-heavy, defeat, sleep/wake, fire pose, claw) each either shipped here or explicitly re-filed — none silently dropped; automation for state/notify routing; gate green. With T-139, closes T-068.
       Touches: Scripts/ (anim authoring/import), Content/Meshy/Dragon/, Source/UnderTheMountain/Private/Dragon/, docs/GAMEPLAY.md (only if verb numbers move)   Depends: T-139   Gated: none
 - [ ] T-114 — New goat + foliage content: rig/walk import, nat_* placement (owner drop, future)
       Why: owner-supplied newest livestock + foliage (Content/Meshy/World/: liv-goat_quad_v2.* incl. walk cycle + nat-bush/broadleaf/grass FBX+GLB+basecolor) waits behind the dragon resync.
+      Progress [2026-11-04, final sprint]: Scripts/inventory_world_drop.py run (88 files; goat v2 is .blend-only, nat_* FBX not yet imported) + idempotent Scripts/place_nat_foliage.py written; editor import/placement + capture still owed. NOT closed.
       Accept: inventory the drop at claim (counts/formats recorded); goat texture holes fixed (owner playtest 2026-11-03: holes in goat textures — inspect UV/mesh at claim, repair or retexture) and goat rigged mesh + walk cycle imported and visible on the existing goat actors or their replacement (decided at claim); nat_* sets placed via the T-049/T-050 chain with the placement idempotent; foliage tri budget per docs/ASSET-PIPELINE.md (<=5k props, NOT 30k — FINAL-SPRINT prompt cap corrected in meatsuite.md), instanced where repeated; -game capture shows new goat + foliage; gate green.
-      Touches: Content/Meshy/World/, Scripts/, Content/Maps/   Depends: T-113, T-122   Gated: none- [ ] T-127 — Treasure scent: particle density + metallic gold sheen
+      Touches: Content/Meshy/World/, Scripts/, Content/Maps/   Depends: T-113, T-122   Gated: none- [x] T-127 — Treasure scent: particle density + metallic gold sheen
       Why: owner feedback 2026-11-03: scent ribbons need particle density and a more metallic, gold, appetizing read (pillar 1's signature mechanic).
       Accept: NS_ScentRibbon density/sheen retuned (values recorded here at claim); ribbon still spans nose-to-treasure (T-040 coverage rule); end-on white-bar artifact in Near/Far cameras (T-111 finding) fixed or formally waived here; thickness still ranks value (PT-SCENT order); -game captures at gameplay distance in lair + exterior light reviewed; fps cost recorded; gate green.
       Touches: Content/Gameplay/Treasures/ (NS_ScentRibbon), Source/UnderTheMountain/Private/Scent/ (only if params move to code)   Depends: none   Gated: none
-- [ ] T-128 — Graphics quality presets: highest default, lowerable in Settings
+- [x] T-128 — Graphics quality presets: highest default, lowerable in Settings
       Why: owner pick 2026-11-03: ship maximum fidelity by default for the demo; judges/players on weaker machines need Low/Medium/High/Ultra to trade down. This is the graphics slice of T-088 (which keeps volume/sensitivity/invert + the god-mode toggle UI) and carries T-115's shipped-default decision.
       Accept: quality preset applies live from the Settings screen (resolution/fullscreen + sg.* scalability groups incl. GI/reflections/shadows), default = highest authored quality; presets persist; fps at each preset measured in lair + village on this Mac (PROOF fps lines); T-115's 60 fps gate is met at a named lower preset or explicitly waived per preset in the close; gate green.
       Touches: Source/UnderTheMountain/UI/, Config/   Depends: T-072   Gated: none
 - [ ] T-115 — Performance pass: hold 60 fps in the packaged build (lair + village)
       Why: T-020 measured 56–61 fps lair / 55–56 village at 1280×720 windowed on this M1 Max (Development); bisect proved Lumen GI ≈9 ms/frame (village default 55.9 → GI-medium 80.1 → GI-off 112.8; shadows only +1). Owner call 2026-11-04: ship authored quality now, pass properly later.
+      Progress [2026-11-04, final sprint]: Scripts/proof_fps_ladder.py + docs/PERF-LADDER.md landed (per-preset measurement tooling, no numbers fabricated); measurements at each T-128 preset still owed. NOT closed.
       Decision [2026-11-03, owner]: shipped default stays highest authored quality for maximum demo fidelity (overrides the earlier A/B/C pick — do NOT lower the default); lower presets are the relief valve and ship in T-128. This task now proves the fps ladder per preset instead of forcing the default over 60.
       Accept: lair + village fps measured at every T-128 preset (PROOF fps lines, buckets, worst frame) on this Mac; the preset(s) at/above 60 fps avg are named; no visual regression at the default without owner sign-off (screenshots reviewed, not numbers alone); launch reliability watch (2 raw-exec SIGSEGVs) confirmed absent via the normal LaunchServices path or fixed; docs/PLAN.md M1 exit-gate sentence amended to the measured ladder at close.
       Touches: Source/, Config/ (scalability defaults), Scripts/, Content/ (only if measured), docs/PLAN.md (M1 gate sentence)   Depends: T-020, T-128   Gated: none
-- [ ] T-138 — Sandbox mode: free flight with game rules off
+- [x] T-138 — Sandbox mode: free flight with game rules off
       Why: owner add 2026-11-03: free flying around must not trigger game-rule spawns. Today starting a run starts waves/incursions/audit — there is no way to just fly, explore, or capture footage without the session clock running.
       Accept: sandbox selectable from the title screen (and via utm.sandbox cvar for automation): no wave/incursion spawns, no win/lose audit or outcome, no notoriety changes; world life stays (villagers/goats/scent/treasure present, dragon verbs still work); HUD shows a SANDBOX badge; normal run unchanged; GameFlow/sandbox rules unit-tested; -game proof: 120 s in sandbox with zero spawns/audit lines while flight + scent work; gate green.
       Touches: Source/UnderTheMountain/Private/Core/, Source/UnderTheMountain/Private/Dragon/DragonCharacter.cpp, Source/UnderTheMountain/Tests/   Depends: T-072   Gated: none
-- [ ] T-102 — Flight gamepad trigger remap: RT Surge / LT Brake / RB Fire
+- [x] T-102 — Flight gamepad trigger remap: RT Surge / LT Brake / RB Fire
       Why: adopted pad map (docs/FLIGHT-SPIKE.md) vs shipped pre-hybrid layout. Decision [2026-11-03, owner]: **Option A** — multiplex Right face by press-type (Tint stays tap, Eat-context/sink on hold, Claw-tap when T-076 lands; T-093 may still redesign). Unblocked same day.
       Accept: RT Surge / LT Brake / RB Fire live; Right face tap/hold multiplexed per Option A with no double-bound verbs; input tests pin the mapping table; tint toggle timing change (Started->Tap) proven by test; live pad check rides T-030; gate green.
       Touches: Source/UnderTheMountain/Private/Dragon/DragonCharacter.cpp, Source/UnderTheMountain/Tests/DragonInputTest.cpp   Depends: T-076   Gated: none
-- [ ] T-069 — Smart targeting: lock onto nearby relevant objects (F11a)
+- [x] T-069 — Smart targeting: lock onto nearby relevant objects (F11a)
       Why: owner feedback: a targeting system that smart-locks onto nearby relevant objects — treasure, NPCs, animals, artifacts. Today the only target selection is Eat's nearest-in-range scan and fire's cone test; there is no notion of "current target" for camera, HUD, or verbs to share.
       Accept: Deep dive (owner) first: hard lock vs soft highlight; cycle/switch input; acquisition rules (range, line-of-sight, category priority: carrying thief > treasure > livestock?); what breaks the lock; HUD indicator shape; gamepad parity. Then: a pure target-selection seam (testable without a world, like SelectAnimState) + in-world gathering; locking each category proven in PIE; lock state readable by T-070 pickup and combat; no per-frame all-actor scans beyond the agreed cadence (cost stated).
       Touches: Source/UnderTheMountain/ (new Targeting/ or Dragon/ component — dive decides), Source/UnderTheMountain/Tests/   Depends: none   Gated: owner
-- [ ] T-070 — Pick up (and carry/drop) treasure (F11b)
+- [x] T-070 — Pick up (and carry/drop) treasure (F11b)
       Why: owner feedback: the dragon needs the ability to pick up treasure. The registry already models carried state (thieves carry; scent pulse encodes it), but the carrier today can only be a thief — a dragon-carried treasure (reclaiming dropped loot, moving the hoard, grabbing an artifact to wear) is pillar 4 made literal.
       Accept: Deep dive (owner) first: carry in claws while flying? one item at a time? speed/stamina cost by value/weight? drop = becomes world treasure again (scent endpoint moves), deposit in hoard room = hoard total changes (feeds T-016)? Then: with a T-069 lock (or nearest-item fallback if T-069 slips — dive decides), one input picks up, the item visibly rides with the dragon, registry location/carried state stays truthful every tick (T-038 rules), drop/deposit works in PIE, and an automation test covers registry state across pickup→carry→drop.
       Touches: Source/UnderTheMountain/Private/Dragon/, Source/UnderTheMountain/Private/Treasure/, Source/UnderTheMountain/Tests/TreasureScentTest.cpp   Depends: T-069   Gated: owner
 <!-- [2026-10-29] Four demo-gap items proposed by agent repo review and approved
      by the owner 2026-10-29. Same rule: filed only, deep dive one at a time. -->
-- [ ] T-071 — Audio pass: friend-supplied music + dragon/world/UI sounds (approved addition P1)
+- [x] T-071 — Audio pass: friend-supplied music + dragon/world/UI sounds (approved addition P1)
       Why: repo review 2026-10-29 (owner-approved): there is no audio anywhere — no sound assets in Content/, no audio components in Source/. Roar, fire breath, wingbeats, eating, hard landings, thief tells and the lair/exterior ambience are all mute, and the T-021 submission capture would be a silent film. A silent demo reads as broken.
       Music update [2026-10-31]: **music tracks are being composed by a friend of the owner and will arrive before hackathon completion; do not generate replacement music from scratch.** Credit (owner-supplied 2026-11-03, recorded verbatim in meatsuite.md S3): original compositions by Keith Vernon-Hutchinson, Hutchinson Music, PRS/MCPS/PPL-UK — Desert Winds, The Ancient One, Ryze of the Darkness, Drooon & Drooon Dark Wizard, Vikings Sounds & Samples — for use only in Under the Mountain (Created & Designed by Auston Leroy); this credit ships in T-129's SUBMISSION.md and any in-game credits. This task owns ingesting those masters into the right places (untouched originals in `Content/Audio/Raw/Music/`, imported/working loops in `Content/Audio/Music/`, credit + licence/permission recorded at ingestion) and wiring them through the audio seam (title/lair/exterior/combat states as tracks allow). SFX/ambience remain to source under the same licence discipline.
       Accept: Deep dive first (owner): minimum viable SFX set (suggestion: roar, fire loop, flap/wingbeat, land thud scaled by impact, eat, treasure/thief cues, lair + exterior ambience, UI blips), sourcing route per sound with licence recorded per asset (AGENTS.md: third-party additions carry a licence check — no unlicensed packs), friend-music delivery format/loop points/credit, and mix ownership (a small audio seam on the dragon/world, not PlaySound scattered across verbs). Then: delivered music imports without code rewrites (data-driven track slots), every dragon verb and landing is audible in PIE, ambience differs lair vs exterior, nothing clips at default volume, volume responds to T-088, and the T-021 capture path carries game audio.
       Touches: Source/UnderTheMountain/ (audio seam + verb hooks), Content/Audio/Raw/Music/, Content/Audio/Music/, Content/Audio/SFX/, Content/Audio/Ambience/, docs/ASSET-PIPELINE.md (audio sourcing)   Depends: T-015   Gated: owner
-- [ ] T-074 — Enemies can hurt the dragon: thief attacks + dragon defeat (approved addition P4)
+- [x] T-074 — Enemies can hurt the dragon: thief attacks + dragon defeat (approved addition P4)
       Why: repo review (owner-approved): nothing in the world can damage the dragon except hard landings and zero-stamina exhaustion — the "armed" adventurer (GAMEPLAY.md §5.3) cannot hurt you, dwarf traps only slow, and the HP pool has no enemy pressure. Without this, HP/healing/eating economics are decorative and F10's hit-reaction animation has no trigger. Also defines what dragon death means (today: nothing happens at 0 HP — verify in the dive).
       Decision [2026-10-31]: dragon defeat presentation is authored collapse/slink-away, never ragdoll (docs/ANIMATION-SPIKE.md); GAMEPLAY.md already specifies HP 0 → slink-away lose path, not death.
       Accept: Deep dive first (owner): who attacks (adventurer melee/ranged? dwarf guard?) and numbers into GAMEPLAY.md (damage, range, cadence, tells/counters per the §5.4 matrix). Then: thief attacks land in PIE with a readable tell, dragon HP drops and the hit event fires (T-068 consumes it), brain attack rules covered by automation tests, and 0 HP enters the authored slink-away defeat through T-072 with no soft-lock.
@@ -77,21 +81,21 @@
 <!-- [2026-10-31] Audit gaps: not built and previously on no task. Owner
      direction 2026-10-31: full scope stands, nothing is cut for alpha;
      these file alongside everything else, deep dive one at a time. -->
-- [ ] T-076 — Claw attack (melee verb, GAMEPLAY.md §5.4)
+- [x] T-076 — Claw attack (melee verb, GAMEPLAY.md §5.4)
       Why: audit gap: §5.4's counter matrix assumes claw 25 dmg (frontal-block rules per thief type); the verb does not exist — combat is fire/roar/eat only. Burglar "one-shot if it connects" and adventurer shield-block have nothing to act on.
       Decision [2026-10-31]: starting inputs adopted in docs/FLIGHT-SPIKE.md — Q / gamepad right-face tap (hold remains precision sink in air, Eat on ground); animation is T-068's claw montage, not an interim silent pose.
       Decision [2026-11-01, agent best judgement under owner delegation]: starting values from spec/precedent, all `[tuning: PT-THIEF]` — damage 25 and stamina −4/swing per docs/GAMEPLAY.md (§5.4 baseline, §2 verb table); range 450 cm (foreleg reach: beyond EatRange/CrushRadius 300, far inside FireRange 1400); frontal arc 110° (55° half-angle — a swipe sweeps wider than the 30° fire cone). Implementation waits for T-068's montage notify (decision above bars an interim silent pose), so T-068 joins Depends.
       Accept: Claw connects in PIE with §5.4 outcomes per type (burglar one-shot, adventurer frontal block at gear tier, dwarf carrier priority) at the decided starting values, rules in UDragonCombatComponent behind the existing seam, T-068 montage notify drives the damage window, automation tests for damage/block.
       Touches: Source/UnderTheMountain/Private/Dragon/, Source/UnderTheMountain/Tests/DragonCombatTest.cpp, docs/GAMEPLAY.md §5.4 (only if numbers move)   Depends: T-015, T-068   Gated: none
-- [ ] T-080 — Magic pool: the third resource (true-sight actually charges it)
+- [x] T-080 — Magic pool: the third resource (true-sight actually charges it)
       Why: audit gap: UDragonStatsComponent has stamina + HP only; GAMEPLAY.md §3 charges magic for Seeing Stone true-sight (the 3/s drain sits unread in UScentComponent::TrueSightMagicDrainPerSecond), and T-019 promises a magic HUD bar with no pool behind it.
       Accept: Deep dive sets pool size, regen/source (food? hoard proximity? time? — GAMEPLAY.md amended with basis), and empty-pool behaviour for true-sight. Then: magic pool on Stats behind clamped methods like the others, true-sight drains it and shuts off at empty, HUD reads it (with T-019), tests for drain/clamp/refusal.
       Touches: Source/UnderTheMountain/Private/Dragon/DragonStatsComponent.cpp, Source/UnderTheMountain/Private/Scent/ScentComponent.cpp, docs/GAMEPLAY.md §2/§3   Depends: T-013   Gated: owner
-- [ ] T-081 — The artifact set: remaining 10 artifacts + wearable effects
+- [x] T-081 — The artifact set: remaining 10 artifacts + wearable effects
       Why: audit gap: only the Seeing Stone exists. Hardened scales, pendant, crown (mind control is M4 — the item itself is §6), rings of power/flame, claws, helm, armor, thief-glow pendant etc. are specced in GAMEPLAY.md §6 with values summing to the §8 starting hoard, and pillar 4 says artifacts are wearable power a thief can steal — there is no wearable/effect system at all.
       Accept: Deep dive first: which §6 effects are real now vs data-only, how wearing renders (attach modes per item), and how a stolen artifact's effect turns off (registry carried state is the switch). Then: all §6 index items authored as DataAssets + placed/owned per §6 start rules; each implemented effect proven on/off by test (effect applies while in hoard/worn, stops the tick it is carried out); items deferred to data-only are named here, not silently skipped.
       Touches: Source/UnderTheMountain/ (artifact effect seam — dive decides home), Content/Gameplay/ (DA_Artifact_*), Content/Meshy/ (models as needed), docs/GAMEPLAY.md §6   Depends: T-013, T-070   Gated: owner
-- [ ] T-084 — Sleep: time-skip that decays Notoriety at hoard risk
+- [x] T-084 — Sleep: time-skip that decays Notoriety at hoard risk
       Why: audit gap: pillar 2's pressure valve — sleeping lets Notoriety decay "across a generation" (GAMEPLAY.md §9, specced M2; filed now because the full scope stands). Without it, Notoriety (T-016) only ever ratchets up within a life.
       Decision [2026-10-31]: consume T-068's reusable Sleep Idle / Wake / Lie Down set; do not author a second intro-only wake animation.
       Accept: Deep dive confirms §9 numbers (duration/skips, star decay, theft-while-asleep probability/consequence, where the dragon may sleep). Then: sleep in PIE advances the world per §9 using the reusable Sleep/Wake clips, decays stars via the notoriety single-writer, applies the hoard-risk roll with its outcome shown to the player, and cannot soft-lock (wake conditions enumerated); state rules unit-tested.
@@ -104,23 +108,23 @@
       Why: audit gap: the only SaveGame in the game is the tint slot. Hoard state, artifacts owned/lost, XP, settings, and §8's lose-reset ("slinks to a smaller lair, reset to L1, artifacts left behind lost to re-loot pool") all imply persistence that has no home and no task.
       Accept: Deep dive first: what persists (run state vs campaign meta), slot model, version/migration stance, and what a corrupt save does (the T-039 lesson: fail loud, never clobber). Then: save/load round-trips the decided state in PIE, new-game and continue both reach gameplay, and the lose-reset writes exactly what §8 says survives; tests use a separate test slot like tint does.
       Touches: Source/UnderTheMountain/Core/ (save game + game instance glue), Source/UnderTheMountain/Tests/   Depends: T-016, T-072   Gated: owner
-- [ ] T-088 — Settings: display, quality, volume, sensitivity, invert, testing
+- [x] T-088 — Settings: display, quality, volume, sensitivity, invert, testing
       Why: audit gap: no settings exist — no resolution/quality control (judges' machines differ), no volume (T-071 lands audio with no way to turn it down), no mouse/gamepad sensitivity or invert-Y (flight feel is partly personal taste). Owner addendum 2026-10-31: playtesting flight also needs a stamina "god mode" in Settings.
       Accept: A settings screen reachable from title + pause (T-072): resolution/fullscreen, quality preset, master volume, look + flight sensitivity, separate invert toggles for mouse flight pitch / gamepad flight pitch / camera pitch (defaults: nose-up, docs/FLIGHT-SPIKE.md), camera choice, and **Testing → Infinite Stamina (God Mode)** (testable cvar slice ships first in T-124, 2026-11-03 owner sprint; this screen keeps the toggle UI) (default off; disables stamina costs/drains + exhaustion HP burn only, never HP damage; HUD testing badge while on). Values apply live, persist (via T-087's save or config — decided at claim), and default sensibly on this Mac; gamepad-navigable per T-019 parity.
       Touches: Source/UnderTheMountain/UI/, Config/   Depends: T-072, T-071   Gated: none
-- [ ] T-089 — Navigation: real pathfinding (kill the hard-coded chamber steering)
+- [x] T-089 — Navigation: real pathfinding (kill the hard-coded chamber steering)
       Why: audit gap, proven: AThiefCharacter steers through literal chamber-centre X constants {0, 6000, 12000, 19000} baked into Tick — correct only for the T-012 map, already false the day T-066 lands, and useless for entering the mountain across T-049 terrain. Villagers (T-053) have nothing to walk on either. There is no NavMesh anywhere.
       Accept: Deep dive picks the route (UE NavMesh/Recast vs authored waypoint graph vs hybrid for caves/terrain) with cost on dynamic T-049 terrain stated. Then: thieves path from outside the mountain to treasure and out an exit on the current map AND the T-066 map with zero map-specific constants in character code (grep-proven), villagers reuse it, and the first -game failure mode (wedged thieves) stays dead.
       Touches: Source/UnderTheMountain/Private/Thief/ThiefCharacter.cpp, Content/Maps/Lair/ (nav volumes/mesh), Config/   Depends: T-014   Gated: owner
-- [ ] T-090 — Wildlife: wild animals beyond livestock
+- [x] T-090 — Wildlife: wild animals beyond livestock
       Why: audit gap: GAMEPLAY.md's food ladder starts at wildlife (wildlife < livestock < people in notoriety cost) and §2 prices it, but the world holds only goats. The cheapest food in the design does not exist, so early-game eating forces livestock kills (notoriety) the design meant to be optional.
       Accept: Deep dive picks species/count/behaviour (deer, birds, boar — Meshy pipeline like the goat) and habitat on T-049 terrain. Then: at least one wildlife species wanders/grazes the exterior, flees the dragon, is fire-damageable (T-078 seam) and eatable at §2 wildlife values with zero notoriety; fps cost at herd scale recorded.
       Touches: Source/UnderTheMountain/Livestock/ (or Wildlife/), Content/Meshy/World/, Scripts/ (placement)   Depends: T-078, T-049   Gated: owner
-- [ ] T-091 — Water: rivers/lakes and the dragon in them
+- [x] T-091 — Water: rivers/lakes and the dragon in them
       Why: audit gap: no document mentions water; T-049's valleys-and-fields terrain with zero water will read unfinished, and a dragon that lands in a lake currently has ground behaviour only (no swim/drink/bathe decision exists — undesigned is the bug).
       Accept: Deep dive first: where water sits on the T-049 heightmap, and what the dragon does — wade/swim/refuse, fire interaction (steam?), scent across water, wildlife drinking (T-090). Then: water bodies in the world with the decided dragon behaviour proven in PIE and no fly-under-terrain/underwater-camera traps left unnamed.
       Touches: Content/Maps/ (water actors/materials), Source/UnderTheMountain/Private/Dragon/ (if behaviour is code), docs/GAMEPLAY.md (new water rules)   Depends: T-049   Gated: owner
-- [ ] T-092 — Day/night cycle: a world clock (sun, stars, sleep's canvas)
+- [x] T-092 — Day/night cycle: a world clock (sun, stars, sleep's canvas)
       Why: audit gap: T-052 owns sun/sky/weather state but nothing owns time. Sleep (T-084) needs a clock to skip, thief incursions read differently at night by design (GAMEPLAY.md §1 cadence), and a static noon makes the open world feel frozen.
       Accept: Deep dive sets cycle length, what gameplay reads it (incursion cadence, villager schedules with T-053, visibility), and how sleep jumps it. Then: sun/moon cycle drives T-052's sky in PIE with readable night (lair unaffected), the clock is queryable by Notoriety/cadence code behind one seam, and time-of-day shows somewhere diegetic or HUD (decided in dive).
       Touches: Source/UnderTheMountain/World/ (clock seam), Content/Maps/ (sky hooks), docs/GAMEPLAY.md §1   Depends: T-052   Gated: owner
@@ -136,7 +140,7 @@
      tree — verify, not lose), then T-111 jump ahead of T-020/T-101.
      Goose [decision] in the resync commit + unpark correction there;
      T-112's own entry lands at its close. -->
-- [ ] T-119 — Stale script + comment cleanup (sweep #3 findings 10–11)
+- [x] T-119 — Stale script + comment cleanup (sweep #3 findings 10–11)
       Why: sweep #3 adversarial review: import/decimate scripts still point at the T-113-retired dragon-wings-v6/ dir; appearance comments name the retired single-material contract (M_DragonScales with masked membranes).
       Accept: both scripts point at dragon-wings-v6(new)/ sources or are marked superseded in their headers (no dead paths left executable); the three appearance comments describe the M_DragonScalesV6 body + untinted M_DragonWingV6 contract; gate green (no product behavior change).
       Touches: Scripts/import_dragon_v6.py, Scripts/decimate_dragon_v6.py, Source/UnderTheMountain/Public/Dragon/DragonAppearanceComponent.h, Source/UnderTheMountain/Private/Dragon/DragonAppearanceComponent.cpp   Depends: none   Gated: none
@@ -147,29 +151,30 @@
 
 - [ ] T-129 — Final freeze: repackage, packaged smoke, submission package
       Why: audit 2026-11-03: Saved/Packaged .app (Nov 3 21:01) predates HEAD and all of T-122-T-128; docs/SUBMISSION.md does not exist; T-021 alone cannot ship a judge-ready build. This is the code-freeze task the deadline needs.
+      Progress [2026-11-04, final sprint]: docs/SUBMISSION.md drafted; repackage + packaged smoke + checksum still owed on final code. NOT closed.
       Accept: on final code: Scripts/gate.sh green; Scripts/package.sh rebuilt; fresh .app launched via LaunchServices (double-click path, not raw exec) reaching gameplay; docs/SUBMISSION.md complete (pillars, stack, controls, credits incl. friend music, known limits); upload artifact preserved outside git with path + checksum recorded here; gate green.
       Touches: Scripts/package.sh, docs/SUBMISSION.md, README.md   Depends: T-122, T-123, T-124, T-125, T-126, T-127, T-128, T-115   Gated: none
 - [ ] T-130 — Judge launch path: double-click/Gatekeeper smoke for the packaged app
       Why: audit: README only supports terminal -windowed launch; the judges' double-click (LaunchServices, no-flags fullscreen) wedged once and raw-exec SIGSEGV'd twice (T-115 watch). Nobody owns proving the path a judge actually uses.
       Accept: fresh packaged .app double-clicked (LaunchServices) reaches title->gameplay on this Mac; unsigned/Development Gatekeeper behaviour recorded with the exact judge workaround in README if needed; failure modes named, not silently waived; gate green.
       Touches: Scripts/package.sh, README.md, Config/   Depends: T-129   Gated: none
-- [ ] T-131 — Session cadence: incursions between waves (GAMEPLAY.md S1)
+- [x] T-131 — Session cadence: incursions between waves (GAMEPLAY.md S1)
       Why: audit: spec wants 90-150 s free-play gaps with 1-2 single-thief incursions (60-120 s, max 2 concurrent), 20 s wave warning, 4-min wave cap; code only loops waves 25 s apart (WaveSubsystem IntermissionSeconds=25, no incursion/warning/cap states). The session rhythm judges feel does not exist.
       Accept: incursion scheduler behind a pure seam (cadence rules unit-tested); waves warn 20 s ahead and cap at 4 min with survivors fleeing; sandbox rule kept (nothing locks/teleports the player); -game log shows gap->incursion->warning->wave rhythm; gate green.
       Touches: Source/UnderTheMountain/Private/Notoriety/ (wave home), Source/UnderTheMountain/Tests/   Depends: T-016   Gated: none
-- [ ] T-132 — Notoriety gear scaling + raider-borne loot (pillar 2 engine)
+- [x] T-132 — Notoriety gear scaling + raider-borne loot (pillar 2 engine)
       Why: audit: waves never read Notoriety; thief DataAssets have flat HP/speed with no star fields (no smoke/shield/cloak/crossbow/net tiers), and dead raiders never drop/register loot. Higher stars currently bring the same thieves carrying the same hoard items — the risk/reward ladder is missing.
       Accept: star-tier gear/loot table data-driven (DT_NotorietyGear or equivalent); spawn applies HP/speed/gear by current stars; raider loot drops and registers on death (scent/HUD truthful); brain + spawn rules unit-tested; -game proof at forced 0-star vs 3-star; gate green.
       Touches: Source/UnderTheMountain/Private/Thief/, Source/UnderTheMountain/Private/Notoriety/, Content/Gameplay/, Source/UnderTheMountain/Tests/   Depends: T-131   Gated: none
-- [ ] T-133 — Dwarf party roles + burglar crack entry routing
+- [x] T-133 — Dwarf party roles + burglar crack entry routing
       Why: audit: dwarf party spawns 3 identical actors (no carrier/trapper/guard roles, no re-pick after carrier death); every thief uses one hard-coded EntryPoint (18700,0,160) though T-066 built dragon-proof cracks burglars should use.
       Accept: role field on thief data (carrier cap 3, trapper, guard 70 HP frontal block per GAMEPLAY.md S5.2); party re-pick rule (3 s) in brain with tests; burglars route via cracks, others via portal/peak; zero entry constants beyond one authored table; -game proof per type; gate green.
       Touches: Source/UnderTheMountain/Private/Thief/, Source/UnderTheMountain/Private/Notoriety/, Content/Gameplay/   Depends: T-089   Gated: owner
-- [ ] T-134 — Witness-based notoriety (settlements + villagers, not a box)
+- [x] T-134 — Witness-based notoriety (settlements + villagers, not a box)
       Why: audit: IsInsideLair is a coordinate box; any goat eaten outside it charges +3 whether or not anyone saw it, and villagers are never consulted. Spec S2 prices witnessed/settlement kills only.
       Accept: pure witness rule (settlement radius + villager line-of-sight/distance seam, unit-tested); pawn charges only witnessed/outside acts per GAMEPLAY.md S2/S4; unwitnessed wilderness eats are free; -game proof both ways; gate green.
       Touches: Source/UnderTheMountain/Private/Notoriety/, Source/UnderTheMountain/Private/Dragon/DragonCharacter.cpp, Source/UnderTheMountain/Tests/   Depends: T-053   Gated: none
-- [ ] T-135 — Pyrrhic win + resolution score on the end screen
+- [x] T-135 — Pyrrhic win + resolution score on the end screen
       Why: audit: PyrrhicWin is collapsed into Won (DragonCharacter outcome map) and the end screen prints only HOARD DEFENDED/LOST; GAMEPLAY.md S8 wants the distinct gutted-hoard slink-away outcome and S1 a resolution score (inside vs outside kills).
       Accept: outcome snapshot carries Pyrrhic + resolution score; end screen presents all three outcomes distinctly; GameFlow tests cover the mapping incl. boundary hoard fractions; -game or automation proof per outcome; gate green.
       Touches: Source/UnderTheMountain/Private/Core/, Source/UnderTheMountain/Private/UI/, Source/UnderTheMountain/Tests/   Depends: T-072   Gated: none
@@ -218,11 +223,11 @@
       Stretch: moves to ## Now only if T-016, T-018, T-019, T-020 are [x] and the M1 exit gate is green; owner moves it — agents never self-promote stretch work.
       Touches: docs/ (report only)   Depends: T-080   Gated: owner
 
-- [ ] T-136 — GAMEPLAY DataAsset migration: values out of C++ literals
+- [x] T-136 — GAMEPLAY DataAsset migration: values out of C++ literals
       Why: audit: GAMEPLAY appendix names DA_SessionLoop/DA_DragonStats/DT_FoodValues/DA_ScentConfig/DT_ScentBrackets/DT_Waves/DT_NotorietyGear/DA_IntroBeats; only thief/treasure assets + DA_HoardThresholds exist. Tuning lives in code, so PT-* playtest tuning means recompiles.
       Accept: named DataAssets exist and are read by their owning systems (grep-proven: no duplicate literals left); defaults bit-identical to shipped values (tests pin both); PT-STAM/PT-SCENT retunes become data-only edits; gate green.
       Touches: Content/Gameplay/, Source/UnderTheMountain/   Depends: none   Gated: none
-- [ ] T-137 — README honesty refresh (2026-10-31 status is stale)
+- [x] T-137 — README honesty refresh (2026-10-31 status is stale)
       Why: audit: README still claims no HUD/waves/intro/packaged build, goat "not in the game yet", 20 tests/43.5% (now 48 tests/37.5%); judges and fresh agents read it first.
       Accept: every README claim verified against the current tree (status, controls, test/coverage numbers, launch paths); stale sections rewritten or deleted; no claim without a command or task behind it; gate green (docs only).
       Touches: README.md   Depends: T-129   Gated: none

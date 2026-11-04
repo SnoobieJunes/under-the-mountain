@@ -9,6 +9,7 @@
 #include "Dragon/DragonAnimInstance.h"
 
 #include "Dragon/DragonCharacter.h"
+#include "Dragon/DragonCombatComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Pawn.h"
@@ -121,6 +122,99 @@ float UDragonAnimInstance::ComputeMeshPitchDegrees(float HorizontalSpeed, float 
 	return FMath::Clamp(PathDegrees * 0.6f, -30.0f, 30.0f);
 }
 
+FName UDragonAnimInstance::SlotForClipFamily(EDragonClipFamily Family)
+{
+	// [2026-11-04 T-126] Names must match ADragonCharacter::AnimSlot* and the
+	// [2026-11-04 T-126] ABP build sheet exactly; tests pin both sides.
+	switch (Family)
+	{
+	case EDragonClipFamily::FirePose:
+	case EDragonClipFamily::Claw:
+	case EDragonClipFamily::BiteEat:
+		return FName(TEXT("UpperBody"));
+	default:
+		return FName(TEXT("FullBody"));
+	}
+}
+
+bool UDragonAnimInstance::IsLoopingClipFamily(EDragonClipFamily Family)
+{
+	// [2026-11-04 T-126] Only the looping action/ground layers loop; every
+	// [2026-11-04 T-126] other family is a one-shot with a notify point.
+	return Family == EDragonClipFamily::FirePose || Family == EDragonClipFamily::SleepIdle;
+}
+
+float UDragonAnimInstance::NotifyFractionForClipFamily(EDragonClipFamily Family)
+{
+	// [2026-11-04 T-126] Fractions match the key poses in
+	// [2026-11-04 T-126] Scripts/create_dragon_anims.py (damage/consume at
+	// [2026-11-04 T-126] the strike/bite apex, not at clip start).
+	switch (Family)
+	{
+	case EDragonClipFamily::Claw:
+		return 0.45f;
+	case EDragonClipFamily::BiteEat:
+		return 0.60f;
+	case EDragonClipFamily::TailWhip:
+		return 0.50f;
+	case EDragonClipFamily::WingBuffet:
+		return 0.40f;
+	case EDragonClipFamily::HitHeavy:
+		return 0.25f;
+	default:
+		return -1.0f;
+	}
+}
+
+float UDragonAnimInstance::ComputeSlitherAmplitudeDeg(EDragonAnimState State, float HorizontalSpeed)
+{
+	// [2026-11-04 T-126] Ground walk slithers most; flight keeps a smaller
+	// [2026-11-04 T-126] travelling wave; idle/hover/dive hold still.
+	float Cap = 0.0f;
+	switch (State)
+	{
+	case EDragonAnimState::Walk:
+		Cap = 6.0f;
+		break;
+	case EDragonAnimState::Fly:
+	case EDragonAnimState::Glide:
+		Cap = 3.0f;
+		break;
+	default:
+		return 0.0f;
+	}
+	return Cap * FMath::Clamp(HorizontalSpeed / 1200.0f, 0.0f, 1.0f);
+}
+
+float UDragonAnimInstance::ComputeSlitherOffsetDeg(int32 SegmentIndex, float PhaseRadians, float AmplitudeDeg)
+{
+	// [2026-11-04 T-126] 0.6 rad of phase lag per segment: the wave travels
+	// [2026-11-04 T-126] down the spine instead of swaying in unison.
+	const float Lag = 0.6f * static_cast<float>(FMath::Max(SegmentIndex, 0));
+	return AmplitudeDeg * FMath::Sin(PhaseRadians - Lag);
+}
+
+float UDragonAnimInstance::ComputeTailLagDegrees(int32 SegmentIndex, float YawRateDegPerSec,
+												 float HorizontalSpeed)
+{
+	// [2026-11-04 T-126] No lag without airspeed (mirrors ComputeBankDegrees);
+	// [2026-11-04 T-126] each segment adds lag, capped at 30 deg total.
+	if (SegmentIndex <= 0)
+	{
+		return 0.0f;
+	}
+	const float SpeedScale = FMath::Clamp(HorizontalSpeed / 1200.0f, 0.0f, 1.0f);
+	const float PerSegment = -YawRateDegPerSec * (10.0f / 90.0f) * SpeedScale;
+	return FMath::Clamp(PerSegment * static_cast<float>(SegmentIndex), -30.0f, 30.0f);
+}
+
+float UDragonAnimInstance::ComputeFireAimPitchDegrees(float DesiredPitchDeg)
+{
+	// [2026-11-04 T-126] Head aim band: enough to sell the breath direction
+	// [2026-11-04 T-126] without folding the neck through the chest.
+	return FMath::Clamp(DesiredPitchDeg, -35.0f, 25.0f);
+}
+
 void UDragonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 {
 	Super::NativeUpdateAnimation(DeltaSeconds);
@@ -161,6 +255,7 @@ void UDragonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	TuckAlpha = ComputeTuckAlpha(LocomotionState);
 	MeshPitchDegrees = ComputeMeshPitchDegrees(GroundSpeed, VerticalSpeed);
 	const float Yaw = Pawn->GetActorRotation().Yaw;
+	float YawRateForLag = 0.0f;
 	if (!bHasLastYaw || DeltaSeconds <= 0.0f)
 	{
 		LastUpdateYaw = Yaw;
@@ -170,9 +265,28 @@ void UDragonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	else
 	{
 		const float YawRate = FMath::FindDeltaAngleDegrees(LastUpdateYaw, Yaw) / DeltaSeconds;
+		YawRateForLag = YawRate;
 		LastUpdateYaw = Yaw;
 		BankDegrees = ComputeBankDegrees(YawRate, GroundSpeed);
 	}
+	// [2026-11-04 T-126] Procedural layer: phase advances with speed (a
+	// [2026-11-04 T-126] stopped dragon does not keep writhing), tail lag
+	// [2026-11-04 T-126] reads the same yaw rate as bank, fire aim follows
+	// [2026-11-04 T-126] mesh pitch only while the breath is actually lit.
+	SlitherAmplitudeDeg = ComputeSlitherAmplitudeDeg(LocomotionState, GroundSpeed);
+	if (DeltaSeconds > 0.0f)
+	{
+		SlitherPhaseRadians += DeltaSeconds * (2.0f + GroundSpeed / 300.0f);
+	}
+	// [2026-11-04 T-126] Segment 3 = mid-tail read for the graph's single
+	// [2026-11-04 T-126] published value; per-segment values recompute in-graph.
+	TailLagDegrees = ComputeTailLagDegrees(3, YawRateForLag, GroundSpeed);
+	bFiring = false;
+	if (const ADragonCharacter* Dragon = Cast<ADragonCharacter>(Pawn))
+	{
+		bFiring = Dragon->Combat != nullptr && Dragon->Combat->IsFiring();
+	}
+	FireAimPitchDegrees = bFiring ? ComputeFireAimPitchDegrees(MeshPitchDegrees) : 0.0f;
 	// [2026-11-04 T-125] Transition proof on the T-113 ANIMSTATE channel
 	// [2026-11-04 T-125] (headless -game runs keep no log file): on change
 	// [2026-11-04 T-125] only, like the driver this replaces. clip=ABP — the

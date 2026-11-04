@@ -12,11 +12,22 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Thief/ThiefDataAsset.h" // [2026-11-04 T-076] EThiefKind for the claw accessors below
 #include "UObject/Object.h"
+#include "Thief/ThiefDataAsset.h"
 #include "ThiefBrain.generated.h"
 
-class UThiefDataAsset;
 class UTreasureRegistry;
+class UDragonStatsComponent;
+
+// [2026-11-04 T-074] Dragon-attack phase for armed thieves. Tell is the
+// readable wind-up (counter window); Cooldown is cadence between strikes.
+enum class EThiefAttackPhase : uint8
+{
+	Idle,
+	Tell,
+	Cooldown,
+};
 
 // [2026-10-28 T-014] Thief behaviour states. Trapped is reserved for a
 // future immobilising effect: Tick already treats it as "no movement"
@@ -70,6 +81,15 @@ class UNDERTHEMOUNTAIN_API UThiefBrain : public UObject
 	EThiefState State() const;
 	float HP() const;
 	const TArray<FName>& CarriedItems() const;
+
+	// [2026-11-04 T-076] §5.4 claw inputs, read from the config so
+	// combat never parses DisplayName: archetype (burglar default
+	// with no config), authored gear tier, and whether the hands
+	// are full — the three facts UDragonCombatComponent's claw
+	// priority/block rules are written against.
+	EThiefKind Kind() const;
+	int32 GearTier() const;
+	bool IsCarryingLoot() const;
 
 	// [2026-10-28 T-014] Where the owning character should walk now:
 	// the target treasure in Sneak/Grab, the exit in Flee/Scared, and
@@ -132,6 +152,39 @@ class UNDERTHEMOUNTAIN_API UThiefBrain : public UObject
 	float TrapSlowFactor() const;
 	float TrapSlowSeconds() const;
 
+	// [2026-11-04 T-133] Runtime role: starts as Config->Role, party
+	// spawns override per member (one shared dwarf asset, three roles).
+	// Setting Guard/Carrier/Trapper re-derives HP cap via FThiefRules
+	// only before any damage is taken (Init-time use; mid-run calls
+	// change the role label/cap but never heal or wound).
+	void SetRole(EThiefRole InRole);
+	EThiefRole Role() const;
+	int32 EffectiveCarriedCap() const;
+
+	// [2026-11-04 T-132] Spawn-time star gear snapshot (GAMEPLAY.md S4:
+	// no mid-wave re-gear). Rescales HP from the Init HP by the tier
+	// multiplier, records the speed multiplier for the character, and
+	// enables the crossbow/raider-loot rules at their tiers.
+	void ApplyStarGear(int32 Stars);
+	int32 GearStars() const;
+	float GearSpeedMultiplier() const;
+	// [2026-11-04 T-132] Injected raider-loot roll (caller rolls in
+	// game; tests pin it). On death the brain registers the drop.
+	void SetRaiderLootRoll(float Roll01);
+
+	// [2026-11-04 T-074] Advances the attack rule by Dt against an
+	// injected dragon Stats seam. Armed roles only (FThiefRules::
+	// CanAttackDragon), dragon in the territory it is fighting over
+	// (Sneak/Grab/Flee states attack; Scared/Dazed/Dead never do —
+	// a scared adventurer runs, S5.3). In range: Tell (wind-up) ->
+	// strike through Stats->ApplyHPDamage (which fires OnDragonHit /
+	// OnDragonDefeated) -> Cooldown. Leaving range cancels the tell.
+	// Returns the phase after this tick; a null Stats still runs the
+	// timers but lands nothing (surfaced by the phase, never a crash).
+	EThiefAttackPhase TickDragonAttack(float Dt, const FVector& ThiefLocation,
+									   const FVector& DragonLocation, UDragonStatsComponent* DragonStats);
+	EThiefAttackPhase AttackPhase() const;
+
   private:
 	// [2026-10-28 T-014] UPROPERTY TObjectPtrs keep config/registry
 	// reachable for GC for exactly the brain's lifetime (raw pointers
@@ -164,6 +217,20 @@ class UNDERTHEMOUNTAIN_API UThiefBrain : public UObject
 
 	int32 NumTrapsPlaced = 0;
 	bool bReachedExit = false;
+
+	// [2026-11-04 T-133/T-132/T-074] Role/gear/attack runtime state.
+	// BaseHP is the role-derived HP at Init, before the gear multiplier,
+	// so ApplyStarGear can rescale without compounding on re-application.
+	EThiefRole CurrentRole = EThiefRole::None;
+	float BaseHP = 0.0f;
+	int32 CurrentGearStars = 0;
+	float CurrentSpeedMultiplier = 1.0f;
+	float RaiderLootRoll = 0.5f;
+	bool bRaiderLootEnabled = false;
+	EThiefAttackPhase CurrentAttackPhase = EThiefAttackPhase::Idle;
+	float AttackTellTimer = 0.0f;
+	float AttackCooldownTimer = 0.0f;
+	bool bPendingRangedStrike = false;
 
 	// [2026-10-28 T-014] Single funnel for state changes so every
 	// transition is logged at Log verbosity in one format

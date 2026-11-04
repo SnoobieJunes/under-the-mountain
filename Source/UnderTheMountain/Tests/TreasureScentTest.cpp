@@ -10,6 +10,8 @@
 // location instead of leaving it stale at registration time.
 
 #include "Misc/AutomationTest.h"
+#include "Dragon/DragonStatsComponent.h"
+#include "Dragon/DragonCarryComponent.h"
 #include "Scent/ScentComponent.h"
 #include "Scent/ScentMath.h"
 #include "Scent/ScentRibbonActor.h"
@@ -378,6 +380,165 @@ bool FScentMarkerSyncTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("steady inactive spawns nothing"), Plan.ToSpawn.IsEmpty());
 		TestTrue(TEXT("steady inactive destroys nothing"), Plan.ToDestroy.IsEmpty());
 	}
+	return true;
+}
+
+// [2026-11-04 T-080] True-sight magic charge: the activation gate
+// fails closed (no pool, empty pool), and draining a real pool at
+// the component's 3/s rate empties a full S2 pool in ~33 s, with
+// DrainMagic's false return as the shut-off signal UScentComponent's
+// tick acts on. The tick itself needs a live owner/world, so this
+// pins the two pure halves it composes.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScentTrueSightMagicTest, "UnderTheMountain.Scent.TrueSightMagic",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FScentTrueSightMagicTest::RunTest(const FString& Parameters)
+{
+	TestFalse(TEXT("no pool refuses true-sight"), UScentComponent::CanTrueSightRunWithMagic(false, 100.0f));
+	TestFalse(TEXT("an empty pool refuses true-sight"),
+			  UScentComponent::CanTrueSightRunWithMagic(true, 0.0f));
+	TestFalse(TEXT("a negative pool refuses true-sight"),
+			  UScentComponent::CanTrueSightRunWithMagic(true, -5.0f));
+	TestTrue(TEXT("any magic in a real pool allows true-sight"),
+			 UScentComponent::CanTrueSightRunWithMagic(true, 0.5f));
+
+	UScentComponent* Scent = NewObject<UScentComponent>();
+	TestEqual(TEXT("true-sight drain is the S3 3/s"), Scent->TrueSightMagicDrainPerSecond, 3.0f);
+
+	UDragonStatsComponent* Stats = NewObject<UDragonStatsComponent>();
+	int32 Ticks = 0;
+	bool bStillRunning = true;
+	while (bStillRunning && Ticks < 1000)
+	{
+		bStillRunning = Stats->DrainMagic(1.0f, Scent->TrueSightMagicDrainPerSecond);
+		++Ticks;
+	}
+	TestFalse(TEXT("a full pool eventually drains to shut-off"), bStillRunning);
+	TestEqual(TEXT("a full 100 pool at 3/s lasts 34 one-second ticks (last is partial)"), Ticks, 34);
+	TestEqual(TEXT("the pool ends clamped at 0"), Stats->Magic, 0.0f);
+	return true;
+}
+
+// [2026-11-04 T-070] Dragon carry over the registry: pickup marks
+// carried-by-dragon, carry sync follows the dragon, drop rests the
+// item at the drop point, a second pickup while full is refused,
+// out-of-range is refused, and a deposit inside the hoard moves
+// the at-hoard gold (HoardGoldAt) by exactly the item's value.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDragonCarryRegistryTest, "UnderTheMountain.Treasure.DragonCarry",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDragonCarryRegistryTest::RunTest(const FString& Parameters)
+{
+	UTreasureRegistry* Registry = NewObject<UTreasureRegistry>();
+	FTreasureEntry Goblet;
+	Goblet.Id = FName(TEXT("CarryGoblet"));
+	Goblet.GoldValue = 100;
+	Goblet.Location = FVector(300.0f, 0.0f, 0.0f);
+	Registry->Register(Goblet);
+	FTreasureEntry Crown;
+	Crown.Id = FName(TEXT("CarryCrown"));
+	Crown.GoldValue = 1200;
+	Crown.Location = FVector(400.0f, 0.0f, 0.0f);
+	Registry->Register(Crown);
+
+	UDragonCarryComponent* Carry = NewObject<UDragonCarryComponent>();
+	const FVector DragonAt = FVector::ZeroVector;
+	TestFalse(TEXT("empty claws are empty"), Carry->IsCarrying());
+	TestFalse(TEXT("pickup beyond 500cm is refused"),
+			  Carry->TryPickup(Registry, Crown.Id, FVector(-5000.0f, 0.0f, 0.0f)));
+
+	TestTrue(TEXT("pickup in range succeeds"), Carry->TryPickup(Registry, Goblet.Id, DragonAt));
+	TestTrue(TEXT("carrying after pickup"), Carry->IsCarrying());
+	const FTreasureEntry* Entry = Registry->Find(Goblet.Id);
+	TestNotNull(TEXT("picked entry findable"), Entry);
+	if (Entry != nullptr)
+	{
+		TestTrue(TEXT("entry marked carried"), Entry->bCarried);
+		TestEqual(TEXT("carrier is the dragon"), Entry->CarrierId,
+				  UDragonCarryComponent::DragonCarrierId());
+	}
+	TestFalse(TEXT("second pickup while full is refused (no swap)"),
+			  Carry->TryPickup(Registry, Crown.Id, DragonAt));
+
+	// Carry: registry location follows the dragon tick by tick.
+	const FVector CarriedTo(5000.0f, 1000.0f, 500.0f);
+	TestTrue(TEXT("carry sync succeeds"), Carry->SyncCarriedLocation(Registry, CarriedTo));
+	Entry = Registry->Find(Goblet.Id);
+	TestNotNull(TEXT("carried entry findable"), Entry);
+	if (Entry != nullptr)
+	{
+		TestEqual(TEXT("registry location rode with the dragon"), Entry->Location, CarriedTo);
+	}
+
+	// Drop: resting again, at the drop point, carrier cleared.
+	int32 Gold = 0;
+	const FVector DropAt(6000.0f, 1000.0f, 0.0f);
+	TestTrue(TEXT("drop succeeds"), Carry->DropTreasure(Registry, DropAt, Gold));
+	TestEqual(TEXT("drop reports the item value"), Gold, 100);
+	TestFalse(TEXT("claws empty after drop"), Carry->IsCarrying());
+	Entry = Registry->Find(Goblet.Id);
+	TestNotNull(TEXT("dropped entry findable"), Entry);
+	if (Entry != nullptr)
+	{
+		TestFalse(TEXT("dropped entry rests"), Entry->bCarried);
+		TestEqual(TEXT("dropped carrier cleared"), Entry->CarrierId, NAME_None);
+		TestEqual(TEXT("dropped location is the drop point"), Entry->Location, DropAt);
+	}
+
+	// Deposit: while carried the item counts nowhere at the hoard;
+	// after depositing there, at-hoard gold rises by its value.
+	TestTrue(TEXT("re-pickup for the deposit run"), Carry->TryPickup(Registry, Goblet.Id, DropAt));
+	const FVector HoardAt(10000.0f, 0.0f, 0.0f);
+	TestTrue(TEXT("carry to the hoard syncs"), Carry->SyncCarriedLocation(Registry, HoardAt));
+	TestEqual(TEXT("carried gold counts nowhere at the hoard"),
+			  UDragonCarryComponent::HoardGoldAt(Registry, HoardAt, 1000.0f), int64(0));
+	TestTrue(TEXT("deposit succeeds"), Carry->DepositTreasure(Registry, HoardAt, Gold));
+	TestEqual(TEXT("deposit reports the item value"), Gold, 100);
+	TestEqual(TEXT("deposit raises at-hoard gold by the value"),
+			  UDragonCarryComponent::HoardGoldAt(Registry, HoardAt, 1000.0f), int64(100));
+	TestFalse(TEXT("drop with empty claws is refused"),
+			  Carry->DropTreasure(Registry, DropAt, Gold));
+	return true;
+}
+
+// [2026-11-04 T-127] Density/sheen retune + end-on fade: density and sheen
+// [2026-11-04 T-127] rank with value (never above width's ranking), sheen
+// [2026-11-04 T-127] colour brightens toward metallic gold, and a ribbon
+// [2026-11-04 T-127] viewed end-on fades instead of collapsing to a white bar.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FScentRibbonRetuneTest, "UnderTheMountain.Scent.RibbonRetune",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FScentRibbonRetuneTest::RunTest(const FString& Parameters)
+{
+	TestTrue(TEXT("crown denser than trinket"),
+			 FScentMath::RibbonDensityScaleForValue(1200) > FScentMath::RibbonDensityScaleForValue(10));
+	TestTrue(TEXT("density capped at 2.5"), FScentMath::RibbonDensityScaleForValue(100000) <= 2.5f);
+	TestTrue(TEXT("density floor is 1.0"), FScentMath::RibbonDensityScaleForValue(0) >= 1.0f);
+	TestEqual(TEXT("no sheen at zero value"), FScentMath::RibbonSheenScaleForValue(0), 0.0f);
+	TestTrue(TEXT("crown sheen near metallic"),
+			 FScentMath::RibbonSheenScaleForValue(1200) > FScentMath::RibbonSheenScaleForValue(10));
+	const FLinearColor Dull = FScentMath::RibbonSheenColorForValue(10);
+	const FLinearColor Bright = FScentMath::RibbonSheenColorForValue(1200);
+	TestTrue(TEXT("sheen brightens with value"), Bright.R > Dull.R && Bright.G > Dull.G);
+
+	FTreasureEntry Entry;
+	Entry.Id = FName(TEXT("RetuneCrown"));
+	Entry.GoldValue = 1200;
+	const FScentRibbonParams Params = FScentMath::ParamsForEntry(Entry, 0.0f, false);
+	TestTrue(TEXT("params carry density"), Params.DensityScale > 1.0f);
+	TestTrue(TEXT("params carry sheen"), Params.SheenScale > 0.0f);
+
+	AScentRibbonActor* Ribbon = NewObject<AScentRibbonActor>();
+	Ribbon->SetAppearanceFactors(Params.DensityScale, Params.SheenScale, Params.SheenColor);
+	TestEqual(TEXT("ribbon keeps density"), Ribbon->CurrentDensityScale(), Params.DensityScale);
+	TestEqual(TEXT("ribbon keeps sheen"), Ribbon->CurrentSheenScale(), Params.SheenScale);
+
+	const FVector Along(1.0f, 0.0f, 0.0f);
+	TestEqual(TEXT("end-on fades to 0.25"), AScentRibbonActor::EndOnOpacityFactor(Along, Along), 0.25f);
+	TestEqual(TEXT("broadside stays opaque"),
+			  AScentRibbonActor::EndOnOpacityFactor(Along, FVector(0.0f, 1.0f, 0.0f)), 1.0f);
+	TestEqual(TEXT("zero segment is opaque"),
+			  AScentRibbonActor::EndOnOpacityFactor(FVector::ZeroVector, Along), 1.0f);
 	return true;
 }
 

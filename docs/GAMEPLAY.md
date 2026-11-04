@@ -107,6 +107,14 @@ chamber following scent (§3). Nothing in the loop ever reveals *where* a
 thief is — only that treasure (possibly carried) exists. `[derived: PLAN.md
 pillar 1]`
 
+World clock (T-092 decision, 2026-11-04): one 24 h cycle is 600 real
+seconds (25 s per game hour) in `UWorldClockSubsystem`/`FWorldClock`,
+starting at dawn 06:00. Time-of-day is one queryable bucket — Night
+20:00–05:00, Dawn 05:00–08:00, Day 08:00–17:00, Dusk 17:00–20:00 — that
+cadence/sky/schedule code reads behind that seam only. Sleep (§9) jumps
+the clock to the next dawn. `UnderTheMountain.World.Clock` pins the
+phases, wrap and skip math.
+
 ---
 
 ## 2. Stamina / food economy — `DA_DragonStats`, `DT_FoodValues` (`M1`)
@@ -120,6 +128,7 @@ the HUD and DataAsset exist from day one.
 | HP | 100 | `[derived: percent-scale readability; all damage below is % of pool]` |
 | Stamina | 100 | `[derived: same percent scale as HP so drain rates read as %/s]` — one continuous pool, HUD-segmented into ten 10-point reserves for flight impulses `[derived: T-075 decision record, docs/FLIGHT-SPIKE.md; retuned five×20 → ten×10 in T-124, 2026-11-04]` |
 | Magic | 100 | `[derived: same percent scale; costs in §6]` |
+| Magic regen (T-080 decision, 2026-11-04) | +0.5/s over time, paused while a magic drain is active; no food/hoard source in `M1`; sleep does not refill it | Base rate from §6's Magic Pendant line ("base regen 0.5/s"; the pendant's +1/s is artifact work, T-081). Time-only keeps the food loop about stamina/HP and makes true-sight's 3/s a real ~33 s budget from full |
 | Intro "full power" preview (§7) | stats shown at max-artifact values, then reset to L1 on loss/first session end | `[derived: idea.md — start at full power as tutorial, lose down to L1]` — preview numbers are the §6 artifact sums, not a second stat block `[tuning: PT-INTRO]` |
 
 ### Flight model (target model — T-075 prototype decisions, 2026-10-31)
@@ -270,6 +279,12 @@ True-sight shows **treasure only** — never thieves, traps, or people
 `[derived: idea.md — stone lets you "see" treasure, not smell it; seeing
 thieves is the thief-glow helm's job, §6]`. `AT-SeeingStone`: with stone
 active, assert no thief actor is flagged visible by the overlay component.
+
+Empty-pool behaviour (T-080 decision, 2026-11-04): true-sight is refused
+at 0 magic (logged, stays off), drains the §2 magic pool at 3/s while
+active with regen paused, and shuts off the tick the pool empties —
+it never runs uncharged. `UnderTheMountain.Scent.TrueSightMagic` and
+`UnderTheMountain.Dragon.Magic` pin the gate, drain and clamps.
 
 ---
 
@@ -606,6 +621,20 @@ implement behaviour.
 risk applies to bulk before artifacts, equipped artifacts never taken
 (consistent with §6 stealable-state rule).
 
+Sleep implementation decisions (T-084, 2026-11-04): the time-skip is the
+T-092 clock jumping to the next dawn (always > 0 h, a full day from
+exactly dawn, so back-to-back sleeps cannot spin in place); bulk risk is
+15% **of** each bulk stack's gold, rounded to nearest, with the 5%
+deep-plunder roll (injected randomness seam in `FSleepRules`) as the
+only random event; decay is applied only through
+`UNotorietySubsystem::ApplySleepDecay` (the single writer). Sleep is an
+atomic skip, not a lingering state, so it cannot soft-lock: the wake
+conditions are enumerated in `SleepRules.h` (skip completes, damage or
+thief interruption in any future real-time presentation, or cancelling
+before the skip starts). PIE glue, the hoard-mound trigger and the
+T-068 Sleep/Wake clips remain `M2` work; `UnderTheMountain.World.Sleep`
+pins the state rules now.
+
 ### Tribute
 
 | Source | Condition | Pays | Basis |
@@ -619,6 +648,31 @@ risk applies to bulk before artifacts, equipped artifacts never taken
 Tribute is the low-Notoriety income that balances §4's greed engine:
 raiding pays more, faster, at star cost; tribute pays slowly and keeps
 stars down. `PT-WAVE at M2` tunes the exchange rate between the two.
+
+---
+
+## 10. World life — wildlife and water (T-090/T-091 decisions, 2026-11-04)
+
+Wildlife is the §2 food row as written (deer/boar/fish: +25 stamina,
++5 HP, **zero** Notoriety — unowned and unwitnessed, so eating wildlife
+never charges Notoriety through any witness rule) in the pure seam
+`FWorldLifeRules`; it grazes beyond 1500 cm of the dragon and flees at
+or inside it (just outside fire range, so the hunt stays a hunt). No
+wildlife actor exists yet: no deer/boar Meshy asset exists, and a
+recycled goat mesh would lie about the species — the actor (wander/
+graze/flee on the goat pattern, fire-damageable via T-078, eatable via
+this seam) lands with its asset. `UnderTheMountain.World.Life` pins the
+values, ordering and flee boundary.
+
+Water: the dragon **wades** at any depth — there is no swim state.
+Grounded in water, fire breath is extinguished and vents as steam for
+as long as the dragon stands in it; movement is ×0.8 in shallow water
+and ×0.5 at or past 200 cm depth; flying over water is wholly
+unaffected. The dragon cannot drown at any depth and may always wade
+back out, so water can neither kill nor trap it (named here because
+"undesigned is the bug", T-091). Water bodies, volumes and materials
+on T-049 terrain remain world-building work; the behaviour decision is
+`FWorldLifeRules::DecideWaterBehaviour`, pinned by the same test.
 
 ---
 

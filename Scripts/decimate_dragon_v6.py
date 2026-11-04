@@ -22,7 +22,12 @@ BUDGET_TRIS = 80000
 RATIO = 0.19
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC = os.path.join(ROOT, "Content/Meshy/Dragon/dragon-wings-v6/exports/Dragon_v6.fbx")
+# [2026-11-04 T-119] Source re-pointed: T-113 retired the old
+# dragon-wings-v6/ drop; the live owner drop is
+# Content/Meshy/dragon-wings-v6(new)/exports/Dragon_v6.fbx (proven
+# identical to the T-110 source in T-113). DST is unchanged: it is the
+# dragon_v6_game.fbx import_dragon_v6.py consumes.
+SRC = os.path.join(ROOT, "Content/Meshy/dragon-wings-v6(new)/exports/Dragon_v6.fbx")
 DST = os.path.join(ROOT, "Content/Meshy/Dragon/dragon_v6_game.fbx")
 
 

@@ -11,7 +11,7 @@ Hackathon 2026, Indie track (due 2026-11-04).
   (deviation log), `CHANGELOG.md` (history), `docs/ASSET-PIPELINE.md` (how
   assets are made)
 
-## Status (2026-10-31)
+## Status (2026-11-04)
 
 Playable in the editor: a textured, rigged dragon with flight animation in a
 dressed mountain lair (100 m great chamber + open crown, dragon-passable east
@@ -22,12 +22,16 @@ dwarf party, adventurer) run a data-driven AI state machine in the lair, and
 the grand portal flies out onto a real Meshy village with goats in the valley —
 all one map, no loading, measured at ~57 fps average on the M1 Max (lair ~59, village ~56; perf pass T-115 filed).
 
-Still owed (see `TASKS.md`): the full scoped board now runs through T-092 —
-flight/animation overhauls (decisions in `docs/FLIGHT-SPIKE.md` /
-`docs/ANIMATION-SPIKE.md`), a real fire VFX, sky/weather/day-night, sprawling
-terrain and settlements, villagers/wildlife, artifacts and bulk treasure,
-audio ingestion for friend-composed music plus SFX, Notoriety/waves/win-lose,
-navigation, saves/settings. No scope has been cut.
+Shipped since that status: Notoriety/waves/win-lose (T-016), the intro
+(T-018), HUD + menus (T-019/T-072), help/onboarding (T-073), the packaged
+macOS build (T-020; rebuild with `Scripts/package.sh` — `Saved/` is not in
+git, so no `.app` is on disk in a fresh clone), and the settings logic
+slice (T-128/T-088: quality presets + a settings model/widget in
+`Source/UnderTheMountain/Public/UI/`; wiring the screen into title/pause
+and proving fps per preset remain on those tasks). Still owed (see
+`TASKS.md`): audio (no `Content/Audio/` in the tree yet, T-071), navigation,
+day/night, and the remaining board. No claim below rests on a task that
+has not closed, except the settings slice, which is labelled as such.
 
 ## Install / run / test
 
@@ -44,7 +48,7 @@ Scripts/package.sh     # T-020 packaged macOS build → Saved/Packaged/Mac/Under
 Scripts/test-fast.sh   # build + automation tests (inner loop)
 Scripts/gate.sh        # full pre-commit gate: setup, editor+game builds,
                        # clang-format check, tests, coverage-floor check
-Scripts/coverage.sh    # real llvm-cov line coverage (floor: AGENTS.md, 29%)
+Scripts/coverage.sh    # real llvm-cov line coverage (floor: AGENTS.md, 37%)
 ```
 
 To play: open the editor, load `/Game/Maps/Lair/Lair`, press **Play**. The
@@ -125,6 +129,14 @@ Notes:
 - **Scale-colour picker** (C): one draggable saturation/value pad plus a
   hue strip in a code-built widget; the tint is clamped, written to the
   material, and persisted to a SaveGame slot.
+- **Settings (logic slice, T-128/T-088):** quality presets
+  Low/Medium/High/Ultra (default Ultra) mapping to the `sg.*` scalability
+  groups, plus a settings model (resolution/fullscreen, master volume,
+  look/flight sensitivity, three nose-up invert toggles, camera choice,
+  Testing → Infinite Stamina driving `utm.testing.infinitestamina`) with
+  apply/persist/defaults in `Public/UI/SettingsModel.h` and a code-built
+  screen in `Public/UI/SettingsWidget.h`. Not yet opened from
+  title/pause — see Known limitations.
 
 ### The world (one map, no load screens)
 
@@ -166,8 +178,9 @@ Three thief types are live in the lair on their Meshy models:
 Their brain is a data-driven state machine (Sneak → Grab → Flee, with
 Scared/Trapped/Dead interrupts); type is a DataAsset (mesh, anims, HP,
 speeds), not a subclass. Roaring a fleeing thief makes it drop loot; fire
-kills it; eat finishes the loop. (Waves, Notoriety stars, and the star-driven
-gear scaling are specced in `docs/GAMEPLAY.md` §4 and arrive in T-016.)
+kills it; eat finishes the loop. Waves, Notoriety stars, and win/lose are
+live (T-016); star-driven gear scaling remains specced in
+`docs/GAMEPLAY.md` §4.
 
 ## Controls
 
@@ -180,17 +193,20 @@ context):
 | Look (aims the nose in flight) | Mouse | Right stick |
 | Takeoff / climb (Ascent; hold to rise in hover) | Space | Bottom face |
 | Landing Assist (air) / Tail Slam (ground) | F | Top face |
-| Brake (S also flares at speed) | Left Shift (hold) | Right trigger (hold) |
-| Sink in hover | Left Ctrl (hold) | — (arrives with the trigger remap, T-102) |
+| Brake (S also flares at speed) | Left Shift (hold) | Left trigger (hold) |
+| Surge (momentum band) | W tap | Right trigger |
+| Sink in hover | Left Ctrl (hold) | Right face hold (air) |
 | Free-look (nose frozen, camera roams) | Right mouse (hold) | — (right stick already looks) |
 | Steer-to-look (latch; any move input cancels) | Double-click right mouse | D-pad Up |
 | Cycle camera (head chase / wide scenic / first-person) | V | R3 (right-stick press) |
 | True-sight (Seeing Stone) | T | Left face (X) |
 | Scent ribbons show/hide | N | D-pad Down |
-| Scale-colour picker | C | Right face (A) |
-| Fire breath (hold) | Left mouse (hold) | Left trigger (hold) |
+| Scale-colour picker | C | Right face tap (no claw target) |
+| Fire breath (hold) | Left mouse (hold) | Right shoulder (hold) |
 | Roar | R | Left shoulder |
-| Eat | E | Right shoulder |
+| Eat / pickup-drop (context) | E / P | Right face hold (ground) |
+| Claw | Q | Right face tap (claw target in arc) |
+| Smart lock cycle | Tab | L3 (left-stick press) |
 
 ## Technical features
 
@@ -199,13 +215,14 @@ context):
   Max average 16.81 ms/frame in the lair and 16.12 ms over the village
   (`Saved/Profiling/*.csv`).
 - **Testable by design.** One gameplay system per C++ class with dependencies
-  injected at seams, so the **20 automation tests** (8 files under
-  `Source/UnderTheMountain/Tests/`) run headless and hermetic — no live
-  level, no network, no real clock.
+  injected at seams, so the **52 automation tests** (21 files under
+  `Source/UnderTheMountain/Tests/`, counted by `IMPLEMENT_*_AUTOMATION_TEST`)
+  run headless and hermetic — no live level, no network, no real clock.
 - **Real line coverage.** `Scripts/coverage.sh` measures llvm-cov on the game
   module (module-only rsp-relink instrumentation); `gate.sh` enforces the
-  29% floor (AGENTS.md snapshot) before every commit. Latest measured: 43.5%
-  (2026-10-28, T-047).
+  37% floor (AGENTS.md snapshot, the single owner of the number) before
+  every commit. Run `Scripts/coverage.sh` for the current measured number;
+  this README does not carry a stale one.
 - **Headless, re-runnable world generation.** The lair, exterior, treasures,
   thief visuals, flight animation, and the whole 28-model world import are
   built by deterministic UE-Python scripts in `Scripts/` — no per-file import
@@ -234,8 +251,8 @@ under-the-mountain/
 │   ├── Livestock/    goat actor (wander, HP, death, eat)
 │   ├── Scent/        scent math, ribbon actor, true-sight markers
 │   ├── Treasure/     DataAsset, registry, WorldSubsystem, treasure actor
-│   ├── UI/           code-built tint-picker widget
-│   └── Tests/        20 hermetic automation tests (8 files)
+│   ├── UI/           code-built widgets (HUD, tint, game flow, settings model/screen)
+│   └── Tests/        52 hermetic automation tests (21 files)
 ├── Content/
 │   ├── Maps/Lair/              Lair.umap — lair + exterior, one map
 │   ├── Meshy/Dragon/           imported dragon + scales material + evidence
@@ -272,7 +289,7 @@ under-the-mountain/
 |---|---|---|---|---|
 | **Dragon** (`SK_Dragon_v6`, newest owner drop, T-113) | Owner-supplied FBX (mesh + 9 anims + 6 4K PBR textures, `Content/Meshy/dragon-wings-v6(new)/`) → Blender inventory/merge fixup → Unreal | 39-bone rig (spine chain, 4 leg chains, 7 wing bones/side + finger fan, tail), skin weights intact through decimation | All 9 clips on the pawn's paths (`SK_Dragon_v4_*` names, v6 content): walk, fly (flap; 1.6× in dive), glide (wings held), hover, takeoff, land, idle, roar, hit-light — driven by the anim state machine; transitions log `ANIMSTATE` on stdout in headless -game runs | No hit-heavy/defeat/sleep/fire-pose/claw clips (T-068 remainder); live flight feel + wing motion in a human PIE session is owed (T-030) |
 | **Burglar, Adventurer, Dwarf** (5 models; the dwarf *party* in-game uses the carrier model; guard/trapper models are in the repo unused) | Meshy image-to-3D + auto-rig | 24-joint humanoid, verified usable (`glb_stats` skinned-mesh check) | Walk + run (Meshy clips, single-node, switched by AI state — T-044) | No death/fall, hit reaction, grab/carry, or trap-placement clips — all owed in T-054 |
-| **Goat** (`liv-goat_quad`) | Meshy → Blender 5.2 | 21-bone quadruped (region-gated distance weighting after Bone Heat failed on the mesh) | 24-frame in-place walk loop authored in Blender (verified in renders) | **Not in the game yet**: in-game goats are greybox sphere/cube (T-017); the quad clip is not imported and no run/death clips exist (T-054). The Meshy biped auto-rig was rejected and is flagged in `docs/WORLD-ASSETS.md` §5 — do not ship it |
+| **Goat** (`liv-goat_rigged`) | Meshy → Blender 5.2 | 21-bone quadruped (region-gated distance weighting after Bone Heat failed on the mesh) | In game (T-054): skeletal mesh + walk loop on `AGoatActor`, wandering the pasture | No run clip; the Meshy biped auto-rig was rejected and is flagged in `docs/WORLD-ASSETS.md` §5 — do not ship it |
 | **27 world statics** (+ goat skeletal mesh) | Meshy image-to-3D | n/a (static meshes) | 15 distinct assets placed in the current village layout (T-046) | 11 statics imported but **not placed**: castle keep/wall/gate, the destructible props (incl. the 4 intact→rubble pairs), 2 dead trees (T-050/T-055); no LODs or collision yet |
 
 ## Assets that still need to be generated / built
@@ -287,19 +304,22 @@ under-the-mountain/
 | Enemy/unit anim sets | Thief death fall + hit reaction; goat walk/run import + death fall | T-054 |
 | Ground fire | Persistent scorch decal; wooden props ignite, burn, and permanently swap to their rubble counterparts (rubble assets already exist) | T-055 |
 | Music + SFX | Friend-composed music masters are incoming before the deadline (never generated); ingest untouched masters under `Content/Audio/Raw/Music/`, working loops under `Content/Audio/Music/`, then source dragon/world/UI SFX and ambience | T-071 |
-| Game systems (not assets) | Notoriety stars + waves + win/lose (T-016), intro gnome choice (T-018), HUD + menus + gamepad parity (T-019), packaged macOS `.app` + perf gate (T-020) | M1 exit gate |
+| Game systems (not assets) | Settings screen wiring into title/pause + per-preset fps proof (T-128/T-088 logic slice is in the tree; reachability/proof are not), audio (T-071) | see TASKS.md |
 
 ## Known limitations (honest list)
 
-- **Editor-only play** until the T-020 packaged build lands.
-- Fire is a **cone mesh**, not particles (T-051).
-- Goats are **greybox spheres** in-game; the real rigged goat sits on disk
-  unimported (T-054).
-- Thief animations are **walk/run only** (T-054).
-- **No HUD, menus, Notoriety, waves, intro, win/lose, or audio yet**
-  (T-016–T-019, T-071) — the game is currently a sandbox of the M1 pillars:
-  flight, scent, thieves, combat. Friend-composed music is incoming; it has
-  not landed yet.
+- **No audio yet** (T-071): no `Content/Audio/` in the tree; friend-composed
+  music has not landed.
+- **Settings screen is a logic slice, not yet reachable in play**: the
+  T-128 preset table and T-088 model/widget are in the tree with tests,
+  but title/pause do not open the screen yet and per-preset fps has not
+  been measured (T-128/T-115 own the proof).
+- **No packaged `.app` in a fresh clone**: `Saved/` is gitignored; build
+  one with `Scripts/package.sh` (T-020 proved the path; T-129/T-130 own
+  the final freeze + double-click smoke).
+- Fire VFX, sky/weather, and Landscape terrain remain as tabled above
+  where their tasks are still open — check `TASKS.md`, not this list,
+  for current status.
 - **Live flight feel is unverified in a human PIE session** (T-030, blocked on
   a fresh editor + working MCP listener — see T-048). Every testable layer of
   the flight animation passes automation tests; the Output Log now prints each

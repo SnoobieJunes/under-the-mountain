@@ -52,6 +52,33 @@ float FScentMath::RibbonWidthForValue(int32 GoldValue)
 	return Chosen->BaseWidth * (0.9f + 0.2f * Fraction);
 }
 
+float FScentMath::RibbonDensityScaleForValue(int32 GoldValue)
+{
+	// [2026-11-04 T-127] Derived from the width so the two cues can never
+	// [2026-11-04 T-127] disagree about which treasure is richer.
+	const float Width = RibbonWidthForValue(GoldValue);
+	return FMath::Clamp(0.75f + Width / 20.0f, 1.0f, 2.5f);
+}
+
+float FScentMath::RibbonSheenScaleForValue(int32 GoldValue)
+{
+	// [2026-11-04 T-127] Log-ish value ramp: most of the sheen arrives by
+	// [2026-11-04 T-127] mid-value treasure, crown is fully metallic.
+	if (GoldValue <= 0)
+	{
+		return 0.0f;
+	}
+	return FMath::Clamp(FMath::Loge(1.0f + static_cast<float>(GoldValue)) / FMath::Loge(1001.0f), 0.0f, 1.0f);
+}
+
+FLinearColor FScentMath::RibbonSheenColorForValue(int32 GoldValue)
+{
+	// [2026-11-04 T-127] Tarnished gold -> bright metallic gold (linear).
+	const float T = RibbonSheenScaleForValue(GoldValue);
+	return FLinearColor(FMath::Lerp(0.55f, 1.0f, T), FMath::Lerp(0.38f, 0.78f, T),
+						FMath::Lerp(0.12f, 0.28f, T), 1.0f);
+}
+
 float FScentMath::RibbonOpacity(bool bTrueSightActive)
 {
 	return bTrueSightActive ? 0.3f : 1.0f;
@@ -82,5 +109,10 @@ FScentRibbonParams FScentMath::ParamsForEntry(const FTreasureEntry& Entry, float
 	Params.Width = PulsedWidth(RibbonWidthForValue(Entry.GoldValue), TimeSeconds, Entry.bCarried);
 	Params.Opacity = RibbonOpacity(bTrueSightActive);
 	Params.bCarried = Entry.bCarried;
+	// [2026-11-04 T-127] Density/sheen from value only (no-information rule
+	// [2026-11-04 T-127] unchanged: no location, no distance).
+	Params.DensityScale = RibbonDensityScaleForValue(Entry.GoldValue);
+	Params.SheenScale = RibbonSheenScaleForValue(Entry.GoldValue);
+	Params.SheenColor = RibbonSheenColorForValue(Entry.GoldValue);
 	return Params;
 }

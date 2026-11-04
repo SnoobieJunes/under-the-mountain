@@ -18,6 +18,33 @@
 class UAnimSequence;
 class USkeletalMesh;
 
+// [2026-11-04 T-133] Party/type role. Dwarf roles (Carrier/Trapper/Guard)
+// are per-member at spawn (one shared party asset, three members), so
+// AThiefCharacter carries a per-actor override; this field is the
+// authored default for solo types (Burglar/Adventurer).
+UENUM(BlueprintType)
+enum class EThiefRole : uint8
+{
+	None UMETA(DisplayName = "None authored values"),
+	Burglar UMETA(DisplayName = "Burglar"),
+	Carrier UMETA(DisplayName = "Dwarf carrier"),
+	Trapper UMETA(DisplayName = "Dwarf trapper"),
+	Guard UMETA(DisplayName = "Dwarf guard"),
+	Adventurer UMETA(DisplayName = "Adventurer")
+};
+
+// [2026-11-04 T-076] Thief archetype for the §5.4 counter matrix:
+// claw reads it (adventurer shield, dwarf carrier priority), where
+// DisplayName is a label and must never be parsed for rules. A
+// UENUM because it rides a UPROPERTY on the data asset below.
+UENUM(BlueprintType)
+enum class EThiefKind : uint8
+{
+	Burglar UMETA(DisplayName = "Burglar"),
+	Dwarf UMETA(DisplayName = "Dwarf party"),
+	Adventurer UMETA(DisplayName = "Adventurer")
+};
+
 // [2026-10-28 T-014] UPrimaryDataAsset (not plain UDataAsset) so thief
 // definitions are addressable by the Asset Manager under the "Thief"
 // primary asset type, mirroring UTreasureDataAsset's seam.
@@ -31,6 +58,22 @@ class UNDERTHEMOUNTAIN_API UThiefDataAsset : public UPrimaryDataAsset
 	// identity is the thief actor's registry id, never this string.
 	UPROPERTY(EditAnywhere, Category = "Thief")
 	FString DisplayName;
+
+	// [2026-11-04 T-133] Authored role default. FThiefRules::HPForRole /
+	// CarriedCapForRole derive dwarf HP/cap from it; per-member party
+	// roles override it on the actor/brain at spawn.
+	UPROPERTY(EditAnywhere, Category = "Thief")
+	EThiefRole Role = EThiefRole::None;
+	// [2026-11-04 T-076] Archetype + gear tier for the §5.4 claw
+	// matrix: an adventurer at GearTier >= 2 blocks a frontal claw
+	// (tail/flank required); a dwarf carrying loot is claw's
+	// priority target. Defaults are the burglar baseline;
+	// Scripts/create_thieves.py authors the variants.
+	UPROPERTY(EditAnywhere, Category = "Thief")
+	EThiefKind Kind = EThiefKind::Burglar;
+
+	UPROPERTY(EditAnywhere, Category = "Thief", meta = (ClampMin = "1"))
+	int32 GearTier = 1;
 
 	// [2026-10-28 T-014] Hit points the brain starts with; at 0 the
 	// thief dies and drops everything (see UThiefBrain::ApplyDamage).

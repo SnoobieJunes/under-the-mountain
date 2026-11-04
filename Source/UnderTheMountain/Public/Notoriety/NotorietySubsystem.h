@@ -14,6 +14,7 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
+#include "Notoriety/WitnessRules.h"
 #include "NotorietySubsystem.generated.h"
 
 UCLASS()
@@ -48,10 +49,36 @@ class UNDERTHEMOUNTAIN_API UNotorietySubsystem : public UWorldSubsystem
 	void AddLivestockEatPoints();
 	void AddStructureHitPoints();
 
+	// [2026-11-04 T-134] Witness-gated variants the pawn now calls:
+	// the pure FWitnessRules decide, this subsystem stays the single
+	// writer. Settlements/villagers are injected by the caller (the
+	// pawn owns the world query + LOS trace). Unwitnessed outside acts
+	// and inside-lair acts add exactly 0.
+	void AddPublicKillPointsWitnessed(const FVector& KillLocation,
+									  const TArray<FSettlementArea>& Settlements,
+									  const TArray<FVillagerWitness>& Villagers);
+	void AddLivestockEatPointsWitnessed(const FVector& EatLocation,
+										const TArray<FSettlementArea>& Settlements,
+										const TArray<FVillagerWitness>& Villagers);
+
 	// [2026-11-01 T-016] Direct add for tests and future verbs;
 	// negative adds clamp at 0 total (points never go negative,
 	// and awake decay does not exist).
 	void AddPoints(int32 Amount, const TCHAR* Reason);
+
+	// [2026-11-04 T-084] Sleep decay, GAMEPLAY.md S9: -2 stars per
+	// sleep, floor 0 stars, points reset to the floor of the
+	// resulting star band. This is the ONLY point decrease in the
+	// game (awake decay does not exist, header invariant) and it
+	// lives here so the subsystem stays the single writer: sleep
+	// code (FSleepRules) computes outcomes through these statics
+	// and applies them through ApplySleepDecay, never by writing
+	// Points itself. PointsFloorForStars is the inverse bucket of
+	// StarsForPoints (the lowest points that still read as that
+	// many stars); out-of-range stars clamp to the 0/5-star floors.
+	static int32 PointsFloorForStars(int32 Stars);
+	static int32 PointsAfterSleepDecay(int32 InPoints);
+	void ApplySleepDecay();
 
   private:
 	int32 Points = 0;

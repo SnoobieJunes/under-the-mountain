@@ -17,12 +17,15 @@
 
 #include "CoreMinimal.h"
 #include "Dragon/DragonAnimInstance.h" // [2026-11-01 T-068] EDragonAnimState owner
+#include "Notoriety/WitnessRules.h"	   // [2026-11-04 T-134] witness fact types
 #include "GameFramework/Character.h"
 #include "UI/OnboardingDefs.h" // [2026-11-03 T-073] EOnboardingVerb for the prompt flags
 #include "DragonCharacter.generated.h"
 
 class UDragonStatsComponent;
 class UDragonCombatComponent;
+class UDragonTargetingComponent;
+class UDragonCarryComponent;
 class UDragonMovementComponent;
 class UThiefBrain;
 class UScentComponent;
@@ -85,6 +88,34 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// pawn gathers targets in-world and calls its TickFire/TickEat.
 	UPROPERTY(VisibleAnywhere, Category = "Dragon")
 	TObjectPtr<UDragonCombatComponent> Combat;
+
+	// [2026-11-04 T-069] Smart lock-on: cadenced candidate gather +
+	// the shared current target pickup/combat read (see its header).
+	UPROPERTY(VisibleAnywhere, Category = "Dragon")
+	TObjectPtr<UDragonTargetingComponent> Targeting;
+
+	// [2026-11-04 T-070] Pickup/carry/drop/deposit over the treasure
+	// registry (one item at a time; see its header).
+	UPROPERTY(VisibleAnywhere, Category = "Dragon")
+	TObjectPtr<UDragonCarryComponent> Carry;
+
+	// [2026-11-04 T-069] The shared lock, readable without reaching
+	// into the component: NAME_None / None category = no lock.
+	FName GetLockedTargetId() const;
+	bool GetLockedTargetCategory(int32& OutCategory) const;
+
+	// [2026-11-04 T-102] Right-face multiplex, pure (Option A as
+	// completed by T-076 in this batch — see BuildInputActions):
+	// a press shorter than the hold threshold is a tap, anything
+	// longer is a hold; a tap claws when a claw target is in the
+	// arc and otherwise toggles tint, a hold is Eat/context on the
+	// ground and sink in the air. Static so DragonInputTest pins
+	// the timing/context table without a pawn.
+	static bool IsRightFaceTap(float PressSeconds);
+	static bool RightFaceTapIsClaw(bool bClawTargetInArc);
+	// [2026-11-04 T-071] Audio seam: verbs call this, never PlaySound.
+	UPROPERTY(VisibleAnywhere, Category = "Dragon")
+	TObjectPtr<class UAudioDirectorComponent> AudioDirector;
 
 	// [2026-11-01 T-051] Fire-breath presentation: a pooled Niagara
 	// stream (NS_FireBreath, authored by Scripts/create_combat_assets.py
@@ -290,6 +321,42 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	UPROPERTY(VisibleAnywhere, Category = "Dragon")
 	TObjectPtr<UAnimSequence> HitAnim;
 
+	// [2026-11-04 T-126] Remaining v1 clip families (T-068 remainder). All
+	// [2026-11-04 T-126] null-safe like the T-068 set above: a family whose
+	// [2026-11-04 T-126] Blender clip has not been authored/imported yet stays
+	// [2026-11-04 T-126] null, PlayClipFamily no-ops, and the verb still works.
+	// [2026-11-04 T-126] Triggers: HitHeavy rides Landed (heavy damage only);
+	// [2026-11-04 T-126] BiteEat rides a started eat channel; TailWhip rides a
+	// [2026-11-04 T-126] landed tail slam; Defeat/Sleep/Wake/LieDown/FirePose/
+	// [2026-11-04 T-126] Claw have routing entries only until their gameplay
+	// [2026-11-04 T-126] triggers land (T-074/T-084/T-076 respectively).
+	UPROPERTY(VisibleAnywhere, Category = "Dragon")
+	TObjectPtr<UAnimSequence> HitHeavyAnim;
+	UPROPERTY(VisibleAnywhere, Category = "Dragon")
+	TObjectPtr<UAnimSequence> DefeatAnim;
+	UPROPERTY(VisibleAnywhere, Category = "Dragon")
+	TObjectPtr<UAnimSequence> SleepIdleAnim;
+	UPROPERTY(VisibleAnywhere, Category = "Dragon")
+	TObjectPtr<UAnimSequence> WakeAnim;
+	UPROPERTY(VisibleAnywhere, Category = "Dragon")
+	TObjectPtr<UAnimSequence> LieDownAnim;
+	UPROPERTY(VisibleAnywhere, Category = "Dragon")
+	TObjectPtr<UAnimSequence> FirePoseAnim;
+	UPROPERTY(VisibleAnywhere, Category = "Dragon")
+	TObjectPtr<UAnimSequence> ClawAnim;
+	UPROPERTY(VisibleAnywhere, Category = "Dragon")
+	TObjectPtr<UAnimSequence> BiteEatAnim;
+	UPROPERTY(VisibleAnywhere, Category = "Dragon")
+	TObjectPtr<UAnimSequence> TailWhipAnim;
+	UPROPERTY(VisibleAnywhere, Category = "Dragon")
+	TObjectPtr<UAnimSequence> WingBuffetAnim;
+
+	// [2026-11-04 T-126] Clip-family routing entry: returns the loaded clip
+	// [2026-11-04 T-126] for a family (null when not yet imported) and plays
+	// [2026-11-04 T-126] it through PlayOneShot (ABP slot or single-node).
+	UAnimSequence* ClipForFamily(EDragonClipFamily Family) const;
+	void PlayClipFamily(EDragonClipFamily Family);
+
 	// [2026-11-01 T-068] Play a one-shot clip (takeoff/land/roar/hit) over
 	// [2026-11-01 T-068] locomotion for its length, then locomotion resumes.
 	// [2026-11-01 T-068] This is the single-node stand-in for montage slots;
@@ -314,6 +381,23 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// [2026-11-01 T-068] UDragonCombatComponent; the pawn gathers targets.
 	void HandleWingBuffet();
 	void HandleTailSlam();
+	// [2026-11-04 T-076] Claw (Q / right-face tap with a target in arc).
+	void HandleClaw();
+	// [2026-11-04 T-070] Pickup-or-drop toggle (P / right-face hold
+	// context): carrying drops (deposits inside the lair), empty
+	// claws pick up the locked treasure or the nearest in range.
+	void HandlePickupOrDrop();
+	// [2026-11-04 T-102] Pad trigger verbs: RT Surge (press edge,
+	// shares W-tap's gate), LT Brake (held latch into bBraking).
+	void HandleSurge();
+	void HandleBrake(const struct FInputActionValue& Value);
+	void HandleBrakeEnd();
+	// [2026-11-04 T-102] Right-face multiplex handlers (see the
+	// pure IsRightFaceTap/RightFaceTapIsClaw decisions above).
+	void HandleRightFaceStarted();
+	void HandleRightFaceEnd();
+	// [2026-11-04 T-069] L3/Tab: cycle (or acquire) the smart lock.
+	void HandleSmartLock();
 
 	// [2026-11-01 T-068] Pure animation-state selection, kept as the pawn's
 	// [2026-11-01 T-068] public seam; delegates to
@@ -406,6 +490,30 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	TObjectPtr<UInputAction> WingBuffetAction;
 	UPROPERTY()
 	TObjectPtr<UInputAction> TailSlamAction;
+	// [2026-11-04 T-076] Claw (Q; gamepad reaches it through the
+	// right-face multiplex below, never a second pad binding).
+	UPROPERTY()
+	TObjectPtr<UInputAction> ClawAction;
+	// [2026-11-04 T-070] Pickup/drop (P; gamepad reaches it through
+	// the right-face hold multiplex — context interact — below).
+	UPROPERTY()
+	TObjectPtr<UInputAction> PickupAction;
+	// [2026-11-04 T-102] Adopted pad triggers: RT Surge / LT Brake.
+	// Brake replaces DiveAction's pad/shift role (dive is a posture
+	// since T-064); DiveAction itself is kept unbound for compat.
+	UPROPERTY()
+	TObjectPtr<UInputAction> SurgeAction;
+	UPROPERTY()
+	TObjectPtr<UInputAction> BrakeAction;
+	// [2026-11-04 T-102] The ONE action bound to gamepad right face:
+	// tap/hold/context are discriminated in the pawn (see
+	// HandleRightFace*), so no verb is ever double-bound to it.
+	UPROPERTY()
+	TObjectPtr<UInputAction> RightFaceAction;
+	// [2026-11-04 T-069] Smart-lock cycle (Tab / L3, the FLIGHT-SPIKE
+	// reservation): acquires or steps the targeting lock.
+	UPROPERTY()
+	TObjectPtr<UInputAction> SmartLockAction;
 	UPROPERTY()
 	TObjectPtr<UDragonTintWidget> TintWidget;
 	bool bTintPickerOpen = false;
@@ -557,6 +665,14 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// needs targets, never as idle per-frame bookkeeping.
 	void GatherCombatTargets(TArray<UThiefBrain*>& OutBrains, TArray<FVector>& OutLocations);
 
+	// [2026-11-04 T-134] Witness facts for one act location: villager
+	// positions + a real LOS trace each, and settlement areas derived
+	// from villager homes (a villager's home cluster IS the settlement
+	// footprint for charging purposes). Fed to FWitnessRules through
+	// the Notoriety witnessed verbs; called only on kill/eat events.
+	void GatherWitnessFacts(const FVector& ActLocation, TArray<FSettlementArea>& OutSettlements,
+							TArray<FVillagerWitness>& OutVillagers);
+
 	// [2026-11-01 T-078] The goat half of the fire seam: every goat
 	// actor + location as parallel arrays, gathered only while fire
 	// is wanted (TickFire burns goats through the same cone).
@@ -634,6 +750,27 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// this 0.5 s debounce (checked in NotifyHit) makes one pass one
 	// crush per half-second instead of per-physics-step damage.
 	float LastCrushTimeSeconds = -1000.0f;
+	// [2026-11-04 T-102] LT/Shift brake latch (prototype integrator
+	// reads it beside bDiving in UpdatePrototypeFlight).
+	bool bBraking = false;
+	// [2026-11-04 T-102] Right-face multiplex press state: world
+	// time the press started, whether the button is still down,
+	// and whether the hold verb already fired for this press.
+	float RightFacePressTime = -1000.0f;
+	bool bRightFaceDown = false;
+	bool bRightFaceHoldFired = false;
+	// [2026-11-04 T-070] The carried treasure actor (presentation
+	// follow only — registry truth lives in UDragonCarryComponent).
+	UPROPERTY()
+	TObjectPtr<AActor> CarriedTreasureActor = nullptr;
+	// [2026-11-04 T-076/T-102] Claw helpers: one gather for the
+	// pending window, one arc probe for the right-face tap choice.
+	void GatherClawTargets(TArray<UThiefBrain*>& OutBrains, TArray<FVector>& OutLocations,
+						   TArray<FVector>& OutForwards);
+	bool HasClawTargetInArc();
+	void TickRightFaceHold();
+	void TickCarryFollow();
+
 	bool bDiving = false;
 
 	// [2026-10-28 T-015] True while the fire input is held; Tick turns

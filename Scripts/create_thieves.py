@@ -33,10 +33,12 @@ def _load(path, what):
 
 
 # name, display, hp, sneak, flee, grab_s, cap, drops_all_on_roar, can_trap, scale
+# [2026-11-04 T-076] kind/gear appended: adventurer ships at gear 2 so
+# its §5.4 frontal claw block is live in authored data, not only tests.
 THIEVES = [
-    ("DA_Thief_Burglar", "Burglar", 20, 220, 520, 1.5, 1, True, False, (0.8, 0.8, 0.8)),
-    ("DA_Thief_DwarfParty", "Dwarf Carrier", 45, 180, 380, 2.5, 3, False, True, (0.9, 0.9, 0.9)),
-    ("DA_Thief_Adventurer", "Adventurer", 80, 260, 480, 1.0, 2, True, False, (1.0, 1.0, 1.05)),
+    ("DA_Thief_Burglar", "Burglar", 20, 220, 520, 1.5, 1, True, False, (0.8, 0.8, 0.8), "Burglar", 1),
+    ("DA_Thief_DwarfParty", "Dwarf Carrier", 45, 180, 380, 2.5, 3, False, True, (0.9, 0.9, 0.9), "Dwarf", 1),
+    ("DA_Thief_Adventurer", "Adventurer", 80, 260, 480, 1.0, 2, True, False, (1.0, 1.0, 1.05), "Adventurer", 2),
 ]
 # [2026-10-28 T-044] Owner's Meshy models (docs/THIEF-ASSETS.md):
 # one skeletal mesh + walk/run clips per type.
@@ -45,7 +47,7 @@ VISUALS = {
     "DA_Thief_DwarfParty": "dwarf_carrier",
     "DA_Thief_Adventurer": "adventurer",
 }
-for name, display, hp, sneak, flee, grab, cap, drops, traps, scale in THIEVES:
+for name, display, hp, sneak, flee, grab, cap, drops, traps, scale, kind, gear in THIEVES:
     path = DIR + "/" + name
     # [2026-10-28 T-014 resume] Update in place when the asset
     # exists: delete+recreate fails in-session for registry-loaded
@@ -55,6 +57,9 @@ for name, display, hp, sneak, flee, grab, cap, drops, traps, scale in THIEVES:
     # not the blind registry): existing assets update in place.
     da = _load(path, "thief asset")
     da.set_editor_property("display_name", display)
+    # [2026-11-04 T-076] UENUM editor property takes the enum value by name in UE Python.
+    da.set_editor_property("kind", kind)
+    da.set_editor_property("gear_tier", gear)
     da.set_editor_property("max_hp", float(hp))
     da.set_editor_property("sneak_speed", float(sneak))
     da.set_editor_property("flee_speed", float(flee))

@@ -3,6 +3,22 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-04 — T-138/T-135/T-131 — Sandbox mode (title + utm.sandbox, SANDBOX badge, no spawns/audit/notoriety), distinct PYRRHIC WIN end screen with inside/outside resolution score, and incursion cadence (90–150 s gaps, 20 s wave warning, 4-min wave cap)
+
+2026-11-04 — T-128/T-088 — Graphics quality presets (Ultra default, Low/Medium/High relief) + settings model/widget (volume, sensitivity, inverts, camera, infinite-stamina toggle) with persisted config
+
+2026-11-04 — T-069/T-070/T-076/T-102 — Smart target lock, treasure pickup/carry/drop/deposit, claw attack (25 dmg, shield-block matrix), and pad remap RT Surge / LT Brake / RB Fire with right-face tap/hold multiplex
+
+2026-11-04 — T-080/T-084/T-092/T-090/T-091 — Magic pool charging true-sight, sleep time-skip with notoriety decay + hoard risk, day/night world clock, wildlife food values, and wading water behaviour (systems live; world actors for wildlife/water still owed on their tasks)
+
+2026-11-04 — T-074/T-089/T-132/T-133/T-134 — Thieves can hurt the dragon (tells, HP, defeat slink-away), waypoint navigation replaces hard-coded chamber steering, star-tier gear + raider loot, dwarf carrier/trapper/guard roles with crack routing, and witness-based notoriety (unwitnessed wilderness eats are free)
+
+2026-11-04 — T-081/T-136/T-071 — Artifact catalogue with registry-truth effects (Seeing Stone, scales, flame/power rings, claws), gameplay config defaults pinned to shipped values, and an audio director seam (music/SFX slots per verb; friend-music masters still to ingest)
+
+2026-11-04 — T-127 — Scent ribbons retuned: density + metallic gold sheen scale with value, end-on white-bar faded (Niagara user-vars still to author in-editor)
+
+2026-11-04 — T-119/T-137 — Stale dragon-import scripts re-pointed at the live v6 sources, appearance comments corrected, README refreshed to the real tree (no user-visible change)
+
 2026-11-04 — T-122 — World map rebuilt: the valley village moves out from under the terrace slabs that roofed it (now open sky at x=50000) and Villages N/E move onto local flats; terrain re-pressed under the whole flight zone with zero poke-throughs; all 9 settlements verify sunlit in-game and every capture shows readable sunlit pixels — the world reads as a normal medieval landscape
 
 2026-11-04 — T-123 — Dragon mesh surgically repaired: chest-side + tail-spine holes closed (1,308/1,308 named loops), wings verified bit-identical, textures read unified in lair + sunlight; same rig, clips, and materials, zero Meshy spend

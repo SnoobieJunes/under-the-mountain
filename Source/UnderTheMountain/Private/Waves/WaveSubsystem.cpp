@@ -8,17 +8,11 @@
 #include "UnderTheMountain.h"
 
 #include "Engine/World.h"
+#include "Notoriety/NotorietySubsystem.h"
 #include "Thief/ThiefBrain.h"
 #include "Thief/ThiefCharacter.h"
 #include "Thief/ThiefDataAsset.h"
-
-namespace
-{
-// [2026-11-03 T-066] Lair entry: the grand east portal of the mountain
-// (was the west edge of the T-012 entry chamber). Exit is the same point
-// - thieves leave the way they came in, through the portal.
-const FVector EntryPoint(18700.0f, 0.0f, 160.0f);
-} // namespace
+#include "Thief/ThiefRules.h"
 
 void UWaveSubsystem::CompositionForWave(int32 Wave, int32& OutBurglars, int32& OutDwarfParties,
 										int32& OutAdventurers)
@@ -142,7 +136,7 @@ void UWaveSubsystem::BeginWave(int32 Wave)
 		   TotalActorsForWave(Wave));
 }
 
-AThiefCharacter* UWaveSubsystem::SpawnThief(UThiefDataAsset* Data, const FVector& SpawnPoint)
+AThiefCharacter* UWaveSubsystem::SpawnThief(UThiefDataAsset* Data, const FVector& SpawnPoint, EThiefRole Role)
 {
 	UWorld* World = GetWorld();
 	if (World == nullptr || Data == nullptr)
@@ -159,8 +153,25 @@ AThiefCharacter* UWaveSubsystem::SpawnThief(UThiefDataAsset* Data, const FVector
 		return nullptr;
 	}
 	Thief->ThiefData = Data;
-	Thief->ExitLocation = EntryPoint;
+	// [2026-11-04 T-133] Exit/entry from the one authored table
+	// (FThiefRules::EntryPoints): burglars flee to their crack, the
+	// rest to the grand portal. No entry literals live here any more.
+	const EThiefRole EffectiveRole = Role != EThiefRole::None ? Role : Data->Role;
+	Thief->PartyRole = Role;
+	Thief->ExitLocation = FThiefRules::EntryForRole(EffectiveRole, SpawnPoint).Location;
 	Thief->FinishSpawning(FTransform(FRotator::ZeroRotator, SpawnPoint));
+	// [2026-11-04 T-132] Star gear is a spawn snapshot (no mid-wave
+	// re-gear, GAMEPLAY.md S4): HP/speed/loot scale from current stars.
+	if (UThiefBrain* Brain = Thief->GetBrain())
+	{
+		int32 Stars = 0;
+		if (UNotorietySubsystem* Notoriety = GetWorld()->GetSubsystem<UNotorietySubsystem>())
+		{
+			Stars = Notoriety->GetStars();
+		}
+		Brain->ApplyStarGear(Stars);
+		Brain->SetRaiderLootRoll(FMath::FRand());
+	}
 	WaveThieves.Add(Thief);
 	return Thief;
 }
@@ -186,22 +197,36 @@ void UWaveSubsystem::SpawnNextGroup()
 		if (PendingDwarfParties > 0)
 		{
 			--PendingDwarfParties;
+			// [2026-11-04 T-133] One party, three roles: carrier,
+			// trapper, guard (GAMEPLAY.md S5.2), spawned at the portal.
+			static const EThiefRole DwarfRoles[3] = {EThiefRole::Carrier, EThiefRole::Trapper,
+													 EThiefRole::Guard};
+			const FVector PartyEntry =
+				FThiefRules::EntryForRole(EThiefRole::Carrier, FVector::ZeroVector).Location;
 			for (int32 Member = 0; Member < 3; ++Member)
 			{
-				SpawnThief(DwarfData, EntryPoint + FVector(0.0f, (Member - 1) * 120.0f, 0.0f));
+				SpawnThief(DwarfData, PartyEntry + FVector(0.0f, (Member - 1) * 120.0f, 0.0f),
+						   DwarfRoles[Member]);
 			}
 			Spawned += 3;
 		}
 		else if (PendingBurglars > 0)
 		{
 			--PendingBurglars;
-			SpawnThief(BurglarData, EntryPoint + FVector(0.0f, Spawned * 120.0f, 0.0f));
+			// [2026-11-04 T-133] Burglars enter by a crack, not the portal.
+			const FVector CrackEntry =
+				FThiefRules::EntryForRole(EThiefRole::Burglar, FVector::ZeroVector).Location;
+			SpawnThief(BurglarData, CrackEntry + FVector(0.0f, Spawned * 120.0f, 0.0f),
+					   EThiefRole::Burglar);
 			++Spawned;
 		}
 		else if (PendingAdventurers > 0)
 		{
 			--PendingAdventurers;
-			SpawnThief(AdventurerData, EntryPoint + FVector(0.0f, Spawned * 120.0f, 0.0f));
+			const FVector PortalEntry =
+				FThiefRules::EntryForRole(EThiefRole::Adventurer, FVector::ZeroVector).Location;
+			SpawnThief(AdventurerData, PortalEntry + FVector(0.0f, Spawned * 120.0f, 0.0f),
+					   EThiefRole::Adventurer);
 			++Spawned;
 		}
 		else

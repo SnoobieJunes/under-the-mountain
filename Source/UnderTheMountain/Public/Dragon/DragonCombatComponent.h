@@ -18,6 +18,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Thief/ThiefDataAsset.h" // [2026-11-04 T-076] EThiefKind for the claw rules
 #include "DragonCombatComponent.generated.h"
 
 class AGoatActor;
@@ -115,6 +116,74 @@ class UNDERTHEMOUNTAIN_API UDragonCombatComponent : public UActorComponent
 	float TailSlamHalfAngleDeg = 55.0f;
 	UPROPERTY(EditAnywhere, Category = "Dragon|Combat|Tail")
 	float TailSlamCooldownSeconds = 2.0f;
+
+	// [2026-11-04 T-076] Claw attack (GAMEPLAY.md §5.4 + §2 verb
+	// table, `[tuning: PT-THIEF]` per T-076's 2026-11-01 decision):
+	// 25 damage one-shots a 20 HP burglar, -4 stamina per swing,
+	// 450 cm foreleg reach (beyond EatRange 300, far inside fire's
+	// 1400), 110° frontal arc (55° half-angle, wider than fire's
+	// cone because a swipe sweeps). Cooldown/delay are verb-timing
+	// values, see TryClaw.
+	UPROPERTY(EditAnywhere, Category = "Dragon|Combat|Claw")
+	float ClawDamage = 25.0f;
+	UPROPERTY(EditAnywhere, Category = "Dragon|Combat|Claw")
+	float ClawCost = 4.0f;
+	UPROPERTY(EditAnywhere, Category = "Dragon|Combat|Claw")
+	float ClawRange = 450.0f;
+	UPROPERTY(EditAnywhere, Category = "Dragon|Combat|Claw")
+	float ClawHalfAngleDeg = 55.0f;
+	UPROPERTY(EditAnywhere, Category = "Dragon|Combat|Claw")
+	float ClawCooldownSeconds = 0.8f;
+	// [2026-11-04 T-076] Damage lands this long after the swing
+	// starts. T-068's claw montage + notify do not exist (no claw
+	// clip is in the pawn's clip set), so the verb's own timing is
+	// the damage window — the pawn ticks TickClaw and the hit is
+	// judged against where targets stand when the window opens.
+	UPROPERTY(EditAnywhere, Category = "Dragon|Combat|Claw")
+	float ClawDamageDelaySeconds = 0.25f;
+
+	// [2026-11-04 T-076] §5.4 target priority for one claw swing:
+	// a dwarf carrying loot first (stopping the carrier is the
+	// efficient kill), then any carrier, then a dwarf, then
+	// anyone. Higher wins; distance breaks ties in TickClaw.
+	static int32 ClawTargetPriority(EThiefKind Kind, bool bCarryingLoot);
+
+	// [2026-11-04 T-076] §5.4 frontal block, pure: only an
+	// adventurer at gear tier >= 2 blocks, and only when the
+	// dragon is in the thief's frontal 120° (60° half-angle —
+	// a shield covers the front, not the flank). Tail/flank
+	// attacks simply never call this with a frontal geometry.
+	static bool IsFrontalClawBlocked(EThiefKind Kind, int32 GearTier, const FVector& ThiefForward,
+									 const FVector& ThiefLocation, const FVector& DragonLocation);
+
+	// [2026-11-04 T-076] Starts a claw swing: TryRoar's gating
+	// contract (null stats, cooldown, then stamina; blocked =
+	// free + Warning). Success pays ClawCost, starts the cooldown,
+	// and arms the damage window (ClawDamageDelaySeconds); the
+	// hit itself lands in TickClaw. One swing at a time — a press
+	// during a pending window is refused by the cooldown.
+	bool TryClaw(float CurrentTimeSeconds, UDragonStatsComponent* Stats);
+
+	// [2026-11-04 T-076] True while a swing's damage window has
+	// not opened yet (the pawn gathers claw targets only then).
+	bool IsClawPending() const
+	{
+		return ClawTimeRemaining > 0.0f;
+	}
+
+	// [2026-11-04 T-076] Advances the swing by Dt; returns 0 until
+	// the window opens, then judges the arc ONCE against the
+	// targets as they now stand (parallel brains/locations/
+	// forwards — the pawn gathers them), hits at most one (the
+	// ClawTargetPriority winner, nearest on ties) for ClawDamage,
+	// and returns 1. A blocked frontal (IsFrontalClawBlocked on
+	// the winner) deals nothing, sets bOutBlocked, and still
+	// returns 0 hits — the shield eats the swing, nobody behind
+	// it is hit instead. A whiff (nobody in arc) returns 0 with
+	// bOutBlocked false.
+	int32 TickClaw(float Dt, const FVector& Origin, const FVector& Forward,
+				   const TArray<UThiefBrain*>& Brains, const TArray<FVector>& BrainLocations,
+				   const TArray<FVector>& BrainForwards, bool& bOutBlocked);
 
 	// [2026-10-28 T-015] Eat tuning (docs/GAMEPLAY.md section 2):
 	// a 2 s channel makes eating a decision taken under pressure,
@@ -289,6 +358,9 @@ class UNDERTHEMOUNTAIN_API UDragonCombatComponent : public UActorComponent
 	// cooldown at any plausible CurrentTimeSeconds (including 0).
 	bool bFiring = false;
 	float LastRoarTime = -1000.0f;
+	// [2026-11-04 T-076] Claw clock + pending window (see TryClaw).
+	float LastClawTime = -1000.0f;
+	float ClawTimeRemaining = 0.0f;
 	float LastBuffetTime = -1000.0f;   // [2026-11-01 T-068]
 	float LastTailSlamTime = -1000.0f; // [2026-11-01 T-068]
 

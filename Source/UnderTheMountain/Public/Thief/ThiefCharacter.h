@@ -15,6 +15,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "Thief/ThiefBrain.h"
+#include "Thief/ThiefDataAsset.h"
 #include "ThiefCharacter.generated.h"
 
 class UAnimSequence;
@@ -39,6 +40,18 @@ class UNDERTHEMOUNTAIN_API AThiefCharacter : public ACharacter
 	// Flee/Scared — authored per spawn so cave mouths stay level data.
 	UPROPERTY(EditAnywhere, Category = "Thief")
 	FVector ExitLocation = FVector::ZeroVector;
+
+	// [2026-11-04 T-133] Per-member party role override (dwarf spawns
+	// set Carrier/Trapper/Guard per member; None keeps ThiefData->Role).
+	UPROPERTY(EditAnywhere, Category = "Thief")
+	EThiefRole PartyRole = EThiefRole::None;
+
+	// [2026-11-04 T-089] Authored waypoint route injected per spawn /
+	// per placement (level or spawner owns the list; this actor holds
+	// no map knowledge). Empty = steer straight at the brain's
+	// destination. NavMesh volumes are editor work on top of this seam.
+	UPROPERTY(EditAnywhere, Category = "Thief")
+	TArray<FVector> RouteWaypoints;
 
 	// [2026-10-28 T-014] The decision-maker, created in BeginPlay once
 	// the world's treasure registry can be injected into it.
@@ -133,4 +146,11 @@ class UNDERTHEMOUNTAIN_API AThiefCharacter : public ACharacter
 	// captured at BeginPlay so the flinch can add pitch over it
 	// instead of overwriting the engine's -90 yaw on GetMesh().
 	FRotator BaseMeshRotation = FRotator::ZeroRotator;
+
+	// [2026-11-04 T-089] Route progress: index into RouteWaypoints and
+	// the brain destination the route was being followed toward (a new
+	// destination — treasure grabbed, now fleeing — restarts the route).
+	int32 RouteWaypointIndex = 0;
+	FVector LastRouteDestination = FVector::ZeroVector;
+	bool bHasRouteDestination = false;
 };

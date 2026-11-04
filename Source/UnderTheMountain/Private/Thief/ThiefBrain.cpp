@@ -6,7 +6,9 @@
 
 #include "Thief/ThiefBrain.h"
 
+#include "Dragon/DragonStatsComponent.h"
 #include "Thief/ThiefDataAsset.h"
+#include "Thief/ThiefRules.h"
 #include "Treasure/TreasureRegistry.h"
 #include "UnderTheMountain.h"
 
@@ -45,7 +47,17 @@ void UThiefBrain::Init(const UThiefDataAsset* Config, UTreasureRegistry* Registr
 	ThiefId = InThiefId;
 
 	CurrentState = EThiefState::Sneak;
-	CurrentHP = Config != nullptr ? Config->MaxHP : 0.0f;
+	// [2026-11-04 T-133] Role-derived HP (guard 70, dwarf 45) replaces
+	// the shared asset value for dwarf roles; solo types keep authored.
+	CurrentRole = Config != nullptr ? Config->Role : EThiefRole::None;
+	BaseHP = Config != nullptr ? FThiefRules::HPForRole(CurrentRole, Config->MaxHP) : 0.0f;
+	CurrentHP = BaseHP;
+	CurrentGearStars = 0;
+	CurrentSpeedMultiplier = 1.0f;
+	bRaiderLootEnabled = false;
+	CurrentAttackPhase = EThiefAttackPhase::Idle;
+	AttackTellTimer = 0.0f;
+	AttackCooldownTimer = 0.0f;
 	Carried.Reset();
 	TargetId = NAME_None;
 	GrabTimer = 0.0f;
@@ -78,6 +90,23 @@ float UThiefBrain::HP() const
 const TArray<FName>& UThiefBrain::CarriedItems() const
 {
 	return Carried;
+}
+
+// [2026-11-04 T-076] Claw-rule inputs from the config (see header):
+// no config reads as the burglar baseline, never a crash.
+EThiefKind UThiefBrain::Kind() const
+{
+	return ConfigAsset != nullptr ? ConfigAsset->Kind : EThiefKind::Burglar;
+}
+
+int32 UThiefBrain::GearTier() const
+{
+	return ConfigAsset != nullptr ? ConfigAsset->GearTier : 1;
+}
+
+bool UThiefBrain::IsCarryingLoot() const
+{
+	return Carried.Num() > 0;
 }
 
 FVector UThiefBrain::CurrentDestination() const
@@ -237,12 +266,12 @@ void UThiefBrain::Tick(float Dt, const FVector& ThiefLocation)
 		FVector NextLocation;
 		const bool bMoreTreasure = PickBestTarget(NextId, NextLocation);
 		TargetId = NAME_None;
-		if (Carried.Num() >= ConfigAsset->CarriedCap || !bMoreTreasure)
+		if (Carried.Num() >= EffectiveCarriedCap() || !bMoreTreasure)
 		{
 			Destination = ExitLocation;
 			TransitionTo(EThiefState::Flee,
-						 Carried.Num() >= ConfigAsset->CarriedCap ? TEXT("carried cap reached")
-																  : TEXT("hoard empty"));
+						 Carried.Num() >= EffectiveCarriedCap() ? TEXT("carried cap reached")
+																: TEXT("hoard empty"));
 		}
 		else
 		{
@@ -361,6 +390,15 @@ bool UThiefBrain::ApplyDamage(float Damage, const FVector& ThiefLocation)
 	}
 
 	DropAllItems(ThiefLocation);
+	// [2026-11-04 T-132] Raider-borne loot (enabled by ApplyStarGear):
+	// the wealth the raider carried IN drops and registers here, at the
+	// death location, so scent/HUD see it this tick (GAMEPLAY.md S4).
+	if (bRaiderLootEnabled && RegistryObject != nullptr)
+	{
+		FThiefRules::RegisterRaiderLootDrop(
+			RegistryObject,
+			FThiefRules::MakeRaiderLootDrop(ThiefId, CurrentGearStars, ThiefLocation, RaiderLootRoll));
+	}
 	TargetId = NAME_None;
 	Destination = ThiefLocation;
 	TransitionTo(EThiefState::Dead, TEXT("hp exhausted"));
@@ -407,4 +445,130 @@ float UThiefBrain::TrapSlowFactor() const
 float UThiefBrain::TrapSlowSeconds() const
 {
 	return ConfigAsset != nullptr ? ConfigAsset->TrapSlowSeconds : 4.0f;
+}
+
+// [2026-11-04 T-133] --- role / gear / dragon-attack seams ---
+
+void UThiefBrain::SetRole(EThiefRole InRole)
+{
+	CurrentRole = InRole;
+	if (ConfigAsset != nullptr && CurrentHP >= BaseHP)
+	{
+		// [2026-11-04 T-133] Undamaged (Init-time) brains re-derive HP
+		// for the new role; a wounded brain keeps its HP (no free heal).
+		BaseHP = FThiefRules::HPForRole(CurrentRole, ConfigAsset->MaxHP);
+		CurrentHP = FThiefRules::ScaledHP(BaseHP, CurrentGearStars);
+	}
+}
+
+EThiefRole UThiefBrain::Role() const
+{
+	return CurrentRole;
+}
+
+int32 UThiefBrain::EffectiveCarriedCap() const
+{
+	return ConfigAsset != nullptr ? FThiefRules::CarriedCapForRole(CurrentRole, ConfigAsset->CarriedCap) : 1;
+}
+
+void UThiefBrain::ApplyStarGear(int32 Stars)
+{
+	CurrentGearStars = FMath::Clamp(Stars, 0, 5);
+	const FNotorietyGearTier Tier = FThiefRules::GearForStars(CurrentGearStars);
+	CurrentSpeedMultiplier = Tier.SpeedMultiplier;
+	CurrentHP = FThiefRules::ScaledHP(BaseHP, CurrentGearStars);
+	// [2026-11-04 T-132] Every tier carries some loot in (even 0 stars:
+	// 0-10 gold), so death always has a drop once gear was applied.
+	bRaiderLootEnabled = true;
+}
+
+int32 UThiefBrain::GearStars() const
+{
+	return CurrentGearStars;
+}
+
+float UThiefBrain::GearSpeedMultiplier() const
+{
+	return CurrentSpeedMultiplier;
+}
+
+void UThiefBrain::SetRaiderLootRoll(float Roll01)
+{
+	RaiderLootRoll = FMath::Clamp(Roll01, 0.0f, 1.0f);
+}
+
+EThiefAttackPhase UThiefBrain::AttackPhase() const
+{
+	return CurrentAttackPhase;
+}
+
+EThiefAttackPhase UThiefBrain::TickDragonAttack(float Dt, const FVector& ThiefLocation,
+												const FVector& DragonLocation,
+												UDragonStatsComponent* DragonStats)
+{
+	LastKnownLocation = ThiefLocation;
+	const float Step = FMath::Max(0.0f, Dt);
+	const bool bCanFight = FThiefRules::CanAttackDragon(CurrentRole) &&
+						   (CurrentState == EThiefState::Sneak || CurrentState == EThiefState::Grab ||
+							CurrentState == EThiefState::Flee);
+	if (!bCanFight)
+	{
+		CurrentAttackPhase = EThiefAttackPhase::Idle;
+		AttackTellTimer = 0.0f;
+		return CurrentAttackPhase;
+	}
+
+	const FThiefAttackProfile& Profile = FThiefRules::AttackProfile();
+	const FNotorietyGearTier Tier = FThiefRules::GearForStars(CurrentGearStars);
+	const float Distance = FVector::Dist2D(ThiefLocation, DragonLocation);
+	const bool bUseCrossbow = Tier.bCrossbow && Distance > Profile.MeleeRange &&
+							  Distance <= Profile.CrossbowRange;
+	const bool bInRange = Distance <= Profile.MeleeRange || bUseCrossbow;
+	const float TellNeeded = bUseCrossbow ? Profile.CrossbowTellSeconds : Profile.TellSeconds;
+	const float Cadence = bUseCrossbow ? Profile.CrossbowCadenceSeconds : Profile.MeleeCadenceSeconds;
+
+	switch (CurrentAttackPhase)
+	{
+	case EThiefAttackPhase::Cooldown:
+		AttackCooldownTimer -= Step;
+		if (AttackCooldownTimer > 0.0f)
+		{
+			return CurrentAttackPhase;
+		}
+		CurrentAttackPhase = EThiefAttackPhase::Idle;
+		[[fallthrough]];
+	case EThiefAttackPhase::Idle:
+		if (!bInRange)
+		{
+			return CurrentAttackPhase;
+		}
+		bPendingRangedStrike = bUseCrossbow;
+		AttackTellTimer = TellNeeded;
+		CurrentAttackPhase = EThiefAttackPhase::Tell;
+		return CurrentAttackPhase;
+	case EThiefAttackPhase::Tell:
+		if (!bInRange)
+		{
+			// [2026-11-04 T-074] The counter window is real: step out
+			// of range during the wind-up and the strike never lands.
+			CurrentAttackPhase = EThiefAttackPhase::Idle;
+			AttackTellTimer = 0.0f;
+			return CurrentAttackPhase;
+		}
+		AttackTellTimer -= Step;
+		if (AttackTellTimer > 0.0f)
+		{
+			return CurrentAttackPhase;
+		}
+		if (DragonStats != nullptr)
+		{
+			DragonStats->ApplyHPDamage(bPendingRangedStrike ? Profile.CrossbowDamage
+															: FThiefRules::MeleeDamageForRole(CurrentRole));
+		}
+		AttackCooldownTimer = Cadence;
+		CurrentAttackPhase = EThiefAttackPhase::Cooldown;
+		return CurrentAttackPhase;
+	default:
+		return CurrentAttackPhase;
+	}
 }

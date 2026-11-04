@@ -21,6 +21,14 @@ struct UNDERTHEMOUNTAIN_API FScentRibbonParams
 	float Width = 0.0f;
 	float Opacity = 1.0f;
 	bool bCarried = false;
+	// [2026-11-04 T-127] Density/sheen retune (owner 2026-11-03): richer
+	// [2026-11-04 T-127] treasure reads denser and more metallic-gold.
+	// [2026-11-04 T-127] Exact Niagara-side values to author are recorded in
+	// [2026-11-04 T-127] docs/SCENT-RIBBON-RETUNE.md; these code values are
+	// [2026-11-04 T-127] pushed as User.RibbonDensity / User.RibbonSheen.
+	float DensityScale = 1.0f;
+	float SheenScale = 0.0f;
+	FLinearColor SheenColor = FLinearColor::White;
 };
 
 // [2026-10-28 T-013] Namespace-as-struct of static pure functions
@@ -38,6 +46,16 @@ struct UNDERTHEMOUNTAIN_API FScentMath
 	// the fraction clamped to [0, 1], capping growth at 32*1.1 instead
 	// of dividing by an unbounded span.
 	static float RibbonWidthForValue(int32 GoldValue);
+
+	// [2026-11-04 T-127] Particle density scale by value: 1.0 at trinket
+	// [2026-11-04 T-127] widths rising monotonically to 2.5 at crown widths,
+	// [2026-11-04 T-127] so value still ranks first by width (PT-SCENT order)
+	// [2026-11-04 T-127] and density only reinforces it.
+	static float RibbonDensityScaleForValue(int32 GoldValue);
+	// [2026-11-04 T-127] Metallic-gold sheen: 0 = tarnished/dull, 1 = bright
+	// [2026-11-04 T-127] metallic gold; colour lerps with the same fraction.
+	static float RibbonSheenScaleForValue(int32 GoldValue);
+	static FLinearColor RibbonSheenColorForValue(int32 GoldValue);
 
 	// [2026-10-28 T-013] True-sight dims the ribbons to 0.3 so the
 	// exact markers it reveals stay readable against them; normal

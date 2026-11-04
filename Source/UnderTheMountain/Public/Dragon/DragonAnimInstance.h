@@ -35,6 +35,28 @@ enum class EDragonAnimState : uint8
 	Dive
 };
 
+// [2026-11-04 T-126] Every v1 one-shot/action clip family (docs/ANIMATION-SPIKE.md
+// [2026-11-04 T-126] adopted v1 + combat expansion). Locomotion families are the
+// [2026-11-04 T-126] EDragonAnimState machine above; these families route through
+// [2026-11-04 T-126] montage slots (or, for FirePose/SleepIdle, a looping layer).
+// [2026-11-04 T-126] A family with no imported clip yet still has a routing entry:
+// [2026-11-04 T-126] ADragonCharacter::ClipForFamily returns null and PlayClipFamily
+// [2026-11-04 T-126] no-ops, so no family is silently dropped (T-126 Accept).
+UENUM(BlueprintType)
+enum class EDragonClipFamily : uint8
+{
+	HitHeavy,
+	Defeat,
+	SleepIdle,
+	Wake,
+	LieDown,
+	FirePose,
+	Claw,
+	BiteEat,
+	TailWhip,
+	WingBuffet
+};
+
 UCLASS()
 class UNDERTHEMOUNTAIN_API UDragonAnimInstance : public UAnimInstance
 {
@@ -70,6 +92,38 @@ class UNDERTHEMOUNTAIN_API UDragonAnimInstance : public UAnimInstance
 	static float ComputeBankDegrees(float YawRateDegPerSec, float HorizontalSpeed);
 	static float ComputeMeshPitchDegrees(float HorizontalSpeed, float VerticalSpeed);
 
+	// [2026-11-04 T-126] Clip-family routing seam (pure, asset-free): slot name
+	// [2026-11-04 T-126] per docs/ANIMATION-SPIKE.md montage slots — full-body:
+	// [2026-11-04 T-126] heavy hit, defeat, sleep/wake transitions, tail whip,
+	// [2026-11-04 T-126] wing buffet; upper-body (chest branch): fire pose, claw,
+	// [2026-11-04 T-126] bite/eat. SleepIdle is a looping ground layer, not a
+	// [2026-11-04 T-126] one-shot, so it shares FullBody with looping=true.
+	static FName SlotForClipFamily(EDragonClipFamily Family);
+	static bool IsLoopingClipFamily(EDragonClipFamily Family);
+	// [2026-11-04 T-126] Notify seam: normalised clip time (0..1) at which the
+	// [2026-11-04 T-126] gameplay event fires (claw damage window, bite/eat
+	// [2026-11-04 T-126] consume point, tail-whip/buffet damage, roar point is
+	// [2026-11-04 T-126] locomotion-adjacent and not a family here). Families
+	// [2026-11-04 T-126] with no gameplay notify return -1. Rules stay in
+	// [2026-11-04 T-126] combat components; this only synchronises presentation.
+	static float NotifyFractionForClipFamily(EDragonClipFamily Family);
+
+	// [2026-11-04 T-126] Slither / tail-lag procedural layer (spike: runtime
+	// [2026-11-04 T-126] procedural layers, not baked clips, so every locomotion
+	// [2026-11-04 T-126] state inherits them). Amplitude is 0 at rest, rises with
+	// [2026-11-04 T-126] ground/air speed, and is capped so the spine never
+	// [2026-11-04 T-126] reads as a snake at gameplay distance.
+	static float ComputeSlitherAmplitudeDeg(EDragonAnimState State, float HorizontalSpeed);
+	// [2026-11-04 T-126] Per-segment slither offset: a travelling sine whose
+	// [2026-11-04 T-126] phase lags by SegmentIndex (head leads, tail follows).
+	static float ComputeSlitherOffsetDeg(int32 SegmentIndex, float PhaseRadians, float AmplitudeDeg);
+	// [2026-11-04 T-126] Tail lag under yaw: each successive tail segment lags
+	// [2026-11-04 T-126] further behind a turn, total capped at 30 degrees.
+	static float ComputeTailLagDegrees(int32 SegmentIndex, float YawRateDegPerSec, float HorizontalSpeed);
+	// [2026-11-04 T-126] Fire head-aim: clamp a desired head pitch (deg) to the
+	// [2026-11-04 T-126] readable aim band the fire pose additive may use.
+	static float ComputeFireAimPitchDegrees(float DesiredPitchDeg);
+
 	// [2026-11-01 T-068] Published pose facts, refreshed in
 	// [2026-11-01 T-068] NativeUpdateAnimation when an ABP uses this class and
 	// [2026-11-01 T-068] read by ADragonCharacter's driver today via the statics.
@@ -97,6 +151,20 @@ class UNDERTHEMOUNTAIN_API UDragonAnimInstance : public UAnimInstance
 	float BankDegrees = 0.0f;
 	UPROPERTY(BlueprintReadOnly, Category = "Dragon|Anim")
 	float MeshPitchDegrees = 0.0f;
+	// [2026-11-04 T-126] Procedural-layer outputs for the ABP graph (T-139
+	// [2026-11-04 T-126] wires them to spine/tail additives; the single-node
+	// [2026-11-04 T-126] driver does not consume them, so publishing them
+	// [2026-11-04 T-126] cannot regress the shipped course).
+	UPROPERTY(BlueprintReadOnly, Category = "Dragon|Anim")
+	float SlitherAmplitudeDeg = 0.0f;
+	UPROPERTY(BlueprintReadOnly, Category = "Dragon|Anim")
+	float SlitherPhaseRadians = 0.0f;
+	UPROPERTY(BlueprintReadOnly, Category = "Dragon|Anim")
+	float TailLagDegrees = 0.0f;
+	UPROPERTY(BlueprintReadOnly, Category = "Dragon|Anim")
+	float FireAimPitchDegrees = 0.0f;
+	UPROPERTY(BlueprintReadOnly, Category = "Dragon|Anim")
+	bool bFiring = false;
 
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
 

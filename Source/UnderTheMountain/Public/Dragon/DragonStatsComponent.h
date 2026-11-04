@@ -6,6 +6,15 @@
 // the hard-landing damage curve from docs/GAMEPLAY.md section 2.
 // Invariants: stamina is clamped to [0, MaxStamina] and HP to
 // [0, MaxHP] when written through this component's methods.
+// [2026-11-04 T-080] Magic joins as the third pool on the same
+// contract: clamped to [0, MaxMagic] through this component's
+// methods. Delegated owner decision (T-080 was Gated: owner): pool
+// 100 per GAMEPLAY.md S2's percent-scale table; base regen 0.5/s
+// over time per S6's Magic Pendant line ("base regen 0.5/s", the
+// pendant's +1/s is T-081 artifact work, not baked in here); no
+// hoard-proximity or food source in M1, so time is the only regen
+// source and sleeping (T-084) does not refill magic. True-sight is
+// the only M1 drain (S3: 3/s, held by UScentComponent).
 // [2026-10-28 T-041] Honest contract, not encapsulation: Stamina, HP
 // and the tuning fields below are public UPROPERTYs, so the editor
 // and tests can (and tests do) write them directly, bypassing the
@@ -18,6 +27,12 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "DragonStatsComponent.generated.h"
+
+// [2026-11-04 T-074] Hit/defeat notifications. Plain (non-dynamic)
+// multicast delegates: C++ consumers (T-068 hit reactions, GameFlow
+// defeat) bind lambdas; damage amount + HP-after are the payload.
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnDragonHit, float, float);
+DECLARE_MULTICAST_DELEGATE(FOnDragonDefeated);
 
 UCLASS(ClassGroup = (Dragon), meta = (BlueprintSpawnableComponent))
 class UNDERTHEMOUNTAIN_API UDragonStatsComponent : public UActorComponent
@@ -93,6 +108,23 @@ class UNDERTHEMOUNTAIN_API UDragonStatsComponent : public UActorComponent
 	UPROPERTY(VisibleAnywhere, Category = "Dragon|Stats")
 	float HP;
 
+	// [2026-11-04 T-080] Magic pool (GAMEPLAY.md S2: 100, same
+	// percent scale as HP/stamina). Same public-UPROPERTY contract
+	// as the other pools: production writes go through the magic
+	// methods below; the editor/tests may set the fields directly.
+	UPROPERTY(EditAnywhere, Category = "Dragon|Stats")
+	float MaxMagic = 100.0f;
+
+	UPROPERTY(VisibleAnywhere, Category = "Dragon|Stats")
+	float Magic;
+
+	// [2026-11-04 T-080] Base magic regen (GAMEPLAY.md S6 pendant
+	// line pins the base at 0.5/s). Time-based only by decision (see
+	// file header); UScentComponent pauses it while true-sight is
+	// active so the 3/s drain is never silently offset.
+	UPROPERTY(EditAnywhere, Category = "Dragon|Stats")
+	float MagicRegenPerSecond = 0.5f;
+
 	// [2026-10-28 T-011] Hard-landing damage tuning (GAMEPLAY.md section 2,
 	// HP -5 to -25 scaled by impact, [tuning: PT-STAM]). Impact speeds are
 	// in cm/s (UE units): 800 is above a flap-assisted descent (flap sets
@@ -138,6 +170,20 @@ class UNDERTHEMOUNTAIN_API UDragonStatsComponent : public UActorComponent
 	void ApplyHPDamage(float Damage);
 	void DrainHPForExhaustion(float DeltaSeconds);
 
+	// [2026-11-04 T-074] Fired on every effective HP drop (damage > 0
+	// that actually lowers HP) and exactly once per drop to 0 HP. The
+	// defeat latch re-arms when RestoreHP lifts HP above 0, so a healed
+	// dragon can be defeated again. GameFlow hook: ADragonCharacter's
+	// outcome audit already maps HP <= 0 to EGameFlowOutcome::Lost /
+	// slink-away (T-016/T-072); OnDragonDefeated is the event-driven
+	// seam for presentation (T-068) to bind without polling.
+	FOnDragonHit OnDragonHit;
+	FOnDragonDefeated OnDragonDefeated;
+	bool IsDefeated() const
+	{
+		return HP <= 0.0f;
+	}
+
 	// [2026-10-28 T-015] The heal verb: adds Amount to HP, clamped to
 	// [0, MaxHP]; a negative Amount is ignored so no caller can deal
 	// damage through the heal path (ApplyHPDamage owns damage,
@@ -145,6 +191,22 @@ class UNDERTHEMOUNTAIN_API UDragonStatsComponent : public UActorComponent
 	// section 2: HP comes back by eating), so the eat channel in
 	// UDragonCombatComponent is its only production caller.
 	void RestoreHP(float Amount);
+
+	// [2026-11-04 T-080] Magic math, same owner-free contract as
+	// stamina/HP. TryConsumeMagic is the refusal verb: a negative
+	// cost or a cost above the pool is refused (false, pool
+	// untouched) so artifact effects can gate on it exactly like
+	// TryConsumeStamina. DrainMagic is the per-second verb
+	// true-sight uses: it clamps at 0 and returns whether any magic
+	// remains, so the caller shuts the effect off the tick the pool
+	// empties instead of running it for free. RegenMagic applies
+	// MagicRegenPerSecond over time, clamped at MaxMagic; negative
+	// time is free by construction, never a drain in disguise.
+	bool TryConsumeMagic(float Cost);
+	void ApplyMagicDelta(float Delta);
+	bool DrainMagic(float DeltaSeconds, float RatePerSecond);
+	void RegenMagic(float DeltaSeconds);
+	bool HasMagic() const;
 
 	// [2026-10-28 T-011] Pure: maps an impact speed (cm/s, unsigned — the
 	// caller passes abs of vertical velocity) to landing HP damage. Zero
@@ -161,4 +223,8 @@ class UNDERTHEMOUNTAIN_API UDragonStatsComponent : public UActorComponent
 	// does neither. Keeping the decision here makes the rule testable
 	// without spawning the pawn or a world.
 	bool ShouldForceFallAtZeroStamina(float RatePerSecond) const;
+
+  private:
+	// [2026-11-04 T-074] Defeat broadcast latch (see OnDragonDefeated).
+	bool bDefeatBroadcast = false;
 };

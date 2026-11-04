@@ -18,13 +18,19 @@
 #include "UI/OnboardingWidget.h"
 #include "Dragon/DragonCameraSaveGame.h"
 #include "Dragon/DragonCombatComponent.h"
+#include "Dragon/DragonCarryComponent.h"
 #include "Dragon/DragonMovementComponent.h"
+#include "Dragon/DragonTargetingComponent.h"
 #include "Dragon/DragonStatsComponent.h"
 #include "Livestock/GoatActor.h"
+#include "NPC/VillagerActor.h"
+#include "CollisionQueryParams.h"
 #include "Scent/ScentComponent.h"
+#include "Audio/AudioDirector.h" // [2026-11-04 T-071]
 #include "Thief/ThiefBrain.h"
 #include "Thief/ThiefCharacter.h"
 #include "Thief/ThiefDataAsset.h"
+#include "Thief/ThiefRules.h"
 #include "UI/DragonHUDWidget.h"
 #include "UI/DragonTintWidget.h"
 #include "UI/IntroChoiceWidget.h"
@@ -33,6 +39,8 @@
 #include "Intro/IntroSubsystem.h"
 #include "Notoriety/NotorietySubsystem.h"
 #include "Progression/XPSubsystem.h"
+#include "Treasure/TreasureActor.h"
+#include "Treasure/TreasureRegistry.h"
 #include "Treasure/TreasureSubsystem.h"
 #include "Waves/WaveSubsystem.h"
 #include "World/BurnablePropActor.h"
@@ -163,6 +171,11 @@ ADragonCharacter::ADragonCharacter(const FObjectInitializer& ObjectInitializer)
 	// [2026-10-28 T-015] Combat verbs live on their own component; it
 	// needs no BeginPlay (no world/time reads — the pawn injects both).
 	Combat = CreateDefaultSubobject<UDragonCombatComponent>(TEXT("Combat"));
+	// [2026-11-04 T-069/T-070] Lock-on + carry components (their
+	// headers own the rules; construction is the pawn's only job).
+	Targeting = CreateDefaultSubobject<UDragonTargetingComponent>(TEXT("Targeting"));
+	Carry = CreateDefaultSubobject<UDragonCarryComponent>(TEXT("Carry"));
+	AudioDirector = CreateDefaultSubobject<UAudioDirectorComponent>(TEXT("AudioDirector")); // [2026-11-04 T-071]
 	Scent = CreateDefaultSubobject<UScentComponent>(TEXT("Scent"));
 	Appearance = CreateDefaultSubobject<UDragonAppearanceComponent>(TEXT("Appearance"));
 
@@ -294,6 +307,21 @@ ADragonCharacter::ADragonCharacter(const FObjectInitializer& ObjectInitializer)
 			// [2026-11-01 T-068] Optional finder: a missing T-068 clip (import not
 			// [2026-11-01 T-068] run yet) must not spam CDO errors; Tick's null
 			// [2026-11-01 T-068] fallback is the contract.
+			// [2026-11-04 T-126] Package-existence guard: FObjectFinderOptional
+			// still logs a CDO error when the package itself is absent, which
+			// fails every test that constructs the pawn CDO. A clip whose
+			// package was never imported is simply null (Tick fallback).
+			FString PackagePath = FString(Path);
+			int32 DotIndex = INDEX_NONE;
+			if (!PackagePath.FindChar(TEXT('.'), DotIndex))
+			{
+				return nullptr;
+			}
+			PackagePath.LeftInline(DotIndex);
+			if (!FPackageName::DoesPackageExist(PackagePath))
+			{
+				return nullptr;
+			}
 			ConstructorHelpers::FObjectFinderOptional<UAnimSequence> Finder(Path);
 			return Finder.Succeeded() ? Finder.Get() : nullptr;
 		};
@@ -304,6 +332,18 @@ ADragonCharacter::ADragonCharacter(const FObjectInitializer& ObjectInitializer)
 		LandAnim = LoadClip(TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_LandAnim.SK_Dragon_v4_LandAnim"));
 		RoarAnim = LoadClip(TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_RoarAnim.SK_Dragon_v4_RoarAnim"));
 		HitAnim = LoadClip(TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_HitAnim.SK_Dragon_v4_HitAnim"));
+		// [2026-11-04 T-126] Remaining v1 families, same null-safe contract:
+		// [2026-11-04 T-126] absent until their Blender clips are imported.
+		HitHeavyAnim = LoadClip(TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_HitHeavyAnim.SK_Dragon_v4_HitHeavyAnim"));
+		DefeatAnim = LoadClip(TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_DefeatAnim.SK_Dragon_v4_DefeatAnim"));
+		SleepIdleAnim = LoadClip(TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_SleepIdleAnim.SK_Dragon_v4_SleepIdleAnim"));
+		WakeAnim = LoadClip(TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_WakeAnim.SK_Dragon_v4_WakeAnim"));
+		LieDownAnim = LoadClip(TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_LieDownAnim.SK_Dragon_v4_LieDownAnim"));
+		FirePoseAnim = LoadClip(TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_FirePoseAnim.SK_Dragon_v4_FirePoseAnim"));
+		ClawAnim = LoadClip(TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_ClawAnim.SK_Dragon_v4_ClawAnim"));
+		BiteEatAnim = LoadClip(TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_BiteEatAnim.SK_Dragon_v4_BiteEatAnim"));
+		TailWhipAnim = LoadClip(TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_TailWhipAnim.SK_Dragon_v4_TailWhipAnim"));
+		WingBuffetAnim = LoadClip(TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_WingBuffetAnim.SK_Dragon_v4_WingBuffetAnim"));
 	}
 	// [2026-11-04 T-113] All nine clip paths hold the newest owner-drop
 	// [2026-11-04 T-113] clips on this v6 skeleton (imported by Scripts/
@@ -318,7 +358,8 @@ ADragonCharacter::ADragonCharacter(const FObjectInitializer& ObjectInitializer)
 		int32 SkippedClips = 0;
 		for (TObjectPtr<UAnimSequence>* Clip :
 			 {&WalkAnim, &FlyAnim, &GlideAnim, &HoverAnim, &IdleAnim, &TakeoffAnim, &LandAnim,
-			  &RoarAnim, &HitAnim})
+			  &RoarAnim, &HitAnim, &HitHeavyAnim, &DefeatAnim, &SleepIdleAnim, &WakeAnim,
+			  &LieDownAnim, &FirePoseAnim, &ClawAnim, &BiteEatAnim, &TailWhipAnim, &WingBuffetAnim})
 		{
 			if (*Clip != nullptr && (*Clip)->GetSkeleton() != MeshSkeleton)
 			{
@@ -958,6 +999,11 @@ bool ADragonCharacter::HasInputActions() const
 		   ScentToggleAction != nullptr &&
 		   TintAction != nullptr && FireAction != nullptr && RoarAction != nullptr &&
 		   EatAction != nullptr && WingBuffetAction != nullptr && TailSlamAction != nullptr &&
+		   // [2026-11-04 T-069/T-070/T-076/T-102] Claw, pickup, pad
+		   // triggers, right-face multiplex, and smart lock join the
+		   // contract on the same terms as the older verbs.
+		   ClawAction != nullptr && PickupAction != nullptr && SurgeAction != nullptr &&
+		   BrakeAction != nullptr && RightFaceAction != nullptr && SmartLockAction != nullptr &&
 		   FreeLookAction != nullptr && SinkAction != nullptr && SteerLatchAction != nullptr &&
 		   // [2026-11-03 T-065] Split look/move + camera cycle join the contract.
 		   PadLookAction != nullptr && PadMoveAction != nullptr && CameraCycleAction != nullptr &&
@@ -1158,6 +1204,15 @@ void ADragonCharacter::BuildInputActions()
 	// [2026-11-01 T-068] Buffet/slam verbs, press-edge like Roar.
 	WingBuffetAction = MakeAction(TEXT("IA_WingBuffet"), EInputActionValueType::Boolean);
 	TailSlamAction = MakeAction(TEXT("IA_TailSlam"), EInputActionValueType::Boolean);
+	// [2026-11-04 T-076/T-070/T-102/T-069] New verb actions, Boolean
+	// press-edge like Roar: claw, pickup/drop, Surge, Brake,
+	// right-face multiplex, smart-lock cycle.
+	ClawAction = MakeAction(TEXT("IA_Claw"), EInputActionValueType::Boolean);
+	PickupAction = MakeAction(TEXT("IA_PickupCarry"), EInputActionValueType::Boolean);
+	SurgeAction = MakeAction(TEXT("IA_Surge"), EInputActionValueType::Boolean);
+	BrakeAction = MakeAction(TEXT("IA_Brake"), EInputActionValueType::Boolean);
+	RightFaceAction = MakeAction(TEXT("IA_RightFace"), EInputActionValueType::Boolean);
+	SmartLockAction = MakeAction(TEXT("IA_SmartLock"), EInputActionValueType::Boolean);
 	// [2026-11-03 T-065] Split look/move (mouse vs sticks need separate
 	// pitch-invert choices; the left stick needs its own flight-pitch
 	// feed) plus the camera-cycle action. All Axis2D/Boolean like the
@@ -1187,7 +1242,10 @@ void ADragonCharacter::BuildInputActions()
 	Map(LookAction, EKeys::Mouse2D);
 	Map(FlapAction, EKeys::SpaceBar);
 	Map(ToggleFlightAction, EKeys::F);
-	Map(DiveAction, EKeys::LeftShift);
+	// [2026-11-04 T-102] Left Shift leaves IA_Dive for IA_Brake (the
+	// adopted map: dive is a posture, Shift brakes). IA_Dive keeps no
+	// binding; bDiving now means only the posture classification.
+	Map(BrakeAction, EKeys::LeftShift);
 	// [2026-11-03 T-075] Prototype keys: RMB free-look, Ctrl sink.
 	Map(FreeLookAction, EKeys::RightMouseButton);
 	Map(SinkAction, EKeys::LeftControl);
@@ -1208,6 +1266,12 @@ void ADragonCharacter::BuildInputActions()
 	// [2026-11-01 T-068] for T-076 claw; both free in the shipped map).
 	Map(WingBuffetAction, EKeys::X);
 	Map(TailSlamAction, EKeys::Z);
+	// [2026-11-04 T-076] Q = claw (the T-068 reservation, claimed).
+	// [2026-11-04 T-070] P = pickup/drop. [2026-11-04 T-069] Tab =
+	// smart-lock cycle. All free in the shipped keyboard map.
+	Map(ClawAction, EKeys::Q);
+	Map(PickupAction, EKeys::P);
+	Map(SmartLockAction, EKeys::Tab);
 	// Gamepad: left stick move, right stick look, bottom face flap,
 	// top face toggle flight, right trigger dive.
 	// [2026-11-03 T-065] Sticks live on their own actions (see creation):
@@ -1217,15 +1281,26 @@ void ADragonCharacter::BuildInputActions()
 	Map(PadLookAction, EKeys::Gamepad_Right2D);
 	Map(FlapAction, EKeys::Gamepad_FaceButton_Bottom);
 	Map(ToggleFlightAction, EKeys::Gamepad_FaceButton_Top);
-	Map(DiveAction, EKeys::Gamepad_RightTrigger);
+	// [2026-11-04 T-102] Adopted pad map (docs/FLIGHT-SPIKE.md):
+	// RT Surge / LT Brake replace RT-dive, and fire moves LT -> RB
+	// because LT is now the analog brake. Roar stays LB; Eat leaves
+	// RB for the right-face hold multiplex (E keeps it on keyboard).
+	Map(SurgeAction, EKeys::Gamepad_RightTrigger);
+	Map(BrakeAction, EKeys::Gamepad_LeftTrigger);
 	Map(TrueSightAction, EKeys::Gamepad_FaceButton_Left);
 	Map(ScentToggleAction, EKeys::Gamepad_DPad_Down);
-	Map(TintAction, EKeys::Gamepad_FaceButton_Right);
-	// [2026-10-28 T-015] Combat pad: left trigger hold = fire (right
-	// trigger is dive), left shoulder = roar, right shoulder = eat.
-	Map(FireAction, EKeys::Gamepad_LeftTrigger);
+	// [2026-11-04 T-102] Right face is bound ONCE, to the multiplex
+	// action: tap = Claw (target in arc) or Tint, hold = sink in
+	// the air / Eat-context (incl. pickup) on the ground. Tint and
+	// Eat get NO direct pad binding any more — double-binding the
+	// button to IA_TintPicker/IA_Eat as well was the old map's bug
+	// this task removes (keyboard C/E unchanged).
+	Map(RightFaceAction, EKeys::Gamepad_FaceButton_Right);
+	// [2026-11-04 T-069] L3 = smart-lock cycle (FLIGHT-SPIKE's
+	// "reserved for smart lock-on", claimed).
+	Map(SmartLockAction, EKeys::Gamepad_LeftThumbstick);
+	Map(FireAction, EKeys::Gamepad_RightShoulder);
 	Map(RoarAction, EKeys::Gamepad_LeftShoulder);
-	Map(EatAction, EKeys::Gamepad_RightShoulder);
 	// [2026-11-01 T-068] Pad: DPad Left/Right (Down/Up stay reserved for
 	// [2026-11-01 T-068] T-061 scent toggle and T-063 steer-to-camera).
 	Map(WingBuffetAction, EKeys::Gamepad_DPad_Left);
@@ -1381,6 +1456,40 @@ void ADragonCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 		EIC->BindAction(EatAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleEat);
 		EIC->BindAction(WingBuffetAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleWingBuffet);
 		EIC->BindAction(TailSlamAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleTailSlam);
+	}
+	// [2026-11-04 T-076/T-070/T-069/T-102] New verbs, same
+	// press-edge shape as Roar; brake and right-face also need
+	// their release edges (the T-030 latch lesson).
+	if (ClawAction != nullptr)
+	{
+		EIC->BindAction(ClawAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleClaw);
+	}
+	if (PickupAction != nullptr)
+	{
+		EIC->BindAction(PickupAction, ETriggerEvent::Started, this, &ADragonCharacter::HandlePickupOrDrop);
+	}
+	if (SmartLockAction != nullptr)
+	{
+		EIC->BindAction(SmartLockAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleSmartLock);
+	}
+	if (SurgeAction != nullptr)
+	{
+		EIC->BindAction(SurgeAction, ETriggerEvent::Started, this, &ADragonCharacter::HandleSurge);
+	}
+	if (BrakeAction != nullptr)
+	{
+		EIC->BindAction(BrakeAction, ETriggerEvent::Triggered, this, &ADragonCharacter::HandleBrake);
+		EIC->BindAction(BrakeAction, ETriggerEvent::Completed, this, &ADragonCharacter::HandleBrakeEnd);
+		EIC->BindAction(BrakeAction, ETriggerEvent::Canceled, this, &ADragonCharacter::HandleBrakeEnd);
+	}
+	if (RightFaceAction != nullptr)
+	{
+		EIC->BindAction(RightFaceAction, ETriggerEvent::Started, this,
+						&ADragonCharacter::HandleRightFaceStarted);
+		EIC->BindAction(RightFaceAction, ETriggerEvent::Completed, this,
+						&ADragonCharacter::HandleRightFaceEnd);
+		EIC->BindAction(RightFaceAction, ETriggerEvent::Canceled, this,
+						&ADragonCharacter::HandleRightFaceEnd);
 	}
 }
 
@@ -1814,7 +1923,8 @@ void ADragonCharacter::TickIntro(float DeltaSeconds)
 			if (Gnome != nullptr)
 			{
 				Gnome->ThiefData = BurglarData;
-				Gnome->ExitLocation = FVector(18700.0f, 0.0f, 160.0f);
+				Gnome->ExitLocation =
+					FThiefRules::EntryForRole(EThiefRole::Burglar, SpawnPoint).Location; // [2026-11-04 T-133]
 				Gnome->FinishSpawning(FTransform(FRotator::ZeroRotator, SpawnPoint));
 				IntroGnome = Gnome;
 				Intro->SetGnomeName(Gnome->GetFName());
@@ -1895,6 +2005,42 @@ void ADragonCharacter::TickIntro(float DeltaSeconds)
 		break;
 	default:
 		break;
+	}
+}
+
+void ADragonCharacter::GatherWitnessFacts(const FVector& ActLocation,
+										  TArray<FSettlementArea>& OutSettlements,
+										  TArray<FVillagerWitness>& OutVillagers)
+{
+	OutSettlements.Reset();
+	OutVillagers.Reset();
+	if (GetWorld() == nullptr)
+	{
+		return;
+	}
+	TArray<AActor*> VillagerActors;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), AVillagerActor::StaticClass(), VillagerActors);
+	for (AActor* Actor : VillagerActors)
+	{
+		AVillagerActor* Villager = Cast<AVillagerActor>(Actor);
+		if (Villager == nullptr)
+		{
+			continue;
+		}
+		// [2026-11-04 T-134] Settlement footprint: 1200 cm around each
+		// villager home [tuning: PT-WAVE] — a house cluster, not a box
+		// around the whole map. Homes repeat per villager; FWitnessRules
+		// only needs one containing area, duplicates are harmless.
+		OutSettlements.Add({Villager->GetHomeLocation(), 1200.0f});
+		// LOS seam: one visibility trace per villager, eye height both
+		// ends. The pure rule consumes only the resulting flag.
+		FHitResult Hit;
+		FCollisionQueryParams Params(TEXT("WitnessLOS"), false, this);
+		Params.AddIgnoredActor(Villager);
+		const bool bBlocked = GetWorld()->LineTraceSingleByChannel(
+			Hit, Villager->GetActorLocation() + FVector(0.0f, 0.0f, 150.0f),
+			ActLocation + FVector(0.0f, 0.0f, 150.0f), ECC_Visibility, Params);
+		OutVillagers.Add({Villager->GetActorLocation(), !bBlocked});
 	}
 }
 
@@ -2062,7 +2208,14 @@ void ADragonCharacter::AuditGameLoop(float DeltaSeconds)
 		if (Brain->State() == EThiefState::Dead && !CountedThiefEvents.Contains(Key))
 		{
 			CountedThiefEvents.Add(Key);
-			Notoriety->AddPublicKillPoints(Thief->GetActorLocation());
+			// [2026-11-04 T-134] Witness-gated: an outside kill nobody
+			// saw is free; settlement/LOS-witnessed kills charge S4.
+			{
+				TArray<FSettlementArea> Settlements;
+				TArray<FVillagerWitness> Villagers;
+				GatherWitnessFacts(Thief->GetActorLocation(), Settlements, Villagers);
+				Notoriety->AddPublicKillPointsWitnessed(Thief->GetActorLocation(), Settlements, Villagers);
+			}
 			// [2026-11-03 T-083] Inside kills earn XP (GAMEPLAY.md
 			// section 8): claimed by stable actor name, so a later
 			// eat reprocessing the same corpse claims nothing.
@@ -2194,7 +2347,59 @@ FName ADragonCharacter::OneShotSlotFor(UAnimSequence* Clip) const
 	{
 		return AnimSlotUpperBody;
 	}
+	// [2026-11-04 T-126] New families defer to the AnimInstance seam so the
+	// [2026-11-04 T-126] slot rule has one owner (tests pin both sides).
+	for (EDragonClipFamily Family :
+		 {EDragonClipFamily::HitHeavy, EDragonClipFamily::Defeat, EDragonClipFamily::SleepIdle,
+		  EDragonClipFamily::Wake, EDragonClipFamily::LieDown, EDragonClipFamily::FirePose,
+		  EDragonClipFamily::Claw, EDragonClipFamily::BiteEat, EDragonClipFamily::TailWhip,
+		  EDragonClipFamily::WingBuffet})
+	{
+		if (Clip != nullptr && Clip == ClipForFamily(Family))
+		{
+			return UDragonAnimInstance::SlotForClipFamily(Family);
+		}
+	}
 	return AnimSlotFullBody;
+}
+
+UAnimSequence* ADragonCharacter::ClipForFamily(EDragonClipFamily Family) const
+{
+	// [2026-11-04 T-126] One routing table for every v1 family: callers ask
+	// [2026-11-04 T-126] by family, never by member, so a missing clip is a
+	// [2026-11-04 T-126] null here and nowhere else.
+	switch (Family)
+	{
+	case EDragonClipFamily::HitHeavy:
+		return HitHeavyAnim;
+	case EDragonClipFamily::Defeat:
+		return DefeatAnim;
+	case EDragonClipFamily::SleepIdle:
+		return SleepIdleAnim;
+	case EDragonClipFamily::Wake:
+		return WakeAnim;
+	case EDragonClipFamily::LieDown:
+		return LieDownAnim;
+	case EDragonClipFamily::FirePose:
+		return FirePoseAnim;
+	case EDragonClipFamily::Claw:
+		return ClawAnim;
+	case EDragonClipFamily::BiteEat:
+		return BiteEatAnim;
+	case EDragonClipFamily::TailWhip:
+		return TailWhipAnim;
+	case EDragonClipFamily::WingBuffet:
+		return WingBuffetAnim;
+	default:
+		return nullptr;
+	}
+}
+
+void ADragonCharacter::PlayClipFamily(EDragonClipFamily Family)
+{
+	// [2026-11-04 T-126] Null-safe via PlayOneShot: an un-imported family
+	// [2026-11-04 T-126] is a no-op presentation, never a blocked verb.
+	PlayOneShot(ClipForFamily(Family));
 }
 
 void ADragonCharacter::HandleWingBuffet()
@@ -2215,9 +2420,17 @@ void ADragonCharacter::HandleWingBuffet()
 	{
 		// [2026-11-01 T-068] Grounded buffet mantles like the roar clip;
 		// [2026-11-01 T-068] airborne it must not interrupt flight locomotion.
+		// [2026-11-04 T-126] Its own clip family wins when imported.
 		if (!IsFlying())
 		{
-			PlayOneShot(RoarAnim);
+			if (WingBuffetAnim != nullptr)
+			{
+				PlayClipFamily(EDragonClipFamily::WingBuffet);
+			}
+			else
+			{
+				PlayOneShot(RoarAnim);
+			}
 		}
 		UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon wing buffet: dazed %d"), NumDazed);
 	}
@@ -2239,7 +2452,349 @@ void ADragonCharacter::HandleTailSlam()
 											  Brains, Locations, NumHit);
 	if (bSlammed)
 	{
+		// [2026-11-04 T-126] Tail-whip clip family presentation (null-safe
+		// [2026-11-04 T-126] until imported); damage already applied above.
+		PlayClipFamily(EDragonClipFamily::TailWhip);
 		UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon tail slam: hit %d"), NumHit);
+	}
+}
+
+FName ADragonCharacter::GetLockedTargetId() const
+{
+	// [2026-11-04 T-069] No lock reads as NAME_None, never a stale id.
+	return Targeting != nullptr && Targeting->HasLock() ? Targeting->CurrentTargetId() : NAME_None;
+}
+
+bool ADragonCharacter::GetLockedTargetCategory(int32& OutCategory) const
+{
+	OutCategory = static_cast<int32>(EDragonTargetCategory::None);
+	if (Targeting == nullptr || !Targeting->HasLock())
+	{
+		return false;
+	}
+	OutCategory = static_cast<int32>(Targeting->CurrentTargetCategory());
+	return true;
+}
+
+bool ADragonCharacter::IsRightFaceTap(float PressSeconds)
+{
+	// [2026-11-04 T-102] 0.35 s split: shorter is a deliberate tap,
+	// longer a deliberate hold. This replaces Tint's old Started
+	// (press-edge) timing on pad — tint now fires on tap RELEASE.
+	return PressSeconds >= 0.0f && PressSeconds < 0.35f;
+}
+
+bool ADragonCharacter::RightFaceTapIsClaw(bool bClawTargetInArc)
+{
+	// [2026-11-04 T-102] Option A, completed by T-076 landing in
+	// the same batch: combat context wins the tap (claw), cosmetic
+	// context keeps it otherwise (tint). FLIGHT-SPIKE's end-state
+	// map (tap = Claw) and T-102's "Tint stays tap" both hold.
+	return bClawTargetInArc;
+}
+
+void ADragonCharacter::GatherClawTargets(TArray<UThiefBrain*>& OutBrains,
+										 TArray<FVector>& OutLocations, TArray<FVector>& OutForwards)
+{
+	// [2026-11-04 T-076] Parallel triples for TickClaw (brains stand
+	// at locations, facing forwards — the shield rule needs facing).
+	OutBrains.Reset();
+	OutLocations.Reset();
+	OutForwards.Reset();
+	if (GetWorld() == nullptr)
+	{
+		return;
+	}
+	TArray<AActor*> Actors;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), AThiefCharacter::StaticClass(), Actors);
+	for (AActor* Actor : Actors)
+	{
+		AThiefCharacter* Thief = Cast<AThiefCharacter>(Actor);
+		UThiefBrain* Brain = Thief != nullptr ? Thief->GetBrain() : nullptr;
+		if (Brain == nullptr)
+		{
+			continue;
+		}
+		OutBrains.Add(Brain);
+		OutLocations.Add(Thief->GetActorLocation());
+		OutForwards.Add(Thief->GetActorForwardVector());
+	}
+}
+
+bool ADragonCharacter::HasClawTargetInArc()
+{
+	if (Combat == nullptr)
+	{
+		return false;
+	}
+	TArray<UThiefBrain*> Brains;
+	TArray<FVector> Locations;
+	TArray<FVector> Forwards;
+	GatherClawTargets(Brains, Locations, Forwards);
+	for (int32 Index = 0; Index < Brains.Num() && Index < Locations.Num(); ++Index)
+	{
+		if (Brains[Index] != nullptr && Brains[Index]->State() != EThiefState::Dead &&
+			UDragonCombatComponent::IsInArc2D(GetActorLocation(), GetActorForwardVector(),
+											  Locations[Index], Combat->ClawRange,
+											  Combat->ClawHalfAngleDeg))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+void ADragonCharacter::HandleClaw()
+{
+	if (Combat == nullptr)
+	{
+		UE_LOG(LogUnderTheMountain, Warning, TEXT("Claw ignored: no combat component"));
+		return;
+	}
+	const float Now = GetWorld() != nullptr ? GetWorld()->GetTimeSeconds() : 0.0f;
+	if (Combat->TryClaw(Now, Stats))
+	{
+		// [2026-11-04 T-076] No claw clip/montage notify exists
+		// (T-068 set has none): the damage window is verb timing
+		// (Combat->ClawDamageDelaySeconds), driven in Tick.
+		UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon claw swing (hit lands in %.2fs)"),
+			   Combat->ClawDamageDelaySeconds);
+	}
+}
+
+void ADragonCharacter::HandlePickupOrDrop()
+{
+	// [2026-11-04 T-070] One toggle verb: full claws drop (deposit
+	// inside the lair), empty claws grab the T-069 locked treasure
+	// or, with no lock, the nearest resting treasure in range. With
+	// nothing grabbable it falls through to Eat — this is the
+	// right-face hold's "Eat/context-interact" on the ground.
+	if (Carry == nullptr || GetWorld() == nullptr)
+	{
+		UE_LOG(LogUnderTheMountain, Warning, TEXT("Pickup ignored: no carry component or world"));
+		return;
+	}
+	UTreasureSubsystem* TreasureSub = GetWorld()->GetSubsystem<UTreasureSubsystem>();
+	UTreasureRegistry* Registry = TreasureSub != nullptr ? TreasureSub->Registry() : nullptr;
+	if (Registry == nullptr)
+	{
+		UE_LOG(LogUnderTheMountain, Warning, TEXT("Pickup ignored: no treasure registry"));
+		return;
+	}
+	if (Carry->IsCarrying())
+	{
+		const FVector DropLocation =
+			GetActorLocation() + GetActorForwardVector() * 250.0f;
+		int32 Gold = 0;
+		const bool bDeposited = UNotorietySubsystem::IsInsideLair(GetActorLocation());
+		const bool bDropped = bDeposited
+								  ? Carry->DepositTreasure(Registry, DropLocation, Gold)
+								  : Carry->DropTreasure(Registry, DropLocation, Gold);
+		if (bDropped)
+		{
+			if (CarriedTreasureActor != nullptr)
+			{
+				CarriedTreasureActor->SetActorLocation(DropLocation);
+				CarriedTreasureActor = nullptr;
+			}
+			UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon %s treasure (%d gold)"),
+				   bDeposited ? TEXT("deposited") : TEXT("dropped"), Gold);
+		}
+		return;
+	}
+
+	FName TargetId = NAME_None;
+	AActor* TargetActor = nullptr;
+	if (Targeting != nullptr && Targeting->HasLock() &&
+		Targeting->CurrentTargetCategory() == EDragonTargetCategory::Treasure)
+	{
+		TargetId = Targeting->CurrentTargetId();
+		TargetActor = Targeting->CurrentTargetActor();
+	}
+	if (TargetId == NAME_None)
+	{
+		// [2026-11-04 T-070] Nearest fallback (the task's slip
+		// clause, used whenever there is no usable lock).
+		float BestDistSq = TNumericLimits<float>::Max();
+		TArray<AActor*> Actors;
+		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ATreasureActor::StaticClass(), Actors);
+		for (AActor* Actor : Actors)
+		{
+			ATreasureActor* Treasure = Cast<ATreasureActor>(Actor);
+			if (Treasure == nullptr || Treasure->RegisteredId == NAME_None)
+			{
+				continue;
+			}
+			const FTreasureEntry* Entry = Registry->Find(Treasure->RegisteredId);
+			if (Entry == nullptr || Entry->bCarried)
+			{
+				continue;
+			}
+			const float DistSq = FVector::DistSquared(GetActorLocation(), Treasure->GetActorLocation());
+			if (DistSq < BestDistSq)
+			{
+				BestDistSq = DistSq;
+				TargetId = Treasure->RegisteredId;
+				TargetActor = Treasure;
+			}
+		}
+	}
+	if (TargetId == NAME_None || !Carry->TryPickup(Registry, TargetId, GetActorLocation()))
+	{
+		// [2026-11-04 T-102] Context fall-through: a hold with
+		// nothing to grab is an Eat press, per the multiplex.
+		HandleEat();
+		return;
+	}
+	CarriedTreasureActor = TargetActor;
+}
+
+void ADragonCharacter::HandleSurge()
+{
+	// [2026-11-04 T-102] RT Surge: the W-tap gate verbatim (momentum
+	// band only, 1/s, one impulse reserve), on a press edge.
+	if (!IsPrototypeFlying() || bCourseFlying)
+	{
+		return;
+	}
+	UDragonMovementComponent* Proto = Cast<UDragonMovementComponent>(GetCharacterMovement());
+	if (Proto == nullptr || GetWorld() == nullptr || Stats == nullptr)
+	{
+		return;
+	}
+	const float Airspeed = Proto->Velocity.Size();
+	if (UDragonMovementComponent::PrecisionAuthorityWeight(Airspeed, Proto->FlightParams) > 0.5f)
+	{
+		return;
+	}
+	const float Now = GetWorld()->GetTimeSeconds();
+	if (Now - LastSurgeTime < 1.0f || Stats->Stamina < Stats->ImpulseReserveCost)
+	{
+		return;
+	}
+	if (Stats->TryConsumeStamina(Stats->ImpulseReserveCost))
+	{
+		LastSurgeTime = Now;
+		Proto->ApplySurge();
+		UE_LOG(LogUnderTheMountain, Log, TEXT("Surge (RT): +%.0f cm/s (stamina %.1f)"),
+			   Proto->FlightParams.SurgeDeltaV, Stats->Stamina);
+	}
+}
+
+void ADragonCharacter::HandleBrake(const FInputActionValue& Value)
+{
+	// [2026-11-04 T-102] LT/Shift held: latch only; the integrator
+	// reads bBraking in UpdatePrototypeFlight (T-030 release lesson:
+	// Completed/Canceled clear it in HandleBrakeEnd).
+	bBraking = Value.Get<bool>();
+}
+
+void ADragonCharacter::HandleBrakeEnd()
+{
+	bBraking = false;
+}
+
+void ADragonCharacter::HandleRightFaceStarted()
+{
+	bRightFaceDown = true;
+	bRightFaceHoldFired = false;
+	RightFacePressTime = GetWorld() != nullptr ? GetWorld()->GetTimeSeconds() : 0.0f;
+}
+
+void ADragonCharacter::TickRightFaceHold()
+{
+	// [2026-11-04 T-102] The hold half fires once, at the threshold,
+	// while the button is still down (not on release — a sink/Eat
+	// that waits for release would feel broken).
+	if (!bRightFaceDown || bRightFaceHoldFired || GetWorld() == nullptr)
+	{
+		return;
+	}
+	if (GetWorld()->GetTimeSeconds() - RightFacePressTime < 0.35f)
+	{
+		return;
+	}
+	bRightFaceHoldFired = true;
+	if (IsFlying() || IsPrototypeFlying())
+	{
+		bSinkHeld = true;
+	}
+	else
+	{
+		HandlePickupOrDrop();
+	}
+}
+
+void ADragonCharacter::HandleRightFaceEnd()
+{
+	if (!bRightFaceDown)
+	{
+		return;
+	}
+	bRightFaceDown = false;
+	if (bRightFaceHoldFired)
+	{
+		// [2026-11-04 T-102] Hold already acted: release only ends
+		// the air sink (ground Eat/context fired at the threshold).
+		bSinkHeld = false;
+		bRightFaceHoldFired = false;
+		return;
+	}
+	const float Now = GetWorld() != nullptr ? GetWorld()->GetTimeSeconds() : 0.0f;
+	if (IsRightFaceTap(Now - RightFacePressTime))
+	{
+		if (RightFaceTapIsClaw(HasClawTargetInArc()))
+		{
+			HandleClaw();
+		}
+		else
+		{
+			HandleToggleTintPicker();
+		}
+	}
+}
+
+void ADragonCharacter::HandleSmartLock()
+{
+	if (Targeting == nullptr)
+	{
+		return;
+	}
+	const bool bLocked =
+		Targeting->CycleTarget(Targeting->LastCandidates(), GetActorLocation());
+	UE_LOG(LogUnderTheMountain, Log, TEXT("Smart lock: %s"),
+		   bLocked ? *Targeting->CurrentTargetId().ToString() : TEXT("none in range"));
+}
+
+void ADragonCharacter::TickCarryFollow()
+{
+	// [2026-11-04 T-070] The item rides at a claw-follow offset
+	// (forward + below; no claw socket exists on the v6 rig) and
+	// the registry location follows every tick (T-038 rule). The
+	// treasure actor's own tick would refresh from its location;
+	// Sync runs first so the registry is right even between them.
+	if (Carry == nullptr || !Carry->IsCarrying())
+	{
+		return;
+	}
+	UTreasureRegistry* Registry = nullptr;
+	if (GetWorld() != nullptr)
+	{
+		if (UTreasureSubsystem* Subsystem = GetWorld()->GetSubsystem<UTreasureSubsystem>())
+		{
+			Registry = Subsystem->Registry();
+		}
+	}
+	if (!Carry->SyncCarriedLocation(Registry, GetActorLocation()))
+	{
+		CarriedTreasureActor = nullptr;
+		return;
+	}
+	if (CarriedTreasureActor != nullptr)
+	{
+		CarriedTreasureActor->SetActorLocation(GetActorLocation() +
+											   GetActorForwardVector() * 220.0f +
+											   FVector(0.0f, 0.0f, -80.0f));
 	}
 }
 
@@ -2268,6 +2823,8 @@ void ADragonCharacter::HandleRoar()
 	if (bRoared)
 	{
 		PlayOneShot(RoarAnim);
+		if (AudioDirector)
+			AudioDirector->PlayDragonVerb(TEXT("Roar")); // [2026-11-04 T-071]
 	}
 	// [2026-11-01 T-016] A roar that scares thieves while the
 	// dragon is OUTSIDE the lair is a witnessed act (+4, once per
@@ -2362,6 +2919,10 @@ void ADragonCharacter::HandleEat()
 	if (bStarted)
 	{
 		UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon eating..."));
+		// [2026-11-04 T-126] Bite/eat presentation syncs to the started
+		// [2026-11-04 T-126] channel; its consume notify fraction is
+		// [2026-11-04 T-126] UDragonAnimInstance::NotifyFractionForClipFamily.
+		PlayClipFamily(EDragonClipFamily::BiteEat);
 		// [2026-11-03 T-073] First real meal dismisses the eat prompt
 		// (a whiff that starts nothing keeps teaching).
 		MarkOnboardingDone(EOnboardingVerb::Eat);
@@ -2433,10 +2994,22 @@ void ADragonCharacter::Landed(const FHitResult& Hit)
 	// the dragon's HP, the crush threshold (300) guards victims —
 	// conflating them would make most real landings harmless to the
 	// thief standing exactly where the dragon came down.
+	if (AudioDirector)
+		AudioDirector->PlayDragonVerb(TEXT("Land"), ImpactSpeed); // [2026-11-04 T-071] gain scales with impact
 	ApplyLandingCrush(GetActorLocation(), ImpactSpeed);
 	// [2026-11-01 T-068] Touchdown reads: flare/settle clip on any landing,
 	// [2026-11-01 T-068] the flinch instead when the landing drew blood.
-	PlayOneShot(Damage > 0.0f && HitAnim != nullptr ? HitAnim : LandAnim);
+	// [2026-11-04 T-126] At/above half the max landing damage (25) the heavy
+	// [2026-11-04 T-126] flinch family takes over when its clip is imported;
+	// [2026-11-04 T-126] below that the light hit stands in as before.
+	if (Damage >= 12.5f && HitHeavyAnim != nullptr)
+	{
+		PlayClipFamily(EDragonClipFamily::HitHeavy);
+	}
+	else
+	{
+		PlayOneShot(Damage > 0.0f && HitAnim != nullptr ? HitAnim : LandAnim);
+	}
 }
 
 void ADragonCharacter::ApplyLandingCrush(const FVector& Centre, float ImpactSpeed)
@@ -2580,7 +3153,10 @@ void ADragonCharacter::UpdatePrototypeFlight(float DeltaSeconds)
 			// IS the flare, and the Brake rule (forced precision) covers both.
 			// [2026-11-03 T-065] Keyboard S only: pad stick-back pitches
 			// instead of flaring (device tag on the sample).
-			Proto->bProtoBraking = bDiving || (!bLastMoveFromGamepad && LastMoveAxis.Y < -0.5f);
+			// [2026-11-04 T-102] LT/Shift brake (bBraking) joins the
+			// legacy bDiving latch here; posture dive is separate.
+			Proto->bProtoBraking =
+				bDiving || bBraking || (!bLastMoveFromGamepad && LastMoveAxis.Y < -0.5f);
 			Proto->bProtoRise = bRiseHeld;
 			Proto->bProtoSink = bSinkHeld;
 			if (!IsPrototypeFlying())
@@ -3187,6 +3763,10 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 	// [2026-11-03 T-103] Clock + restore live in TickTrapSlow (testable
 	// without a world); Tick just pumps it.
 	TickTrapSlow(DeltaSeconds);
+	// [2026-11-04 T-102/T-070] Right-face hold threshold + carried
+	// item follow (both latch/timer work, no actor scans).
+	TickRightFaceHold();
+	TickCarryFollow();
 	// [2026-11-03 T-065] Camera rig follows every tick (walk and flight):
 	// head-anchored pivot, precision-shortened arm, first-person mesh hide.
 	ApplyCameraRig(DeltaSeconds);
@@ -3211,7 +3791,8 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 			GatherBurnableTargets(CombatProps, CombatPropLocations);
 			if (!Combat->IsFiring())
 			{
-				Combat->TryStartFire(Stats);
+				if (Combat->TryStartFire(Stats) && AudioDirector)
+					AudioDirector->PlayDragonVerb(TEXT("Fire")); // [2026-11-04 T-071]
 			}
 		}
 		if (Combat->IsFiring())
@@ -3224,6 +3805,24 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 							 CombatLocations, CombatGoats, CombatGoatLocations, CombatProps,
 							 CombatPropLocations);
 			MaybeSpawnGroundScorch(FireOrigin, FireForward);
+		}
+		// [2026-11-04 T-076] Claw window: targets gathered only while
+		// a swing is pending; the hit is judged when it opens.
+		if (Combat->IsClawPending())
+		{
+			TArray<UThiefBrain*> ClawBrains;
+			TArray<FVector> ClawLocations;
+			TArray<FVector> ClawForwards;
+			GatherClawTargets(ClawBrains, ClawLocations, ClawForwards);
+			bool bClawBlocked = false;
+			const int32 ClawHits = Combat->TickClaw(
+				DeltaSeconds, GetActorLocation(), GetActorForwardVector(), ClawBrains,
+				ClawLocations, ClawForwards, bClawBlocked);
+			if (ClawHits > 0 || bClawBlocked)
+			{
+				UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon claw: %s"),
+					   bClawBlocked ? TEXT("blocked by shield") : TEXT("hit"));
+			}
 		}
 		// [2026-11-01 T-055] Burning props keep hurting after the
 		// breath stops, so this runs every tick, firing or not.
@@ -3270,10 +3869,17 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 				PendingEatActor = nullptr;
 			}
 			UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon ate a thief corpse"));
+			if (AudioDirector)
+				AudioDirector->PlayDragonVerb(TEXT("Eat")); // [2026-11-04 T-071]
 		}
 		else if (EatResult == EEatResult::AteGoat)
 		{
 			UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon ate a goat"));
+			// [2026-11-04 T-134] Livestock charge is witness-gated:
+			// settlement/seen eats +3, unwitnessed wilderness eats free.
+			if (GetWorld() != nullptr)
+				if (AudioDirector)
+					AudioDirector->PlayDragonVerb(TEXT("Eat")); // [2026-11-04 T-071]
 			// [2026-11-01 T-016] Livestock eaten at a settlement is
 			// witnessed (+3); eaten inside the lair gains nothing
 			// (the same inside/outside rule as kills).
@@ -3282,7 +3888,10 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 			{
 				if (UNotorietySubsystem* Notoriety = GetWorld()->GetSubsystem<UNotorietySubsystem>())
 				{
-					Notoriety->AddLivestockEatPoints();
+					TArray<FSettlementArea> Settlements;
+					TArray<FVillagerWitness> Villagers;
+					GatherWitnessFacts(GetActorLocation(), Settlements, Villagers);
+					Notoriety->AddLivestockEatPointsWitnessed(GetActorLocation(), Settlements, Villagers);
 				}
 			}
 		}

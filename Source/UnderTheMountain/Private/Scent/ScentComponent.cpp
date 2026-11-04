@@ -8,6 +8,7 @@
 // and any world/registry loss or change destroys the old visuals.
 
 #include "Scent/ScentComponent.h"
+#include "Dragon/DragonStatsComponent.h"
 #include "Scent/ScentMath.h"
 #include "Scent/ScentRibbonActor.h"
 #include "Scent/TrueSightMarkerActor.h"
@@ -65,6 +66,22 @@ UTreasureRegistry* UScentComponent::ResolveRegistry()
 	return CachedSubsystem != nullptr ? CachedSubsystem->Registry() : nullptr;
 }
 
+UDragonStatsComponent* UScentComponent::ResolveStats()
+{
+	// [2026-11-04 T-080] Per-call lookup on the owner (see header):
+	// FindComponentByClass is the pawn's own pool, so scent can
+	// never drain a pool belonging to some other actor.
+	AActor* Owner = GetOwner();
+	return Owner != nullptr ? Owner->FindComponentByClass<UDragonStatsComponent>() : nullptr;
+}
+
+bool UScentComponent::CanTrueSightRunWithMagic(bool bHasMagicPool, float Magic)
+{
+	// [2026-11-04 T-080] Fail closed on both missing pool and empty
+	// pool: an effect that costs magic must never run uncharged.
+	return bHasMagicPool && Magic > 0.0f;
+}
+
 bool UScentComponent::SetTrueSightActive(bool bActive)
 {
 	if (!bActive)
@@ -88,6 +105,18 @@ bool UScentComponent::SetTrueSightActive(bool bActive)
 	{
 		UE_LOG(LogUnderTheMountain, Warning,
 			   TEXT("True-sight refused: the Seeing Stone is carried (stolen)."));
+		bTrueSightActive = false;
+		return false;
+	}
+
+	// [2026-11-04 T-080] Empty-pool refusal (GAMEPLAY.md S3: the
+	// effect costs magic, so an empty pool cannot start it). No
+	// pool at all fails closed the same way, via the pure gate.
+	UDragonStatsComponent* Stats = ResolveStats();
+	if (!CanTrueSightRunWithMagic(Stats != nullptr, Stats != nullptr ? Stats->Magic : 0.0f))
+	{
+		UE_LOG(LogUnderTheMountain, Warning,
+			   TEXT("True-sight refused: magic pool is empty or unreachable."));
 		bTrueSightActive = false;
 		return false;
 	}
@@ -215,6 +244,35 @@ void UScentComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 									FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	// [2026-11-04 T-080] Magic economy for true-sight, run before
+	// the registry early-out below so the charge applies even on a
+	// tick where scent visuals cannot update: active true-sight
+	// drains at TrueSightMagicDrainPerSecond and shuts off the tick
+	// the pool empties (DrainMagic returns false at 0, and a pool
+	// that vanished mid-effect also shuts it off — never free);
+	// inactive true-sight regens at the Stats base rate. Regen is
+	// deliberately not run while active (see the field's comment).
+	if (UDragonStatsComponent* Stats = ResolveStats())
+	{
+		if (bTrueSightActive)
+		{
+			if (!Stats->DrainMagic(DeltaTime, TrueSightMagicDrainPerSecond))
+			{
+				UE_LOG(LogUnderTheMountain, Warning,
+					   TEXT("True-sight ended: magic pool empty."));
+				bTrueSightActive = false;
+			}
+		}
+		else
+		{
+			Stats->RegenMagic(DeltaTime);
+		}
+	}
+	else if (bTrueSightActive)
+	{
+		bTrueSightActive = false;
+	}
 
 	AActor* Owner = GetOwner();
 	UWorld* World = GetWorld();
@@ -389,6 +447,8 @@ void UScentComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		{
 			Ribbon->SetEndpoints(NoseLocation, Entry->Location, Params.Width);
 			Ribbon->SetOpacityFactor(Params.Opacity);
+			// [2026-11-04 T-127] Density/sheen by value (see ScentMath).
+			Ribbon->SetAppearanceFactors(Params.DensityScale, Params.SheenScale, Params.SheenColor);
 		}
 		// [2026-10-28 T-041] FScentRibbonParams carries no colour: it
 		// is baked into NS_ScentRibbon's particle colour at authoring

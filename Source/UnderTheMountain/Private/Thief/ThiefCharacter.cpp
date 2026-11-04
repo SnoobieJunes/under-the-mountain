@@ -11,6 +11,9 @@
 
 #include "Thief/ThiefBrain.h"
 #include "Thief/ThiefDataAsset.h"
+#include "Thief/ThiefRules.h"
+#include "Dragon/DragonStatsComponent.h"
+#include "Kismet/GameplayStatics.h"
 #include "Thief/TrapActor.h"
 #include "Treasure/TreasureSubsystem.h"
 #include "UnderTheMountain.h"
@@ -102,6 +105,11 @@ void AThiefCharacter::BeginPlay()
 
 	Brain = NewObject<UThiefBrain>(this);
 	Brain->Init(ThiefData.Get(), Registry, FName(GetName()));
+	if (PartyRole != EThiefRole::None)
+	{
+		// [2026-11-04 T-133] Per-member dwarf role (shared party asset).
+		Brain->SetRole(PartyRole);
+	}
 	Brain->SetExitLocation(ExitLocation);
 
 	// [2026-10-28 T-044] Visible body: the type's Meshy mesh replaces
@@ -270,7 +278,10 @@ void AThiefCharacter::Tick(float DeltaSeconds)
 	{
 		const bool bRunning =
 			Brain->State() == EThiefState::Flee || Brain->State() == EThiefState::Scared;
-		GetCharacterMovement()->MaxWalkSpeed = bRunning ? ThiefData->FleeSpeed : ThiefData->SneakSpeed;
+		// [2026-11-04 T-132] Star-gear speed multiplier from the brain's spawn snapshot.
+		const float GearMult = Brain->GearSpeedMultiplier();
+		GetCharacterMovement()->MaxWalkSpeed =
+			(bRunning ? ThiefData->FleeSpeed : ThiefData->SneakSpeed) * GearMult;
 	}
 
 	// [2026-10-28 T-044] Single-node locomotion follows brain state +
@@ -311,99 +322,38 @@ void AThiefCharacter::Tick(float DeltaSeconds)
 		}
 	}
 
-	// [2026-11-03 T-066] Portal routing for the mountain topology (replaces
-	// the T-012 chamber-centre scheme, which died with the chain). The
-	// great chamber is convex and every cave/crack is a straight run, so
-	// routing is: same region -> steer direct; in a portal -> steer to
-	// its mouth; chamber -> portal destination -> steer to its mouth;
-	// chamber <-> open plain -> steer via the mouth nearest the goal.
-	// Regions: chamber disc (r=5000 around (9500,0)) vs the four portal
-	// boxes below vs the open plain. T-089 replaces all of this with real
-	// pathfinding and kills every map constant here.
-	static const FVector PortalMouths[4] = {
-		FVector(14500.0f, 0.0f, 150.0f),	 // east: grand portal
-		FVector(4500.0f, 0.0f, 150.0f),		 // west: dragon cave
-		FVector(7500.0f, 5000.0f, 150.0f),	 // north: thief crack
-		FVector(11500.0f, -5000.0f, 150.0f), // south: thief crack
-	};
-	static const FVector PortalExits[4] = {
-		FVector(18700.0f, 0.0f, 150.0f),
-		FVector(500.0f, 0.0f, 150.0f),
-		FVector(7500.0f, 7000.0f, 150.0f),
-		FVector(11500.0f, -7000.0f, 150.0f),
-	};
-	auto PortalIndexAt = [](const FVector& P) -> int32
-	{
-		if (P.X >= 14500.0f && P.X <= 18500.0f && FMath::Abs(P.Y) <= 350.0f)
-		{
-			return 0;
-		}
-		if (P.X >= 500.0f && P.X <= 4500.0f && FMath::Abs(P.Y) <= 200.0f)
-		{
-			return 1;
-		}
-		if (P.Y >= 5000.0f && P.Y <= 7000.0f && FMath::Abs(P.X - 7500.0f) <= 30.0f)
-		{
-			return 2;
-		}
-		if (P.Y >= -7000.0f && P.Y <= -5000.0f && FMath::Abs(P.X - 11500.0f) <= 30.0f)
-		{
-			return 3;
-		}
-		if (FMath::Abs(P.X - 9500.0f) <= 5000.0f && FMath::Abs(P.Y) <= 5000.0f)
-		{
-			return -1;
-		}
-		return -2;
-	};
-	auto NearestExit = [&](const FVector& P) -> int32
-	{
-		int32 Best = 0;
-		float BestD = FVector::Dist2D(P, PortalExits[0]);
-		for (int32 i = 1; i < 4; ++i)
-		{
-			const float D = FVector::Dist2D(P, PortalExits[i]);
-			if (D < BestD)
-			{
-				BestD = D;
-				Best = i;
-			}
-		}
-		return Best;
-	};
+	// [2026-11-04 T-089] Waypoint-route steering (replaces the T-066
+	// portal/mouth constants and the T-012 chamber centres before them):
+	// the route is injected (RouteWaypoints, authored per spawn/level),
+	// FThiefRules::SteerTarget consumes reached waypoints in order, and
+	// an empty route steers straight at the brain destination. No map
+	// coordinates live in this actor any more. Editor-side NavMesh
+	// volumes can generate these lists later; the seam does not change.
 	const FVector MyLocation = GetActorLocation();
 	const FVector BrainDestination = Brain->CurrentDestination();
-	FVector SteerTarget = BrainDestination;
-	const int32 FromRegion = PortalIndexAt(MyLocation);
-	const int32 DestRegion = PortalIndexAt(BrainDestination);
-	if (FromRegion == DestRegion)
+	if (!bHasRouteDestination || !BrainDestination.Equals(LastRouteDestination, 1.0f))
 	{
-		SteerTarget = BrainDestination;
+		LastRouteDestination = BrainDestination;
+		bHasRouteDestination = true;
+		RouteWaypointIndex = 0;
 	}
-	else if (FromRegion >= 0)
+	// [2026-11-04 T-074] Armed thieves fight the dragon they can reach:
+	// the brain owns tell/cadence/damage, this actor only supplies the
+	// two locations and the dragon's Stats seam (found on the player pawn).
+	if (UWorld* World = GetWorld())
 	{
-		const FVector& Mouth = PortalMouths[FromRegion];
-		SteerTarget = FVector(Mouth.X, Mouth.Y, MyLocation.Z);
+		if (ACharacter* DragonPawn = UGameplayStatics::GetPlayerCharacter(World, 0))
+		{
+			if (UDragonStatsComponent* DragonStats =
+					DragonPawn->FindComponentByClass<UDragonStatsComponent>())
+			{
+				Brain->TickDragonAttack(DeltaSeconds, MyLocation, DragonPawn->GetActorLocation(),
+										DragonStats);
+			}
+		}
 	}
-	else if (DestRegion >= 0)
-	{
-		const FVector& Mouth = PortalMouths[DestRegion];
-		SteerTarget = FVector(Mouth.X, Mouth.Y, MyLocation.Z);
-	}
-	else if (FromRegion == -1)
-	{
-		const FVector& Mouth = PortalMouths[NearestExit(BrainDestination)];
-		SteerTarget = FVector(Mouth.X, Mouth.Y, MyLocation.Z);
-	}
-	else if (DestRegion == -1)
-	{
-		const FVector& Mouth = PortalMouths[NearestExit(MyLocation)];
-		SteerTarget = FVector(Mouth.X, Mouth.Y, MyLocation.Z);
-	}
-	else
-	{
-		SteerTarget = BrainDestination;
-	}
+	const FVector SteerTarget = FThiefRules::SteerTarget(RouteWaypoints, MyLocation, BrainDestination,
+														 Brain->ArriveRadius, RouteWaypointIndex);
 	const FVector ToDestination = SteerTarget - MyLocation;
 	if (ToDestination.Size() > 10.0f)
 	{

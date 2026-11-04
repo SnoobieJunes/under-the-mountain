@@ -71,6 +71,38 @@ class UNDERTHEMOUNTAIN_API AScentRibbonActor : public AActor
 	// as its alpha scale; before the system exists it is stored only.
 	void SetOpacityFactor(float Opacity);
 
+	// [2026-11-04 T-127] Density/sheen factors (FScentMath, by value):
+	// [2026-11-04 T-127] pushed as User.RibbonDensity (spawn-rate scale)
+	// [2026-11-04 T-127] and User.RibbonSheen + User.RibbonSheenColor.
+	// [2026-11-04 T-127] NS_ScentRibbon must define those user variables
+	// [2026-11-04 T-127] (docs/SCENT-RIBBON-RETUNE.md) or Niagara ignores them.
+	void SetAppearanceFactors(float DensityScale, float SheenScale, const FLinearColor& SheenColor);
+	float CurrentDensityScale() const
+	{
+		return RibbonDensityScale;
+	}
+	float CurrentSheenScale() const
+	{
+		return RibbonSheenScale;
+	}
+
+	// [2026-11-04 T-127] End-on white-bar mitigation (T-111 finding): a
+	// [2026-11-04 T-127] ribbon looked at along its own axis collapses to a
+	// [2026-11-04 T-127] bright quad bar. Fade opacity as view aligns with
+	// [2026-11-04 T-127] the segment: 1.0 broadside, 0.25 end-on. Pure so
+	// [2026-11-04 T-127] tests pin it without a camera.
+	static float EndOnOpacityFactor(const FVector& SegmentDir, const FVector& ViewDir)
+	{
+		const FVector S = SegmentDir.GetSafeNormal();
+		const FVector V = ViewDir.GetSafeNormal();
+		if (S.IsNearlyZero() || V.IsNearlyZero())
+		{
+			return 1.0f;
+		}
+		const float Alignment = FMath::Abs(FVector::DotProduct(S, V));
+		return FMath::Clamp(1.15f - Alignment, 0.25f, 1.0f);
+	}
+
 	// [2026-10-28 T-031] Current ribbon width in cm (the last value
 	// pushed to User.RibbonWidth); tests and PIE logs read this.
 	float CurrentWidth() const
@@ -122,6 +154,9 @@ class UNDERTHEMOUNTAIN_API AScentRibbonActor : public AActor
 	FVector SegmentFrom = FVector::ZeroVector;
 	FVector SegmentTo = FVector::ZeroVector;
 	float RibbonWidthCm = 0.0f;
+	// [2026-11-04 T-127] Last density/sheen handed to SetAppearanceFactors.
+	float RibbonDensityScale = 1.0f;
+	float RibbonSheenScale = 0.0f;
 	// [2026-10-28 T-031] Sweep phase in [0,1] along the segment and
 	// travel direction (+1 nose->treasure, -1 back).
 	float SweepPhase = 0.0f;

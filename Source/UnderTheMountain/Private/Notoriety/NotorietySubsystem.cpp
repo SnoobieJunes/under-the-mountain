@@ -95,3 +95,65 @@ void UNotorietySubsystem::AddStructureHitPoints()
 {
 	AddPoints(6, TEXT("settlement structure burnt"));
 }
+
+int32 UNotorietySubsystem::PointsFloorForStars(int32 Stars)
+{
+	// [2026-11-04 T-084] The S4 thresholds read backwards: entering
+	// 1-5 stars takes 10/30/60/100/150 points, so those are the
+	// band floors a decayed total resets to. Clamped at both ends
+	// so a bogus star count lands on a real band, never between.
+	static const int32 Floors[] = {0, 10, 30, 60, 100, 150};
+	return Floors[FMath::Clamp(Stars, 0, 5)];
+}
+
+int32 UNotorietySubsystem::PointsAfterSleepDecay(int32 InPoints)
+{
+	// [2026-11-04 T-084] S9: -2 stars, then points snap DOWN to the
+	// resulting band's floor (partial progress into the old band
+	// is forgotten — that snap is what makes one sleep meaningful
+	// from 4-5 stars without erasing a massacre in one nap).
+	const int32 NewStars = FMath::Max(0, StarsForPoints(FMath::Max(0, InPoints)) - 2);
+	return PointsFloorForStars(NewStars);
+}
+
+void UNotorietySubsystem::ApplySleepDecay()
+{
+	// [2026-11-04 T-084] The single-writer application of the pure
+	// math above; logged like every other notoriety change so a
+	// session's star story stays readable from the game log alone.
+	const int32 OldPoints = Points;
+	Points = PointsAfterSleepDecay(Points);
+	UE_LOG(LogUnderTheMountain, Log, TEXT("Notoriety sleep decay: %d -> %d points, %d star(s)"),
+		   OldPoints, Points, GetStars());
+}
+
+void UNotorietySubsystem::AddPublicKillPointsWitnessed(const FVector& KillLocation,
+													   const TArray<FSettlementArea>& Settlements,
+													   const TArray<FVillagerWitness>& Villagers)
+{
+	// [2026-11-04 T-134] Witness gate replaces the box-only charge for
+	// pawn-reported kills; the legacy verb above stays for callers
+	// that already established witness (and for its T-016 tests).
+	const bool bInside = IsInsideLair(KillLocation);
+	const bool bWitnessed = FWitnessRules::IsWitnessed(KillLocation, bInside, Settlements, Villagers,
+													   FWitnessRules::DefaultWitnessRadius);
+	const int32 Gain = FWitnessRules::PointsForAct(EWitnessedAct::PersonKill, bWitnessed, bInside);
+	if (Gain > 0)
+	{
+		AddPoints(Gain, TEXT("witnessed public kill/eat"));
+	}
+}
+
+void UNotorietySubsystem::AddLivestockEatPointsWitnessed(const FVector& EatLocation,
+														 const TArray<FSettlementArea>& Settlements,
+														 const TArray<FVillagerWitness>& Villagers)
+{
+	const bool bInside = IsInsideLair(EatLocation);
+	const bool bWitnessed = FWitnessRules::IsWitnessed(EatLocation, bInside, Settlements, Villagers,
+													   FWitnessRules::DefaultWitnessRadius);
+	const int32 Gain = FWitnessRules::PointsForAct(EWitnessedAct::LivestockEat, bWitnessed, bInside);
+	if (Gain > 0)
+	{
+		AddPoints(Gain, TEXT("witnessed livestock eaten"));
+	}
+}
