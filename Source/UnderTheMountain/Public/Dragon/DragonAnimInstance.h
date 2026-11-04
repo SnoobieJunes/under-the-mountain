@@ -21,6 +21,10 @@
 // [2026-11-01 T-068] them); Hover and Dive are appended. Dive is its own state
 // [2026-11-01 T-068] now, not "Fly but faster": per the spike, a dive is wings
 // [2026-11-01 T-068] swept with little flap, the opposite of the old 1.6x flap.
+// [2026-11-04 T-125] BlueprintType: ABP_Dragon's state machine transitions
+// [2026-11-04 T-125] test the published LocomotionState below (the C++ static
+// [2026-11-04 T-125] stays the single owner of the rule; the graph only reads).
+UENUM(BlueprintType)
 enum class EDragonAnimState : uint8
 {
 	Idle,
@@ -69,12 +73,20 @@ class UNDERTHEMOUNTAIN_API UDragonAnimInstance : public UAnimInstance
 	// [2026-11-01 T-068] Published pose facts, refreshed in
 	// [2026-11-01 T-068] NativeUpdateAnimation when an ABP uses this class and
 	// [2026-11-01 T-068] read by ADragonCharacter's driver today via the statics.
+	// [2026-11-04 T-125] LocomotionState + bDiving join the published set:
+	// [2026-11-04 T-125] the ABP state machine transitions test LocomotionState
+	// [2026-11-04 T-125] (computed by the tested SelectLocomotionState static,
+	// [2026-11-04 T-125] never by graph logic).
+	UPROPERTY(BlueprintReadOnly, Category = "Dragon|Anim")
+	EDragonAnimState LocomotionState = EDragonAnimState::Idle;
 	UPROPERTY(BlueprintReadOnly, Category = "Dragon|Anim")
 	float GroundSpeed = 0.0f;
 	UPROPERTY(BlueprintReadOnly, Category = "Dragon|Anim")
 	float VerticalSpeed = 0.0f;
 	UPROPERTY(BlueprintReadOnly, Category = "Dragon|Anim")
 	bool bFlying = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Dragon|Anim")
+	bool bDiving = false;
 	UPROPERTY(BlueprintReadOnly, Category = "Dragon|Anim")
 	float FlapPlayRate = 1.0f;
 	UPROPERTY(BlueprintReadOnly, Category = "Dragon|Anim")
@@ -87,4 +99,13 @@ class UNDERTHEMOUNTAIN_API UDragonAnimInstance : public UAnimInstance
 	float MeshPitchDegrees = 0.0f;
 
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
+
+  private:
+	// [2026-11-04 T-125] Transition proof + bank feed, both instance-local:
+	// LastLoggedStateId starts at -1 (nothing logged yet) so the first
+	// tick always announces; LastUpdateYaw seeds on the first tick with a
+	// valid pawn so the first bank rate is 0, not a 180-degree snap.
+	int32 LastLoggedStateId = -1;
+	float LastUpdateYaw = 0.0f;
+	bool bHasLastYaw = false;
 };

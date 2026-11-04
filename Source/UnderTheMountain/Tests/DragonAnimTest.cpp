@@ -5,7 +5,9 @@
 // statics, UDragonCombatComponent, UThiefBrain). Created 2026-11-01 (T-068).
 
 #include "Misc/AutomationTest.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Dragon/DragonAnimInstance.h"
+#include "Dragon/DragonCharacter.h"
 #include "Dragon/DragonCombatComponent.h"
 #include "Dragon/DragonStatsComponent.h"
 #include "Thief/ThiefBrain.h"
@@ -49,6 +51,16 @@ bool FDragonAnimCurvesTest::RunTest(const FString& Parameters)
 			 UDragonAnimInstance::ComputeMeshPitchDegrees(100.0f, -5000.0f) >= -30.0f);
 	TestTrue(TEXT("descending pitches nose-down"),
 			 UDragonAnimInstance::ComputeMeshPitchDegrees(1000.0f, -500.0f) < 0.0f);
+
+	// [2026-11-04 T-125] State order is serialized (logs name states by int;
+	// ABP_Dragon transitions test the published LocomotionState): the T-043
+	// values hold and Hover/Dive stay appended.
+	TestEqual(TEXT("Idle is state 0"), static_cast<int32>(EDragonAnimState::Idle), 0);
+	TestEqual(TEXT("Walk is state 1"), static_cast<int32>(EDragonAnimState::Walk), 1);
+	TestEqual(TEXT("Fly is state 2"), static_cast<int32>(EDragonAnimState::Fly), 2);
+	TestEqual(TEXT("Glide is state 3"), static_cast<int32>(EDragonAnimState::Glide), 3);
+	TestEqual(TEXT("Hover is state 4"), static_cast<int32>(EDragonAnimState::Hover), 4);
+	TestEqual(TEXT("Dive is state 5"), static_cast<int32>(EDragonAnimState::Dive), 5);
 	return true;
 }
 
@@ -127,6 +139,38 @@ bool FDragonBuffetSlamTest::RunTest(const FString& Parameters)
 			 UDragonCombatComponent::IsInArc2D(Origin, Forward, Origin, 700.0f, 70.0f));
 	TestFalse(TEXT("directly behind is outside the frontal arc"),
 			  UDragonCombatComponent::IsInArc2D(Origin, Forward, FVector(-300.0f, 0.0f, 0.0f), 700.0f, 70.0f));
+	return true;
+}
+
+// [2026-11-04 T-125] Dual-mode contract: the pawn runs ABP_Dragon iff the
+// graph asset is on disk (the constructor's class finder decides), else
+// the shipped single-node driver. The expectation reads the same world
+// the pawn saw (FindObject AFTER construction, so a landed graph that
+// the constructor just loaded is visible) — future-proof across T-139,
+// no hardcoded mode. Slot names pin the C++ side of the build-sheet
+// contract (the graph's Slot nodes must carry these exact names).
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDragonABPFallbackTest, "UnderTheMountain.Dragon.ABPFallback",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDragonABPFallbackTest::RunTest(const FString& Parameters)
+{
+	ADragonCharacter* Pawn = NewObject<ADragonCharacter>();
+	TestNotNull(TEXT("pawn constructs for ABP check"), Pawn);
+	if (Pawn == nullptr)
+	{
+		return false;
+	}
+	const UClass* AbpClass =
+		FindObject<UClass>(nullptr, TEXT("/Game/Meshy/Dragon/ABP_Dragon.ABP_Dragon_C"));
+	const bool bExpectABP = (AbpClass != nullptr);
+	TestTrue(TEXT("ABP flag follows graph presence"), Pawn->IsUsingABP() == bExpectABP);
+	const EAnimationMode::Type ExpectedMode = bExpectABP ? EAnimationMode::AnimationBlueprint
+														 : EAnimationMode::AnimationSingleNode;
+	TestTrue(TEXT("mesh mode follows ABP flag"),
+			 Pawn->GetMesh()->GetAnimationMode() == ExpectedMode);
+	TestTrue(TEXT("full-body slot name"), ADragonCharacter::AnimSlotFullBody == FName(TEXT("FullBody")));
+	TestTrue(TEXT("upper-body slot name"),
+			 ADragonCharacter::AnimSlotUpperBody == FName(TEXT("UpperBody")));
 	return true;
 }
 

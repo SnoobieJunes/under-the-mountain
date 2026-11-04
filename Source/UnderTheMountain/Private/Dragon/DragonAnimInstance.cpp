@@ -8,9 +8,11 @@
 
 #include "Dragon/DragonAnimInstance.h"
 
+#include "Dragon/DragonCharacter.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Pawn.h"
+#include "UnderTheMountain.h"
 
 EDragonAnimState UDragonAnimInstance::SelectLocomotionState(bool bFlying, bool bDiving, float HorizontalSpeed,
 															float VerticalSpeed)
@@ -124,6 +126,13 @@ void UDragonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	Super::NativeUpdateAnimation(DeltaSeconds);
 	// [2026-11-01 T-068] Sample-only: every published value comes from the
 	// [2026-11-01 T-068] statics above so ABP behaviour and tests cannot drift.
+	// [2026-11-04 T-125] Hybrid-aware sampling (the T-068 version only knew
+	// [2026-11-04 T-125] MOVE_Flying, hard-coded dive off, and never wrote
+	// [2026-11-04 T-125] BankDegrees): the airborne rule mirrors the pawn
+	// [2026-11-04 T-125] driver's exactly (legacy + hybrid + falling), dive
+	// [2026-11-04 T-125] reads the pawn's input latch, and bank reads the yaw
+	// [2026-11-04 T-125] rate — so the ABP transition tests see the same facts
+	// [2026-11-04 T-125] the single-node driver acted on.
 	APawn* Pawn = TryGetPawnOwner();
 	if (Pawn == nullptr)
 	{
@@ -132,13 +141,50 @@ void UDragonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	const FVector Velocity = Pawn->GetVelocity();
 	GroundSpeed = Velocity.Size2D();
 	VerticalSpeed = Velocity.Z;
-	if (const ACharacter* Character = Cast<ACharacter>(Pawn))
+	bool bAirborne = false;
+	bool bDiveInput = false;
+	if (const ADragonCharacter* Dragon = Cast<ADragonCharacter>(Pawn))
 	{
-		bFlying = Character->GetCharacterMovement()->MovementMode == MOVE_Flying;
+		bAirborne = Dragon->IsFlying() || Dragon->IsPrototypeFlying() ||
+					Dragon->GetCharacterMovement()->MovementMode == MOVE_Falling;
+		bDiveInput = Dragon->IsDiving();
 	}
-	const EDragonAnimState State = SelectLocomotionState(bFlying, false, GroundSpeed, VerticalSpeed);
-	FlapPlayRate = ComputeFlapPlayRate(State, GroundSpeed, VerticalSpeed);
-	FoldAlpha = ComputeFoldAlpha(State);
-	TuckAlpha = ComputeTuckAlpha(State);
+	else if (const ACharacter* Character = Cast<ACharacter>(Pawn))
+	{
+		bAirborne = Character->GetCharacterMovement()->MovementMode == MOVE_Flying;
+	}
+	bFlying = bAirborne;
+	bDiving = bAirborne && bDiveInput;
+	LocomotionState = SelectLocomotionState(bAirborne, bDiving, GroundSpeed, VerticalSpeed);
+	FlapPlayRate = ComputeFlapPlayRate(LocomotionState, GroundSpeed, VerticalSpeed);
+	FoldAlpha = ComputeFoldAlpha(LocomotionState);
+	TuckAlpha = ComputeTuckAlpha(LocomotionState);
 	MeshPitchDegrees = ComputeMeshPitchDegrees(GroundSpeed, VerticalSpeed);
+	const float Yaw = Pawn->GetActorRotation().Yaw;
+	if (!bHasLastYaw || DeltaSeconds <= 0.0f)
+	{
+		LastUpdateYaw = Yaw;
+		bHasLastYaw = true;
+		BankDegrees = 0.0f;
+	}
+	else
+	{
+		const float YawRate = FMath::FindDeltaAngleDegrees(LastUpdateYaw, Yaw) / DeltaSeconds;
+		LastUpdateYaw = Yaw;
+		BankDegrees = ComputeBankDegrees(YawRate, GroundSpeed);
+	}
+	// [2026-11-04 T-125] Transition proof on the T-113 ANIMSTATE channel
+	// [2026-11-04 T-125] (headless -game runs keep no log file): on change
+	// [2026-11-04 T-125] only, like the driver this replaces. clip=ABP — the
+	// [2026-11-04 T-125] graph owns playback; per-state captures name clips.
+	const int32 StateId = static_cast<int32>(LocomotionState);
+	if (StateId != LastLoggedStateId)
+	{
+		LastLoggedStateId = StateId;
+		UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon anim state -> %d (flying=%d diving=%d)"),
+			   StateId, bFlying ? 1 : 0, bDiving ? 1 : 0);
+		printf("ANIMSTATE state=%d flying=%d diving=%d clip=ABP\n", StateId, bFlying ? 1 : 0,
+			   bDiving ? 1 : 0);
+		fflush(stdout);
+	}
 }

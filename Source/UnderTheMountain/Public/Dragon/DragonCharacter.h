@@ -161,6 +161,14 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 
 	bool IsFlying() const;
 
+	// [2026-11-04 T-125] Read-only dive latch for the AnimInstance: ABP
+	// transition tests need the same dive fact the single-node driver
+	// passed to SelectAnimState (no setter — input owns the latch).
+	bool IsDiving() const
+	{
+		return bDiving;
+	}
+
 	// [2026-11-03 T-075] Prototype flight (T-075): true while the pawn flies the
 	// custom movement chassis (MOVE_Custom + non-zero utm.flight.scheme).
 	bool IsPrototypeFlying() const;
@@ -286,7 +294,21 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// [2026-11-01 T-068] locomotion for its length, then locomotion resumes.
 	// [2026-11-01 T-068] This is the single-node stand-in for montage slots;
 	// [2026-11-01 T-068] ABP_Dragon montages replace it without call-site churn.
+	// [2026-11-04 T-125] Dual-mode now (T-125 agent lane): in ABP mode the
+	// call-site-identical PlayOneShot plays through the graph's slots as
+	// a dynamic montage; without ABP_Dragon on disk the shipped
+	// single-node play runs. bUsingABP is set once in the constructor.
 	void PlayOneShot(UAnimSequence* Clip);
+
+	// [2026-11-04 T-125] ABP montage slot names (must match the Slot nodes
+	// in ABP_Dragon — see docs/ABP-DRAGON-BUILDSHEET.md).
+	static inline const FName AnimSlotFullBody = FName(TEXT("FullBody"));
+	static inline const FName AnimSlotUpperBody = FName(TEXT("UpperBody"));
+
+	bool IsUsingABP() const
+	{
+		return bUsingABP;
+	}
 
 	// [2026-11-01 T-068] Wing buffet (X) and tail slam (Z): rules live in
 	// [2026-11-01 T-068] UDragonCombatComponent; the pawn gathers targets.
@@ -628,7 +650,17 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// [2026-10-28 T-043] Last state Tick applied to the single-node
 	// mesh, so Tick only calls Play/Stop on SelectAnimState
 	// transitions (replaces the T-032 bPlayingWalk bool).
+	// [2026-11-04 T-125] Single-node mode only; ABP mode leaves this
+	// untouched (the graph owns locomotion playback).
 	EDragonAnimState CurrentAnimState = EDragonAnimState::Idle;
+
+	// [2026-11-04 T-125] True when ABP_Dragon was on disk at construction:
+	// mesh runs AnimationBlueprint mode, locomotion/tilt driver blocks
+	// are skipped, one-shots play through the graph's slots. False keeps
+	// the shipped single-node path byte-identical. Never flips at runtime.
+	bool bUsingABP = false;
+
+	FName OneShotSlotFor(UAnimSequence* Clip) const;
 
 	// [2026-11-01 T-068] One-shot playback clock: while > 0 the locomotion
 	// [2026-11-01 T-068] driver is suppressed; at expiry Tick forces a

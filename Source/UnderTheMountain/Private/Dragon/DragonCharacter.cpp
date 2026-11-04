@@ -9,6 +9,7 @@
 
 #include "Dragon/DragonCharacter.h"
 
+#include "Animation/AnimInstance.h"
 #include "Core/GameFlowMachine.h"
 #include "Core/UnderTheMountainGameMode.h"
 #include "Dragon/DragonAppearanceComponent.h"
@@ -249,12 +250,27 @@ ADragonCharacter::ADragonCharacter(const FObjectInitializer& ObjectInitializer)
 	GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, -24.0f));
 	GetMesh()->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
 	GetMesh()->SetRelativeScale3D(FVector(2.0f, 2.0f, 2.0f));
+	// [2026-11-04 T-125] ABP_Dragon hookup with single-node fallback: the
+	// class finder is silent when the graph has not been built yet (the
+	// owner lane, T-139), so every checkout before then keeps the
+	// shipped driver. First run with the graph on disk flips modes.
+	static ConstructorHelpers::FClassFinder<UAnimInstance> ABPClass(
+		TEXT("/Game/Meshy/Dragon/ABP_Dragon.ABP_Dragon_C"));
+	if (ABPClass.Succeeded())
+	{
+		GetMesh()->SetAnimInstanceClass(ABPClass.Class);
+		GetMesh()->SetAnimationMode(EAnimationMode::AnimationBlueprint);
+		bUsingABP = true;
+	}
 	static ConstructorHelpers::FObjectFinder<UAnimSequence> WalkAnimAsset(
 		TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_Anim.SK_Dragon_v4_Anim"));
 	if (WalkAnimAsset.Succeeded())
 	{
 		WalkAnim = WalkAnimAsset.Object;
-		GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+		if (!bUsingABP)
+		{
+			GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+		}
 	}
 	// [2026-10-28 T-043] Flight cycle, loaded like WalkAnim. The asset
 	// is created by a separate import step; if it is absent FlyAnim
@@ -264,7 +280,10 @@ ADragonCharacter::ADragonCharacter(const FObjectInitializer& ObjectInitializer)
 	if (FlyAnimAsset.Succeeded())
 	{
 		FlyAnim = FlyAnimAsset.Object;
-		GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+		if (!bUsingABP)
+		{
+			GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+		}
 	}
 	// [2026-11-01 T-068] T-068 clips, loaded like FlyAnim; every one is
 	// [2026-11-01 T-068] optional (Tick falls back per state) so a checkout
@@ -989,6 +1008,11 @@ void ADragonCharacter::BeginPlay()
 		UE_LOG(LogUnderTheMountain, Warning,
 			   TEXT("No compatible flight clip (newest import missing); flight will use bind pose"));
 	}
+	// [2026-11-04 T-125] Announce the anim path once: ABP mode means the
+	// graph owns locomotion + slots, single-node is the shipped driver.
+	UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon anim path: %s"),
+		   bUsingABP ? TEXT("ABP_Dragon (graph owns locomotion + slots)")
+					 : TEXT("single-node (ABP_Dragon not on disk)"));
 	// [2026-11-03 T-073] Onboarding: load persisted progress and build
 	// the (hidden) prompt + help widget before the first tick evaluates.
 	LoadOnboardingProgress();
@@ -2135,10 +2159,42 @@ void ADragonCharacter::PlayOneShot(UAnimSequence* Clip)
 	}
 	if (USkeletalMeshComponent* Mesh = GetMesh())
 	{
+		// [2026-11-04 T-125] ABP mode plays through the graph's montage
+		// slots as a dynamic montage (no montage assets to author; real
+		// montages with notifies land when a one-shot needs gameplay
+		// sync, T-126+). Single-node keeps the direct play + the
+		// suppression clock the locomotion driver reads.
+		if (bUsingABP)
+		{
+			UAnimInstance* ABP = Mesh->GetAnimInstance();
+			UAnimMontage* DynMontage = ABP != nullptr
+										   ? ABP->PlaySlotAnimationAsDynamicMontage(Clip, OneShotSlotFor(Clip), 0.15f, 0.25f)
+										   : nullptr;
+			if (DynMontage == nullptr)
+			{
+				UE_LOG(LogUnderTheMountain, Warning,
+					   TEXT("Dragon one-shot FAILED via ABP slot %s: %s (slot missing from graph?)"),
+					   *OneShotSlotFor(Clip).ToString(), *Clip->GetName());
+			}
+			return;
+		}
 		Mesh->PlayAnimation(Clip, false);
 		Mesh->SetPlayRate(1.0f);
 		OneShotTimeRemaining = Clip->GetPlayLength();
 	}
+}
+
+FName ADragonCharacter::OneShotSlotFor(UAnimSequence* Clip) const
+{
+	// [2026-11-04 T-125] Slot map per docs/ANIMATION-SPIKE.md (montage
+	// slots section) and the ABP build sheet: takeoff/land take the
+	// whole body; roar/light-hit take head/neck/upper (wings mantle
+	// with the chest branch). Unknown clips default full-body.
+	if (Clip == RoarAnim || Clip == HitAnim)
+	{
+		return AnimSlotUpperBody;
+	}
+	return AnimSlotFullBody;
 }
 
 void ADragonCharacter::HandleWingBuffet()
@@ -3254,7 +3310,10 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 		// [2026-11-02 T-058] the air uses flight poses, full stop.
 		const bool bAirborne =
 			IsFlying() || IsPrototypeFlying() || GetCharacterMovement()->MovementMode == MOVE_Falling;
-		if (OneShotTimeRemaining > 0.0f)
+		// [2026-11-04 T-125] ABP mode skips the single-node driver (the
+		// graph selects + blends locomotion off LocomotionState); the
+		// guards below keep the shipped driver byte-identical otherwise.
+		if (!bUsingABP && OneShotTimeRemaining > 0.0f)
 		{
 			OneShotTimeRemaining -= DeltaSeconds;
 			if (OneShotTimeRemaining <= 0.0f)
@@ -3263,7 +3322,7 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 				CurrentAnimState = static_cast<EDragonAnimState>(255);
 			}
 		}
-		else
+		else if (!bUsingABP)
 		{
 			const EDragonAnimState DesiredState =
 				SelectAnimState(bAirborne, bDiving, AnimHS, AnimVelocity.Z);
@@ -3317,6 +3376,9 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 		// [2026-11-01 T-068] constructor); the capsule and movement never tilt,
 		// [2026-11-01 T-068] so collision truth is untouched. Smoothed so a
 		// [2026-11-01 T-068] velocity step can never snap the body.
+		// [2026-11-04 T-125] Skipped in ABP mode: bank/pitch ride the
+		// graph's RotateRootBone off the same C++ vars (build sheet).
+		if (!bUsingABP)
 		{
 			const float Yaw = GetActorRotation().Yaw;
 			const float YawRate = DeltaSeconds > 0.0f
