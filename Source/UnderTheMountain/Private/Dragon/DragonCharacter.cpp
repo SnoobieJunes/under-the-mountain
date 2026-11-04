@@ -794,30 +794,42 @@ void ADragonCharacter::ApplyCameraRig(float DeltaSeconds)
 	// [2026-11-04 T-020] teleport once, face on request. Yaw needs a
 	// [2026-11-04 T-020] controller, which may arrive after the first tick,
 	// [2026-11-04 T-020] so the latch waits for it instead of skipping.
+	// [2026-11-04 T-117] Hardened: the teleport fires only once the pawn is
+	// [2026-11-04 T-117] possessed (an unpossessed pawn re-teleported every
+	// [2026-11-04 T-117] tick), and a non-empty spec that fails to parse logs
+	// [2026-11-04 T-117] a Warning naming it instead of latching silently.
 	if (!bProofSpawnApplied)
 	{
-		FVector Dest = FVector::ZeroVector;
 		const FString& Spec = CVarProofSpawnPos.GetValueOnGameThread();
-		if (!Spec.IsEmpty() && Dest.InitFromString(*Spec))
+		if (Spec.IsEmpty())
 		{
-			SetActorLocation(Dest, false, nullptr, ETeleportType::TeleportPhysics);
-			const float Yaw = CVarProofSpawnYaw.GetValueOnGameThread();
-			if (AController* Ctrl = GetController())
+			bProofSpawnApplied = true;
+		}
+		else if (AController* Ctrl = GetController())
+		{
+			FVector Dest = FVector::ZeroVector;
+			if (!Dest.InitFromString(*Spec))
 			{
+				UE_LOG(LogUnderTheMountain, Warning,
+					   TEXT("PROOF spawn: ignoring malformed utm.proof.spawn '%s' (want X=.. Y=.. Z=..)"),
+					   *Spec);
+				printf("PROOF spawn: ignoring malformed spec '%s'\n", TCHAR_TO_UTF8(*Spec));
+				fflush(stdout);
+			}
+			else
+			{
+				SetActorLocation(Dest, false, nullptr, ETeleportType::TeleportPhysics);
+				const float Yaw = CVarProofSpawnYaw.GetValueOnGameThread();
 				if (Yaw < 1e8f)
 				{
 					Ctrl->SetControlRotation(FRotator(0.0f, Yaw, 0.0f));
 				}
-				bProofSpawnApplied = true;
 				UE_LOG(LogUnderTheMountain, Log, TEXT("PROOF spawned at %s yaw %.0f"),
 					   *Dest.ToCompactString(), Yaw < 1e8f ? Yaw : -1.0f);
 				printf("PROOF spawned at %s yaw %.0f\n", TCHAR_TO_UTF8(*Dest.ToCompactString()),
 					   Yaw < 1e8f ? Yaw : -1.0);
 				fflush(stdout);
 			}
-		}
-		else
-		{
 			bProofSpawnApplied = true;
 		}
 	}

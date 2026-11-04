@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-04 — T-117 — Proof-spawn capture cvar hardened: fires once when possessed, warns on malformed specs (no user-visible change)
+
 2026-11-04 — T-116 — Proof-fps readout fixed (%lld frame count) + short-window runs warn instead of reporting 0.0 fps (no user-visible change)
 
 2026-11-04 — T-112 — Title screen renders again (gold title + START RUN + QUIT, focus error gone); START RUN reaches gameplay with the full HUD (no user-visible change beyond the restored title)
