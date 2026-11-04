@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-03 — T-124 — Final sprint seeded: god mode + flight, animation, dragon repair, world rebuild, scent, and graphics tasks filed from owner playtest feedback (no user-visible change)
+
 2026-11-04 — T-118 — Camera rig hardening: capture forcing no longer touches the player save, unknown modes log loudly, chest/head_end pinned, flying Eyes arm==0 pinned (no user-visible change)
 
 2026-11-04 — T-117 — Proof-spawn capture cvar hardened: fires once when possessed, warns on malformed specs (no user-visible change)

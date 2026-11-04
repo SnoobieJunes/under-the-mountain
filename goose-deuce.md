@@ -123,6 +123,14 @@ tag, choose the owing one.
 <!-- Real entries accumulate below, NEWEST AT THE TOP. The top entries are
      session-start required reading (count: AGENTS.md → Session ritual). -->
 
+## 2026-11-03 — Final sprint seeded: full scope stands, T-068 sliced, defaults stay max fidelity  [decision]
+- Task: T-122–T-128 (filed in this commit); T-068, T-088, T-114, T-115 amended
+- What: Owner playtest feedback (landscape-shadowed village, walk/flight/idle/slither/tail/eat/roar animation, god mode, frankensteined dragon with chest/tail holes, goat texture holes, scent density/sheen, settings/graphics, flight stamina) filed as sprint tasks T-122–T-128 at the top of ## Now with docs/FINAL-SPRINT.md as the intake record (incl. verbatim answers: god mode was specced in GAMEPLAY.md §2/T-088 but never implemented; no ABP_Dragon exists — 9 clips play single-node, 6 v1 families + 2 verb clips missing). T-068's open slice-vs-epic question answered: sliced into T-125 (harness) + T-126 (clips). T-115 unblocked by the owner's shipped-default pick.
+- Why: Owner decisions 2026-11-03: full scope stands (no deferrals, best effort in board order); dragon repair is surgical on v6 (rig + 9 clips preserved, 0 Meshy credits); world map rebuilt intelligently as a medieval world; god mode ships now as a cvar slice ahead of T-088's screen and its T-071 dependency, with hover 8/s → ~3/s and cheaper impulses (glide stays 0/s, T-075 scheme verdict stands); shipped graphics default stays highest quality — lower presets (T-128) are the relief valve, so T-115 proves an fps ladder instead of lowering the default.
+- Where: TASKS.md (T-122–T-128 filed; T-068/T-088/T-114 notes; T-115 [!] → [ ] in ## Now), docs/FINAL-SPRINT.md (new), goose-deuce.md (this entry), CHANGELOG.md. No product code.
+- Plan: docs/PLAN.md full-scope stance unchanged (owner reaffirmed it); the M1 60 fps gate sentence is amended at T-115's close per its new Accept, not here. TASKS.md corrected in this commit.
+- Commit(s): this commit
+
 ## 2026-11-04 — T-112: title widget fix verified; HighResShot can't prove UI  [decision]
 - Task: T-112 (title screen widget never renders — fix committed 2026-11-03)
 - What: Verified the cbc4a69 fix (SetIsFocusable(true) at construction) on a verified-fresh build and closed the task: UnderTheMountain.UI.FlowWidget green within 48/48 + gate green; -game title run holds paused with zero Slate-focus errors in the log (the 2026-11-03 bug signature, gone); live window grab proves the panel (UNDER THE MOUNTAIN + tagline + START RUN + QUIT); autostart run proves the driven START RUN path → Playing with the full HUD (vitals/hoard/wave/prompts) in a second live grab; stat-fps title number 49.1 (windowed 720p, rides with T-115).
