@@ -20,15 +20,14 @@ scent system (Niagara ribbons, value-only), a scale-colour picker, and live
 combat (fire breath, roar, eat). Three Meshy-modelled thief types (burglar,
 dwarf party, adventurer) run a data-driven AI state machine in the lair, and
 the grand portal flies out onto a real Meshy village with goats in the valley —
-all one map, no loading, measured at ~60 fps on the M1 Max.
+all one map, no loading, measured at ~57 fps average on the M1 Max (lair ~59, village ~56; perf pass T-115 filed).
 
 Still owed (see `TASKS.md`): the full scoped board now runs through T-092 —
 flight/animation overhauls (decisions in `docs/FLIGHT-SPIKE.md` /
 `docs/ANIMATION-SPIKE.md`), a real fire VFX, sky/weather/day-night, sprawling
 terrain and settlements, villagers/wildlife, artifacts and bulk treasure,
 audio ingestion for friend-composed music plus SFX, Notoriety/waves/win-lose,
-intro, HUD/shell, navigation, saves/settings, the standalone play fix, and the
-packaged macOS build. No scope has been cut.
+navigation, saves/settings. No scope has been cut.
 
 ## Install / run / test
 

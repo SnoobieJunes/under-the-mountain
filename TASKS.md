@@ -3,11 +3,7 @@
      acceptance criteria are not pickable — sharpen them first. -->
 
 ## Now
-<!-- [2026-11-03] T-109 is the standing successor sweep (Gated: cadence). Task-loop step 9 promotes it when the cadence hits; it closes by filing T-110. -->
-- [ ] T-109 — goose-deuce sweep (successor to T-034)
-      Why: standing audit cadence (AGENTS.md → Deviations); filed by the T-034 sweep 2026-11-03.
-      Accept: NEW-PROJECT-GUIDE step-5 checklist run; [process] marker entry filed; successor sweep task filed.
-      Touches: goose-deuce.md, docs/PLAN.md, TASKS.md   Depends: none   Gated: cadence
+<!-- [2026-11-04] T-120 is the standing successor sweep (Gated: cadence). Task-loop step 9 promotes it when the cadence hits; it closes by filing T-121. (T-109's note named T-110; that number had been taken by the v6 import — corrected here.) -->
 <!-- [2026-10-29] Owner playtest feedback, Path A session. Filed only — no work
      started. Owner direction: most of these need a one-at-a-time deep dive
      before implementation; design-ambiguous items are Gated: owner for that
@@ -117,8 +113,28 @@
       Commit note [2026-11-03]: fix+test committed in the owner-ordered tree clear (tests GREEN, owner visual proof); task stays open — loop re-verifies + gates + closes.
 - [ ] T-115 — Performance pass: hold 60 fps in the packaged build (lair + village)
       Why: T-020 measured 56–61 fps lair / 55–56 village at 1280×720 windowed on this M1 Max (Development); bisect proved Lumen GI ≈9 ms/frame (village default 55.9 → GI-medium 80.1 → GI-off 112.8; shadows only +1). Owner call 2026-11-04: ship authored quality now, pass properly later.
-      Accept: lair + village each measure ≥60 fps avg at shipped defaults on this Mac (PROOF fps lines, buckets recorded; worst-frame noted); no visual regression vs the authored look without owner sign-off (owner trades iteration for wow — screenshots/pixels reviewed, not numbers alone); launch reliability watch: 2 raw-exec startup SIGSEGVs in LaunchServices lookup (zero game frames, pre-log) across ~12 packaged launches — confirm none via the normal (double-click/LaunchServices) path or fix it here; T-112's stat-fps title number rides along if still open.
-      Touches: Source/, Config/ (scalability defaults), Scripts/, Content/ (only if measured)   Depends: T-020   Gated: none
+      Accept: lair + village each measure ≥60 fps avg at shipped defaults on this Mac (PROOF fps lines, buckets recorded; worst-frame noted); no visual regression vs the authored look without owner sign-off (owner trades iteration for wow — screenshots/pixels reviewed, not numbers alone); launch reliability watch: 2 raw-exec startup SIGSEGVs in LaunchServices lookup (zero game frames, pre-log) across ~12 packaged launches — confirm none via the normal (double-click/LaunchServices) path or fix it here; T-112's stat-fps title number rides along if still open. Then amend the M1 exit-gate sentence in docs/PLAN.md to the measured numbers (goose T-020 entry parks it here).
+      Touches: Source/, Config/ (scalability defaults), Scripts/, Content/ (only if measured), docs/PLAN.md (M1 gate sentence)   Depends: T-020   Gated: none
+- [ ] T-116 — Proof-fps robustness: format + empty-window guard (sweep #3 findings 1–2)
+      Why: sweep #3 adversarial review: the PROOF fps UE_LOG uses %d for int64 ProofFrames (stdout twin is correct %lld), and a shotdelay ≤10 s prints avg=0.0 frames=0 as if it were a measurement.
+      Accept: UE_LOG line uses %lld (verified in review); a run with shotdelay under the 10 s warmup logs insufficient-window instead of a zero measurement and still quits cleanly (packaged proof run); gate green.
+      Touches: Source/UnderTheMountain/Private/Core/UnderTheMountainGameMode.*   Depends: none   Gated: none
+- [ ] T-117 — Proof-spawn latch hardening (sweep #3 findings 3–4)
+      Why: sweep #3 adversarial review: SetActorLocation re-fires every tick while unpossessed; a malformed utm.proof.spawn spec latches silently with no warning.
+      Accept: teleport fires once (guarded by controller presence); a malformed spec logs a Warning naming the rejected spec; verified headless where possible + a packaged run shows the warning for a bad spec and a single PROOF-spawned line for a good one; gate green.
+      Touches: Source/UnderTheMountain/Private/Dragon/DragonCharacter.*   Depends: none   Gated: none
+- [ ] T-118 — Camera rig hardening + pins (sweep #3 findings 5–9)
+      Why: sweep #3 adversarial review: utm.camera.mode forcing writes the player's real save slot; +1%3 hardcodes 3 modes; default: folds bad values silently; chest/head_end unpinned while pivots depend on them; flying-Eyes arm==0 unpinned.
+      Accept: forcing path never touches the player slot (test slot or no-write + test proves it); mode count derived from the enum (static assert); invalid mode logs instead of silently becoming Near; V6MeshTest pins chest + head_end; applied-rig test covers flying Eyes arm==0; gate green.
+      Touches: Source/UnderTheMountain/Public+Private/Dragon/DragonCharacter.*, Source/UnderTheMountain/Tests/DragonInputTest.cpp, Source/UnderTheMountain/Tests/DragonV6MeshTest.cpp   Depends: none   Gated: none
+- [ ] T-119 — Stale script + comment cleanup (sweep #3 findings 10–11)
+      Why: sweep #3 adversarial review: import/decimate scripts still point at the T-113-retired dragon-wings-v6/ dir; appearance comments name the retired single-material contract (M_DragonScales with masked membranes).
+      Accept: both scripts point at dragon-wings-v6(new)/ sources or are marked superseded in their headers (no dead paths left executable); the three appearance comments describe the M_DragonScalesV6 body + untinted M_DragonWingV6 contract; gate green (no product behavior change).
+      Touches: Scripts/import_dragon_v6.py, Scripts/decimate_dragon_v6.py, Source/UnderTheMountain/Public/Dragon/DragonAppearanceComponent.h, Source/UnderTheMountain/Private/Dragon/DragonAppearanceComponent.cpp   Depends: none   Gated: none
+- [ ] T-120 — goose-deuce sweep (successor to T-109)
+      Why: standing audit cadence (AGENTS.md → Deviations); filed by the T-109 sweep 2026-11-04.
+      Accept: NEW-PROJECT-GUIDE step-5 checklist run; [process] marker entry filed; successor sweep task filed.
+      Touches: goose-deuce.md, docs/PLAN.md, TASKS.md   Depends: none   Gated: cadence
 
 ## Later
 - [ ] T-114 — New goat + foliage content: rig/walk import, nat_* placement (owner drop, future)
@@ -128,6 +144,7 @@
 - [ ] T-042 — AGENTS.md snapshot corrections (owner-approval needed to edit)
       Why: T-004 sweep: measured coverage is 39.7% but the floor still says 29% (guide step 5 ratchets just under measured); the version line still says 2026-10-27 though the snapshot holds 2026-10-28 material (stranger-test finding); the adaptive-unity/coverage foot-gun (clean the module Intermediate dir before coverage.sh after a stash or bulk file adds) is unrecorded. Edits to AGENTS.md from this harness hit a write-approval block, so an owner-approved edit is owed.
       Accept: Owner approves/applies: floor 29% -> 37%, version line re-stamped, foot-gun appended — or explicitly declines, recorded here.
+      Addendum [2026-11-04, T-109 sweep #3]: a fourth snapshot line went stale — Commands still says "packaging arrives in T-020" under build.sh, but Scripts/package.sh shipped in T-020 (Update the line to name package.sh). Same approval covers it.
       Touches: AGENTS.md   Depends: none   Gated: owner
 - [ ] T-093 — Gamepad path for the tint picker
       Why: T-060 (2026-11-01) shipped the picker mouse-only; its Accept allowed the gamepad path to be recorded as a follow-up instead of built. The C-key open/close is keyboard, and the pad/strip answer only to the left mouse button, so a gamepad player cannot recolour the dragon.
@@ -181,6 +198,7 @@
 ## Dropped
 
 ## Done
+- [x] T-109 — goose-deuce sweep (successor to T-034) (2026-11-04, this commit) — Sweep #3: goose audit clean (no in-range deferred/tech-debt; T-102/T-030 live); PLAN fold parked on T-115 (M1 gate sentence); docs audit (setup.sh, 6 closes changelogged, play.sh live, 2 README lies fixed); test audit (37.5 vs 29, T-042 owns ratchet); adversarial 13 minors → T-116–T-119 + 1 inline fix; token 0% growth; stranger test passed (T-112); successor T-120 filed. Marker: goose-deuce.md 2026-11-04 "Sweep #3".
 - [x] T-101 — Remove stray editor lock files committed with the goat work (2026-11-04, this commit) — Verified both names gone from worktree and index (only real run-loop.sh remains; removal itself landed unclosed in cbc4a69 owner-ordered tree clear); nothing else changed; gate green.
 - [x] T-020 — Packaged macOS build + perf gate (2026-11-04, this commit) — Scripts/package.sh lands a runnable 1 GB self-contained .app (RunUAT BuildCookRun, cook Lair, Development, pak+archive); fresh windowed launch reaches gameplay repeatedly (title→playing, thieves stealing/carrying, newest-clip flight states, clean quit, exit 0). Proof-fps vehicle added (PROOF fps + buckets in stdout/log; stat fps never logs; HighResShot saves nothing packaged). Measured 1280×720 windowed on this M1 Max: lair 56–61 avg (one run 60.6, buckets 59% at-60fps), village 55–56 avg (82% frames 16.6–33 ms); bisect: Lumen GI ≈9 ms (GI-medium 80.1, GI-off 112.8, shadows +1). Owner call 2026-11-04: 57 stands, ship authored quality, perf pass owed on T-115. Two raw-exec startup SIGSEGVs in LaunchServices lookup (zero game frames, pre-log) noted for T-115's launch watch. Gate green; coverage 37.5% (floor 29%).
 - [x] T-111 — Camera 3-mode rework: eyes first-person, above-wings near, far chase (tuned to v6) (2026-11-04, this commit) — Owner spec shipped: V/R3 cycle Eyes -> Near -> Far opening on Near; indices stable (Near 0/Far 1/Eyes 2, T-065 saves migrate by closest match). Eyes renders from 70%-down the head->head_end line + 8 cm up (measured v6 snout) with pawn mesh hidden + boom collision off; Near rides chest+45/arm 750 above the wing plane (Blender-measured v6 bind pose); Far keeps the old 1200 scenic. Proven: Dragon.CameraCycle/Binding + new rig/applied-rig pins (arm/visibility/collision per mode, incl. headless-applied Eyes-hidden) within 48/48 green; -game captures cam_near/cam_far/cam_eyes.png (one run per persisted mode via utm.camera.mode, slot restored to Near after) reviewed — Near frames the whole animal centered, Far smaller with margin, Eyes shows the over-snout vista with no mesh; white center bars are scent ribbons end-on, not clipping (not this task's system). v6 measurements hold (T-113: identical mesh). Gate green; coverage 37.8% (floor 29%).
