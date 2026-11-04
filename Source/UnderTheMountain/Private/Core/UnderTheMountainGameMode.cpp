@@ -85,6 +85,12 @@ void AUnderTheMountainGameMode::TickProofCapture()
 			UE_LOG(LogUnderTheMountain, Log,
 				   TEXT("Proof capture: HighResShot fired %.1fs after first tick (state %d)"),
 				   Now - ProofFirstTickTime, static_cast<int32>(GetFlowState()));
+			// [2026-11-04 T-113] Dual channel like CourseLog (T-075):
+			// [2026-11-04 T-113] headless -game runs never materialise a log
+			// [2026-11-04 T-113] file, so the shot needs stdout proof too.
+			printf("PROOF HighResShot fired %.1fs after first tick (state %d)\n", Now - ProofFirstTickTime,
+				   static_cast<int32>(GetFlowState()));
+			fflush(stdout);
 		}
 		return;
 	}

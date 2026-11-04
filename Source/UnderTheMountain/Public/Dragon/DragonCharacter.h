@@ -235,9 +235,10 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// import step creates that asset; if it is missing FlyAnim stays
 	// null, BeginPlay logs one warning, and flight falls back to the
 	// bind pose in Tick (errors surfaced, never silent).
-	// [2026-11-03 T-110] Skeleton-gated to null against the v6 mesh
-	// [2026-11-03 T-110] until T-068 imports v6 clips (see the gate in
-	// [2026-11-03 T-110] the constructor); same for every clip below.
+	// [2026-11-04 T-113] Content is the newest owner-drop rig now, not v4:
+	// [2026-11-04 T-113] T-113 re-imported all nine clip paths on the v6
+	// [2026-11-04 T-113] skeleton (names stay v4-legacy so no path changes
+	// [2026-11-04 T-113] were needed); the gate below passes them through.
 	UPROPERTY(VisibleAnywhere, Category = "Dragon")
 	TObjectPtr<UAnimSequence> FlyAnim;
 

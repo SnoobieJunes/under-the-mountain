@@ -3,6 +3,8 @@
      effect>`; internal-only tasks get one line ending `(no user-visible change)`. -->
 # CHANGELOG — Under the Mountain
 
+2026-11-04 — T-113 — Newest owner dragon flies: all 9 animation clips (fly, glide, hover, walk, takeoff, land, idle, roar, hit) play on the v6 rig, so flight/hover/landing read as posed wings instead of bind pose; retired the superseded v4/v5 dragon assets
+
 2026-11-03 — T-110 — Playable dragon is now v6 (new 39-bone rig, 4K body/wing PBR, tint still recolours the body only); dragon holds bind pose until its animation clips land
 
 2026-11-03 — T-086 — Hoard mound visibly shrinks in 3 steps as thieves steal (75/50/20% of start)

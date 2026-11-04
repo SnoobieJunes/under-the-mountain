@@ -1,8 +1,8 @@
 // Copyright Under the Mountain contributors.
 // Purpose: T-110 v6 mesh-swap contract — the pawn renders SK_Dragon_v6
 // (39-bone rig, body + wing slots, head bone for the T-111 camera anchor)
-// and holds bind pose because the v4 clips are skeleton-gated off until
-// T-068 authors v6 replacements. Created 2026-11-03.
+// and plays the owner-drop clips. Created 2026-11-03; clips landed T-113
+// (2026-11-04), flipping the T-110 skeleton-gate pins from null to live.
 
 #include "Misc/AutomationTest.h"
 #include "Animation/AnimSequence.h"
@@ -38,18 +38,40 @@ bool FDragonV6MeshTest::RunTest(const FString& Parameters)
 	// this bone; a rename without a pawn update must go red here, not in PIE.
 	TestTrue(TEXT("v6 skeleton has a head bone"),
 			 DragonMesh->GetRefSkeleton().FindBoneIndex(TEXT("head")) != INDEX_NONE);
-	// [2026-11-03 T-110] Every v4 clip is skeleton-gated to null in the
-	// constructor (mesh skeleton vs clip skeleton mismatch), so the pawn
-	// holds bind pose. When T-068 lands v6 clips it updates these pins.
-	TestNull(TEXT("WalkAnim gated off until v6 clips"), Pawn->WalkAnim);
-	TestNull(TEXT("FlyAnim gated off until v6 clips"), Pawn->FlyAnim);
-	TestNull(TEXT("GlideAnim gated off until v6 clips"), Pawn->GlideAnim);
-	TestNull(TEXT("HoverAnim gated off until v6 clips"), Pawn->HoverAnim);
-	TestNull(TEXT("IdleAnim gated off until v6 clips"), Pawn->IdleAnim);
-	TestNull(TEXT("TakeoffAnim gated off until v6 clips"), Pawn->TakeoffAnim);
-	TestNull(TEXT("LandAnim gated off until v6 clips"), Pawn->LandAnim);
-	TestNull(TEXT("RoarAnim gated off until v6 clips"), Pawn->RoarAnim);
-	TestNull(TEXT("HitAnim gated off until v6 clips"), Pawn->HitAnim);
+	// [2026-11-04 T-113] T-113: the newest owner-drop clips (Scripts/
+	// [2026-11-04 T-113] import_newest_dragon_anims.py) land on the pawn's
+	// [2026-11-04 T-113] nine clip paths on the v6 skeleton, so the T-110
+	// [2026-11-04 T-113] gate self-heals: every clip survives it non-null,
+	// [2026-11-04 T-113] on the mesh's own skeleton. A null here means the
+	// [2026-11-04 T-113] import regressed or the skeleton drifted — red here,
+	// [2026-11-04 T-113] not a silent bind-pose dragon in PIE.
+	USkeleton* MeshSkeleton = DragonMesh->GetSkeleton();
+	TestNotNull(TEXT("v6 mesh has a skeleton"), MeshSkeleton);
+	int32 LiveClips = 0;
+	for (const TPair<const TCHAR*, UAnimSequence*>& Clip :
+		 {TPair<const TCHAR*, UAnimSequence*>(TEXT("WalkAnim"), Pawn->WalkAnim),
+		  TPair<const TCHAR*, UAnimSequence*>(TEXT("FlyAnim"), Pawn->FlyAnim),
+		  TPair<const TCHAR*, UAnimSequence*>(TEXT("GlideAnim"), Pawn->GlideAnim),
+		  TPair<const TCHAR*, UAnimSequence*>(TEXT("HoverAnim"), Pawn->HoverAnim),
+		  TPair<const TCHAR*, UAnimSequence*>(TEXT("IdleAnim"), Pawn->IdleAnim),
+		  TPair<const TCHAR*, UAnimSequence*>(TEXT("TakeoffAnim"), Pawn->TakeoffAnim),
+		  TPair<const TCHAR*, UAnimSequence*>(TEXT("LandAnim"), Pawn->LandAnim),
+		  TPair<const TCHAR*, UAnimSequence*>(TEXT("RoarAnim"), Pawn->RoarAnim),
+		  TPair<const TCHAR*, UAnimSequence*>(TEXT("HitAnim"), Pawn->HitAnim)})
+	{
+		TestNotNull(FString::Printf(TEXT("%s is live on the newest rig"), Clip.Key), Clip.Value);
+		if (Clip.Value == nullptr)
+		{
+			continue;
+		}
+		++LiveClips;
+		TestEqual(
+			FString::Printf(TEXT("%s is on the v6 skeleton"), Clip.Key), Clip.Value->GetSkeleton(),
+			MeshSkeleton);
+		TestTrue(
+			FString::Printf(TEXT("%s has length"), Clip.Key), Clip.Value->GetPlayLength() > 0.0f);
+	}
+	TestEqual(TEXT("all nine newest clips live"), LiveClips, 9);
 	return true;
 }
 

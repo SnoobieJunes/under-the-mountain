@@ -94,10 +94,12 @@ Notes:
 
 ### The dragon
 
-- **Model:** Meshy V4 hero dragon (fourth-generation Meshy iteration, owner-
-  approved concept art as source per `docs/ART-DIRECTION.md`) on the pawn,
-  scaled 2×, with `M_DragonScales` — base × scale-tint, with the crimson
-  membranes/spines protected in the material graph.
+- **Model:** newest owner-drop dragon on the 39-bone v6 rig (owner FBX
+  sources in `Content/Meshy/dragon-wings-v6(new)/`, T-113), scaled 2×, with
+  `M_DragonScalesV6` — body base × scale-tint — and untinted
+  `M_DragonWingV6` wing membranes. All 9 clips play on the pawn (fly,
+  glide, hover, walk, takeoff, land, idle, roar, hit); the v4/v5 assets
+  were retired in the same task.
 - **Flight feel:** flap to climb, glide to travel, dive to convert altitude
   into speed; stamina drains per action (flap 3/beat, glide 0/s, hover 8/s,
   fire 5/s), zero stamina burns HP, and hard landings cost HP scaled by impact
@@ -257,7 +259,7 @@ under-the-mountain/
 
 | Model | Source | Rig | Has | Missing |
 |---|---|---|---|---|
-| **Dragon** (`SK_Dragon_v4`) | Muse multi-images → Meshy multi-image-to-3D mesh/textures → Blender rig/skin/Walk/Fly → Unreal | Blender-authored 33-bone quadruped (spine, 4 leg chains, wing chains, tail) with bone-heat skinning | Quadruped walk cycle (`SK_Dragon_v4_Anim`); flight anim (`SK_Dragon_v4_FlyAnim`: spread + flap with downstream lag, body bob) driven by an anim state machine — Idle / Walk / Fly (flap; 1.6× in dive) / Glide (0.25×, wings held). Transitions are logged in the Output Log (T-047) | No attack/roar/eat/landing poses (combat plays a cone mesh, no pose change); live flight feel + wing motion in a human PIE session is owed (T-030) |
+| **Dragon** (`SK_Dragon_v6`, newest owner drop, T-113) | Owner-supplied FBX (mesh + 9 anims + 6 4K PBR textures, `Content/Meshy/dragon-wings-v6(new)/`) → Blender inventory/merge fixup → Unreal | 39-bone rig (spine chain, 4 leg chains, 7 wing bones/side + finger fan, tail), skin weights intact through decimation | All 9 clips on the pawn's paths (`SK_Dragon_v4_*` names, v6 content): walk, fly (flap; 1.6× in dive), glide (wings held), hover, takeoff, land, idle, roar, hit-light — driven by the anim state machine; transitions log `ANIMSTATE` on stdout in headless -game runs | No hit-heavy/defeat/sleep/fire-pose/claw clips (T-068 remainder); live flight feel + wing motion in a human PIE session is owed (T-030) |
 | **Burglar, Adventurer, Dwarf** (5 models; the dwarf *party* in-game uses the carrier model; guard/trapper models are in the repo unused) | Meshy image-to-3D + auto-rig | 24-joint humanoid, verified usable (`glb_stats` skinned-mesh check) | Walk + run (Meshy clips, single-node, switched by AI state — T-044) | No death/fall, hit reaction, grab/carry, or trap-placement clips — all owed in T-054 |
 | **Goat** (`liv-goat_quad`) | Meshy → Blender 5.2 | 21-bone quadruped (region-gated distance weighting after Bone Heat failed on the mesh) | 24-frame in-place walk loop authored in Blender (verified in renders) | **Not in the game yet**: in-game goats are greybox sphere/cube (T-017); the quad clip is not imported and no run/death clips exist (T-054). The Meshy biped auto-rig was rejected and is flagged in `docs/WORLD-ASSETS.md` §5 — do not ship it |
 | **27 world statics** (+ goat skeletal mesh) | Meshy image-to-3D | n/a (static meshes) | 15 distinct assets placed in the current village layout (T-046) | 11 statics imported but **not placed**: castle keep/wall/gate, the destructible props (incl. the 4 intact→rubble pairs), 2 dead trees (T-050/T-055); no LODs or collision yet |

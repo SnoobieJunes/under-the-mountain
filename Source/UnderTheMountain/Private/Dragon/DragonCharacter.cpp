@@ -191,8 +191,12 @@ ADragonCharacter::ADragonCharacter(const FObjectInitializer& ObjectInitializer)
 	// [2026-11-03 T-110] Scripts/import_dragon_v6.py). Measured v6 bounds match
 	// [2026-11-03 T-110] v4 (local Y extent 95.14 vs 95.10, head at -Y in both
 	// [2026-11-03 T-110] source rigs), so the T-032 offsets below transfer
-	// [2026-11-03 T-110] unchanged: scale 2, z -24, yaw -90. The v4 assets stay
-	// [2026-11-03 T-110] on disk for rollback; nothing loads them any more.
+	// [2026-11-03 T-110] unchanged: scale 2, z -24, yaw -90.
+	// [2026-11-04 T-113] The newest owner drop re-uses this exact mesh
+	// [2026-11-04 T-113] (proven identical: 289,485 verts / 413,454 tris /
+	// [2026-11-04 T-113] same 39-bone rig), so SK_Dragon_v6 stands as
+	// [2026-11-04 T-113] imported; T-113 retired the v4 mesh/skeleton and
+	// [2026-11-04 T-113] the old v6 source beside it.
 	// [2026-10-28 T-032] Probed bounds are 190 long (local Y, head at -Y
 	// in the source rig) x 48 wide x 72 tall (cm), origin at body
 	// centre — so scale 2 gives a 380cm dragon whose feet (local z -72
@@ -253,13 +257,13 @@ ADragonCharacter::ADragonCharacter(const FObjectInitializer& ObjectInitializer)
 		RoarAnim = LoadClip(TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_RoarAnim.SK_Dragon_v4_RoarAnim"));
 		HitAnim = LoadClip(TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_HitAnim.SK_Dragon_v4_HitAnim"));
 	}
-	// [2026-11-03 T-110] Skeleton gate: a clip whose skeleton is not the
-	// [2026-11-03 T-110] mesh's skeleton would play garbage or nothing, so it
-	// [2026-11-03 T-110] is nulled and Tick holds bind pose instead (the same
-	// [2026-11-03 T-110] fallback as a missing import). Today that is all nine
-	// [2026-11-03 T-110] v4 clips against the v6 mesh. The gate self-heals:
-	// [2026-11-03 T-110] when T-068 imports v6 clips onto the v6 skeleton at
-	// [2026-11-03 T-110] these paths they start playing with no pawn change.
+	// [2026-11-04 T-113] All nine clip paths hold the newest owner-drop
+	// [2026-11-04 T-113] clips on this v6 skeleton (imported by Scripts/
+	// [2026-11-04 T-113] import_newest_dragon_anims.py), so the gate below
+	// [2026-11-04 T-113] passes them through and every flight state plays.
+	// [2026-11-04 T-113] The gate stays: any future skeleton drift nulls the
+	// [2026-11-04 T-113] drifting clip back to bind pose (loud in the log)
+	// [2026-11-04 T-113] instead of playing garbage.
 	if (GetMesh()->GetSkeletalMeshAsset() != nullptr)
 	{
 		USkeleton* MeshSkeleton = GetMesh()->GetSkeletalMeshAsset()->GetSkeleton();
@@ -274,10 +278,12 @@ ADragonCharacter::ADragonCharacter(const FObjectInitializer& ObjectInitializer)
 				++SkippedClips;
 			}
 		}
+		// [2026-11-04 T-113] Skeleton drift (a clip on the wrong rig plays
+		// [2026-11-04 T-113] garbage): nulled here, loud in the log below.
 		if (SkippedClips > 0)
 		{
 			UE_LOG(LogUnderTheMountain, Log,
-				   TEXT("Dragon anims skipped: %d (skeleton mismatch vs %s — v6 clips owed to T-068)"),
+				   TEXT("Dragon anims skipped: %d (skeleton mismatch vs %s — re-import the drifted clip)"),
 				   SkippedClips, *GetMesh()->GetSkeletalMeshAsset()->GetName());
 		}
 	}
@@ -790,13 +796,12 @@ void ADragonCharacter::BeginPlay()
 	}
 	// [2026-10-28 T-043] Surface a missing flight clip once here;
 	// Tick's per-frame fallback to bind pose must stay silent.
-	// [2026-11-03 T-110] Today the v4 clip exists but is skeleton-gated to
-	// [2026-11-03 T-110] null in the constructor (see the gate there); either
-	// [2026-11-03 T-110] way a null FlyAnim means bind pose until T-068 clips.
+	// [2026-11-04 T-113] T-113 landed the newest clips, so a null FlyAnim now
+	// [2026-11-04 T-113] means the import regressed — loud, as before.
 	if (FlyAnim == nullptr)
 	{
 		UE_LOG(LogUnderTheMountain, Warning,
-			   TEXT("No compatible flight clip (v4 gated, v6 owed to T-068); flight will use bind pose"));
+			   TEXT("No compatible flight clip (newest import missing); flight will use bind pose"));
 	}
 	// [2026-11-03 T-073] Onboarding: load persisted progress and build
 	// the (hidden) prompt + help widget before the first tick evaluates.
@@ -3079,6 +3084,14 @@ void ADragonCharacter::Tick(float DeltaSeconds)
 					Clip = FlyAnim;
 					break;
 				}
+				// [2026-11-04 T-113] Dual channel like CourseLog (T-075):
+				// [2026-11-04 T-113] headless -game runs never materialise a
+				// [2026-11-04 T-113] log file, so state + clip proof needs
+				// [2026-11-04 T-113] stdout. A null clip here means bind pose.
+				printf("ANIMSTATE state=%d flying=%d diving=%d clip=%s\n", static_cast<int32>(DesiredState),
+					   IsFlying() ? 1 : 0, bDiving ? 1 : 0,
+					   Clip != nullptr ? TCHAR_TO_UTF8(*Clip->GetName()) : "BIND");
+				fflush(stdout);
 				if (Clip != nullptr)
 				{
 					Mesh->PlayAnimation(Clip, true);

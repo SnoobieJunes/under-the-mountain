@@ -233,6 +233,12 @@ bool FDragonAnimStateTest::RunTest(const FString& Parameters)
 // check while the dragon holds bind pose). Samples the raw
 // wing_finger_L track at the up key (t=0) and the down key
 // (t=0.5s of the 1s loop) and requires real travel.
+// [2026-11-04 T-113] Paths now hold the newest owner-drop clips on the
+// [2026-11-04 T-113] v6 skeleton (same asset names, T-110 gate self-healed);
+// [2026-11-04 T-113] the mesh pin moves v4 -> SK_Dragon_v6. Thresholds below
+// [2026-11-04 T-113] (swing, tuck, span, sweep, straightness) are unchanged:
+// [2026-11-04 T-113] they are the owner-approved flight contracts, and the
+// [2026-11-04 T-113] newest rig must meet the same bar.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDragonFlyAnimPoseTest, "UnderTheMountain.Dragon.FlyAnimPose",
 								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
@@ -240,10 +246,10 @@ bool FDragonFlyAnimPoseTest::RunTest(const FString& Parameters)
 {
 	UAnimSequence* FlyAnim = LoadObject<UAnimSequence>(
 		nullptr, TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_FlyAnim.SK_Dragon_v4_FlyAnim"));
-	TestNotNull(TEXT("SK_Dragon_v4_FlyAnim loads"), FlyAnim);
+	TestNotNull(TEXT("newest FlyAnim loads"), FlyAnim);
 	USkeletalMesh* DragonMesh = LoadObject<USkeletalMesh>(
-		nullptr, TEXT("/Game/Meshy/Dragon/SK_Dragon_v4.SK_Dragon_v4"));
-	TestNotNull(TEXT("SK_Dragon_v4 loads"), DragonMesh);
+		nullptr, TEXT("/Game/Meshy/Dragon/SK_Dragon_v6.SK_Dragon_v6"));
+	TestNotNull(TEXT("SK_Dragon_v6 loads"), DragonMesh);
 	if (FlyAnim == nullptr || DragonMesh == nullptr)
 	{
 		return false;
@@ -312,7 +318,7 @@ bool FDragonFlyAnimPoseTest::RunTest(const FString& Parameters)
 	{
 		UAnimSequence* GlideAnim = LoadObject<UAnimSequence>(
 			nullptr, TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_GlideAnim.SK_Dragon_v4_GlideAnim"));
-		TestNotNull(TEXT("SK_Dragon_v4_GlideAnim loads"), GlideAnim);
+		TestNotNull(TEXT("newest GlideAnim loads"), GlideAnim);
 		const int32 NumBones = RefSkeleton.GetNum();
 		TArray<FTransform> Component;
 		Component.SetNum(NumBones);
