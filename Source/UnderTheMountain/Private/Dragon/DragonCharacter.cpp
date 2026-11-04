@@ -649,7 +649,12 @@ void ADragonCharacter::TickOnboarding(float DeltaSeconds)
 
 void ADragonCharacter::CycleCamera()
 {
-	CameraMode = static_cast<EDragonCameraMode>((static_cast<int32>(CameraMode) + 1) % 3);
+	// [2026-11-04 T-118] Mode count derives from the enum (sweep #3 finding
+	// [2026-11-04 T-118] 6): appending a mode trips the static assert until
+	// [2026-11-04 T-118] this cycle is taught the new order.
+	constexpr int32 ModeCount = static_cast<int32>(EDragonCameraMode::Eyes) + 1;
+	static_assert(ModeCount == 3, "T-118: camera mode appended - teach CycleCamera the new order");
+	CameraMode = static_cast<EDragonCameraMode>((static_cast<int32>(CameraMode) + 1) % ModeCount);
 	SaveCameraChoice();
 	UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon camera: %d"), static_cast<int32>(CameraMode));
 	// [2026-11-03 T-073] First cycle dismisses the camera prompt.
@@ -729,7 +734,16 @@ void ADragonCharacter::CameraRigForMode(EDragonCameraMode Mode, float& OutArmLen
 		bOutCollide = false;
 		break;
 	case EDragonCameraMode::Near:
+		OutArmLength = 750.0f;
+		bOutHideMesh = false;
+		bOutCollide = true;
+		break;
 	default:
+		// [2026-11-04 T-118] Loud, not silent (sweep #3 finding 7): every
+		// [2026-11-04 T-118] writer validates, so reaching here means a new
+		// [2026-11-04 T-118] mode outran the switch — fall back to Near.
+		ensureMsgf(false, TEXT("CameraRigForMode: unknown mode %d, falling back to Near"),
+				   static_cast<int32>(Mode));
 		OutArmLength = 750.0f;
 		bOutHideMesh = false;
 		bOutCollide = true;
@@ -776,16 +790,20 @@ void ADragonCharacter::ApplyCameraRig(float DeltaSeconds)
 	// [2026-11-04 T-111] BeginPlay — a spawn-time read would race them and
 	// [2026-11-04 T-111] silently keep the slot. One-shot latch: later V/R3
 	// [2026-11-04 T-111] presses stick (the cvar is launch-scoped, default -1).
+	// [2026-11-04 T-118] Deliberately NOT persisted: this is a capture tool,
+	// [2026-11-04 T-118] and writing the player's save slot from it would
+	// [2026-11-04 T-118] clobber their choice (sweep #3 finding 5). The
+	// [2026-11-04 T-118] persistence path (CycleCamera → save → load) is
+	// [2026-11-04 T-118] pinned separately by the round-trip test.
 	if (!bCameraModeForceApplied)
 	{
 		const int32 ForcedMode = CVarCameraMode.GetValueOnGameThread();
 		if (ForcedMode >= 0 && ForcedMode <= 2)
 		{
 			CameraMode = static_cast<EDragonCameraMode>(ForcedMode);
-			SaveCameraChoice();
 			UE_LOG(LogUnderTheMountain, Log,
-				   TEXT("Camera forced to mode %d by utm.camera.mode (persisted)"), ForcedMode);
-			printf("CAMERA forced mode %d (persisted)\n", ForcedMode);
+				   TEXT("Camera forced to mode %d by utm.camera.mode (not persisted)"), ForcedMode);
+			printf("CAMERA forced mode %d (not persisted)\n", ForcedMode);
 			fflush(stdout);
 		}
 		bCameraModeForceApplied = true;
@@ -863,8 +881,15 @@ void ADragonCharacter::ApplyCameraRig(float DeltaSeconds)
 		DesiredPivot = FMath::Lerp(HeadLocal, SnoutLocal, EyeAlongSnout) + FVector(0.0f, 0.0f, EyeUp);
 		break;
 	case EDragonCameraMode::Near:
-	default:
 		DesiredPivot = ChestLocal + FVector(0.0f, 0.0f, NearHeightAboveChest);
+		break;
+	default:
+		// [2026-11-04 T-118] Same loud-fallback contract as CameraRigForMode
+		// [2026-11-04 T-118] above (sweep #3 finding 7): pivot falls back to
+		// [2026-11-04 T-118] the head anchor, never a snap to origin.
+		ensureMsgf(false, TEXT("ApplyCameraRig: unknown mode %d, falling back to head pivot"),
+				   static_cast<int32>(CameraMode));
+		DesiredPivot = HeadLocal;
 		break;
 	}
 	if (bHeadFound)

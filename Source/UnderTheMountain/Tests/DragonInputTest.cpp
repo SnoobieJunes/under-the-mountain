@@ -9,7 +9,9 @@
 #include "Misc/AutomationTest.h"
 #include "Dragon/DragonCharacter.h"
 #include "Dragon/DragonCameraSaveGame.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "HAL/IConsoleManager.h"
 #include "InputAction.h"
 #include "InputCoreTypes.h"
 #include "InputMappingContext.h"
@@ -374,6 +376,11 @@ bool FDragonCameraCycleTest::RunTest(const FString& Parameters)
 	// [2026-11-04 T-111] arm converges, mesh visibility flips only in Eyes,
 	// [2026-11-04 T-111] boom collision off only in Eyes. Pivots need live
 	// [2026-11-04 T-111] bones — proven by the -game capture set, not here.
+	// [2026-11-04 T-118] Flying Eyes keeps arm 0 (sweep #3 finding 9): the
+	// [2026-11-04 T-118] prototype-band shorten must not resurrect the arm.
+	// [2026-11-04 T-118] utm.camera.mode forcing writes nothing (sweep #3
+	// [2026-11-04 T-118] finding 5): driven through the console manager on
+	// [2026-11-04 T-118] the test slot and proven slot-less below.
 	for (const TTuple<EDragonCameraMode, float, bool, bool>& Rig :
 		 {MakeTuple(EDragonCameraMode::Near, 750.0f, false, true),
 		  MakeTuple(EDragonCameraMode::Far, 1200.0f, false, true),
@@ -383,6 +390,10 @@ bool FDragonCameraCycleTest::RunTest(const FString& Parameters)
 		{
 			Pawn->CycleCamera();
 		}
+		if (Rig.Get<0>() == EDragonCameraMode::Eyes)
+		{
+			Pawn->GetCharacterMovement()->SetMovementMode(MOVE_Custom);
+		}
 		Pawn->ApplyCameraRigForTesting(100.0f);
 		TestEqual(FString::Printf(TEXT("applied mode %d arm"), static_cast<int32>(Rig.Get<0>())),
 				  Pawn->CameraBoom->TargetArmLength, Rig.Get<1>());
@@ -390,6 +401,32 @@ bool FDragonCameraCycleTest::RunTest(const FString& Parameters)
 				  Pawn->GetMesh()->IsVisible(), !Rig.Get<2>());
 		TestEqual(FString::Printf(TEXT("applied mode %d boom collides"), static_cast<int32>(Rig.Get<0>())),
 				  Pawn->CameraBoom->bDoCollisionTest, Rig.Get<3>());
+	}
+	// [2026-11-04 T-118] Forcing (utm.camera.mode) applies without touching
+	// [2026-11-04 T-118] any save slot: the test slot stays absent around a
+	// [2026-11-04 T-118] forced Far (sweep #3 finding 5). The cvar is restored
+	// [2026-11-04 T-118] before asserting so no later test inherits it.
+	{
+		ADragonCharacter* ForcedPawn = NewObject<ADragonCharacter>();
+		TestNotNull(TEXT("fresh pawn constructs for force check"), ForcedPawn);
+		if (ForcedPawn != nullptr)
+		{
+			ForcedPawn->SetCameraSaveSlotForTesting(TestSlot);
+			UGameplayStatics::DeleteGameInSlot(TestSlot, 0);
+			IConsoleVariable* ForceCVar =
+				IConsoleManager::Get().FindConsoleVariable(TEXT("utm.camera.mode"));
+			TestNotNull(TEXT("utm.camera.mode cvar exists"), ForceCVar);
+			if (ForceCVar != nullptr)
+			{
+				ForceCVar->Set(1);
+				ForcedPawn->ApplyCameraRigForTesting(100.0f);
+				ForceCVar->Set(-1);
+			}
+			TestEqual(TEXT("forced mode applies"), static_cast<int32>(ForcedPawn->GetCameraMode()), 1);
+			TestFalse(TEXT("forcing writes no save"),
+					  UGameplayStatics::DoesSaveGameExist(TestSlot, 0));
+			UGameplayStatics::DeleteGameInSlot(TestSlot, 0);
+		}
 	}
 
 	// Pitch-invert defaults: nose-up on every device until T-088 surfaces

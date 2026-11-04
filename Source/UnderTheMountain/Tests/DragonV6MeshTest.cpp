@@ -38,6 +38,13 @@ bool FDragonV6MeshTest::RunTest(const FString& Parameters)
 	// this bone; a rename without a pawn update must go red here, not in PIE.
 	TestTrue(TEXT("v6 skeleton has a head bone"),
 			 DragonMesh->GetRefSkeleton().FindBoneIndex(TEXT("head")) != INDEX_NONE);
+	// [2026-11-04 T-118] Pinned rig bones: the chase pivot reads chest and
+	// [2026-11-04 T-118] the Eyes pivot reads head_end (sweep #3 finding 8) —
+	// [2026-11-04 T-118] a rename without a pawn update must go red here.
+	TestTrue(TEXT("v6 skeleton has a chest bone"),
+			 DragonMesh->GetRefSkeleton().FindBoneIndex(TEXT("chest")) != INDEX_NONE);
+	TestTrue(TEXT("v6 skeleton has a head_end bone"),
+			 DragonMesh->GetRefSkeleton().FindBoneIndex(TEXT("head_end")) != INDEX_NONE);
 	// [2026-11-04 T-113] T-113: the newest owner-drop clips (Scripts/
 	// [2026-11-04 T-113] import_newest_dragon_anims.py) land on the pawn's
 	// [2026-11-04 T-113] nine clip paths on the v6 skeleton, so the T-110
