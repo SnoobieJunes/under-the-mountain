@@ -112,9 +112,10 @@
 <!-- [2026-11-03] Owner redirect: v6 dragon replaces v4 now, then the camera is
      retuned to it. T-100's "v6 import rides with T-068 remainder" is superseded:
      T-110 takes import + pawn hookup, T-068 keeps clips/ABP/captures. -->
-<!-- [2026-11-03] Crunch resequence (owner: "lock in", game unplayable — frozen
-     inside the dragon's skull): T-112 then T-111 jump ahead of T-020/T-101.
-     Goose [decision] lands in the T-112 closing commit. -->
+<!-- [2026-11-03] Crunch resequence (owner: newest-dragon resync; Meshy app
+     dropped for dragon): T-113, then T-112 resume (parked, stash "T-112"),
+     then T-111 jump ahead of T-020/T-101. Goose [decision] in the resync
+     commit (this commit); T-112's own entry lands at its close. -->
 - [ ] T-112 — Title screen widget never renders (flow says title, pixels say nothing) — PARKED 2026-11-03 (owner redirect to newest-dragon resync; work in stash "T-112": GameFlowWidget.h/.cpp + GameFlowTest.cpp)
       Why: T-110 proved it on current code — "Game flow: title (paused)" logs, but HighResShot + a live window grab both show zero UI (no title text, no START RUN), so every launch reads as frozen with no way forward except automation cvars.
       Accept: a -game launch shows the T-072 title panel (title text + START RUN) in a proof capture; clicking START RUN (live or driven) reaches Playing with the HUD visible in a second capture; the Slate-focus error in the 2026-11-03 log ("Attempting to focus Non-Focusable widget") is gone or explained; gate green.
@@ -123,9 +124,19 @@
 - [ ] T-111 — Camera 3-mode rework: eyes first-person, above-wings near, far chase (tuned to v6)
       Why: owner spec — V/R3 toggles first-person at the dragon's eyes, near just above the wings (default), and a further-back chase; the T-065 HeadChase tune predates v6 and sits in the mesh.
       Accept: V key + gamepad R3 cycle the three modes in Eyes -> Near -> Far order opening on Near; first-person renders from an eye offset (socket or measured head-bone offset) with the pawn mesh hidden and boom collision off; Near rides above the wings (pivot offset + arm tuned to the v6 bind-pose bounds, measured numbers recorded); Far matches the old scenic distance; chase modes keep boom collision on; Dragon.Camera* automation updated to the new order/offsets and passing; -game captures of all three modes (Saved/Profiling/cam_eyes.png, cam_near.png, cam_far.png via the T-110 utm.proof.* cvars, one run per persisted camera mode) reviewed before close — T-110 proved PIE-in-viewport uninspectable, so -game is the proof vehicle; Scripts/gate.sh green.
-      Touches: Source/UnderTheMountain/Public/Dragon/DragonCharacter.h, Source/UnderTheMountain/Private/Dragon/DragonCharacter.cpp, Source/UnderTheMountain/Tests/, Content/Meshy/Dragon/ (eye socket, if socket route)   Depends: T-110   Gated: none
+      Touches: Source/UnderTheMountain/Public/Dragon/DragonCharacter.h, Source/UnderTheMountain/Private/Dragon/DragonCharacter.cpp, Source/UnderTheMountain/Tests/, Content/Meshy/Dragon/ (eye socket, if socket route)   Depends: T-113   Gated: none
+      Note [2026-11-03]: retune target is T-113's shipped newest mesh (supersedes T-110 v6); verify the v6 measurements still hold at claim.
+- [ ] T-113 — Newest owner dragon in-game: mesh + 9 anims + textures, flying/flapping
+      Why: owner-supplied newest drop supersedes the T-110 bind-pose v6; restores v4 parity (fly/flap/glide/hover/takeoff/land/idle/walk/roar/hit) on the newest anatomy — the "complete regression" the owner sees is 9 skeleton-gated v4 clips, and the drop already contains their 9 replacements.
+      Accept: inventory first (tri count vs the <=80k hero budget, skeleton bone list vs T-110's 39-bone rig, each Anim_Dragon_*.fbx skeleton == the new mesh skeleton — numbers recorded); decimate-if-needed WITHOUT touching the skeleton (anims target bones); headless import of newest mesh + skeleton + 6 textures + 9 clips with clips landing on the pawn's clip paths so the T-110 gate self-heals (no pawn change unless measured); -game proof: Fly/Glide/Hover/Walk states log + captures show posed wings (not bind); Dragon.V6Mesh test updated to the newest skeleton and passing; gate green.
+      Touches: Content/Meshy/dragon-wings-v6(new)/ (intake), Scripts/ (decimate/import), Content/Meshy/Dragon/, Source/UnderTheMountain/Tests/, Source/UnderTheMountain/Private/Dragon/ (only if measured)   Depends: none   Gated: none
+      Note [2026-11-03]: drop census — exports/Dragon_v6.fbx (20MB) + 6 T_DragonBody/Wing PNGs + 9 Anim_Dragon_{Walk,Glide,Hover,Fly,Takeoff,Land,HitLight,Idle,Roar}.fbx mapping 1:1 to the pawn's clip slots + 13 review renders; dragon_v6_experiment.blend has a post-T-110 mtime — verify canonical source at claim (FBX rules for import). If the 9 anims cover the v1 flight set, T-068's remainder narrows at T-113 close (decision then, not now).
 
 ## Later
+- [ ] T-114 — New goat + foliage content: rig/walk import, nat_* placement (owner drop, future)
+      Why: owner-supplied newest livestock + foliage (Content/Meshy/World/: liv-goat_quad_v2.* incl. walk cycle + nat-bush/broadleaf/grass FBX+GLB+basecolor) waits behind the dragon resync.
+      Accept: inventory the drop at claim (counts/formats recorded); goat rigged mesh + walk cycle imported and visible on the existing goat actors or their replacement (decided at claim); nat_* sets placed via the T-049/T-050 chain with the placement idempotent; -game capture shows new goat + foliage; gate green.
+      Touches: Content/Meshy/World/, Scripts/, Content/Maps/   Depends: T-113   Gated: none
 - [ ] T-042 — AGENTS.md snapshot corrections (owner-approval needed to edit)
       Why: T-004 sweep: measured coverage is 39.7% but the floor still says 29% (guide step 5 ratchets just under measured); the version line still says 2026-10-27 though the snapshot holds 2026-10-28 material (stranger-test finding); the adaptive-unity/coverage foot-gun (clean the module Intermediate dir before coverage.sh after a stash or bulk file adds) is unrecorded. Edits to AGENTS.md from this harness hit a write-approval block, so an owner-approved edit is owed.
       Accept: Owner approves/applies: floor 29% -> 37%, version line re-stamped, foot-gun appended — or explicitly declines, recorded here.

@@ -123,6 +123,14 @@ tag, choose the owing one.
 <!-- Real entries accumulate below, NEWEST AT THE TOP. The top entries are
      session-start required reading (count: AGENTS.md → Session ritual). -->
 
+## 2026-11-03 — Newest owner dragon supersedes the v6 pipeline; Meshy app dropped  [decision]
+- Task: T-113 (filed in this commit); T-112 parked; T-068 remainder interplay noted
+- What: Owner stopped the Meshy app for dragon work (not saving time; desync). Newest drop Content/Meshy/dragon-wings-v6(new)/ (Dragon_v6.fbx + 6 textures + 9 anim FBXs incl. Fly/Glide/Hover/Walk + 13 renders) becomes the import source via new T-113; board resequenced (T-113, then T-112 resume, then T-111) ahead of T-020/T-101; T-111 re-depends on T-113 (camera tunes to the shipped mesh); T-112 parked to stash with its capture gap open; goat_quad_v2 + nat-* foliage filed as T-114 (Later).
+- Why: Owner direction 2026-11-03 ("resync before spinning our heels"): the T-110 bind-pose v6 reads as a full animation regression vs the v4 dragon, and the newest drop already contains the 9 matching anims — importing it restores parity faster than authoring v6 clips from zero. Census in this commit (9 anim FBXs map 1:1 to the pawn's clip slots).
+- Where: TASKS.md (T-113/T-114 filed, T-111/T-112 updated), docs/PLAN.md (pipeline + risk), docs/ASSET-PIPELINE.md (pointer note), stash "T-112" (uncommitted fix+test)
+- Plan: docs/PLAN.md "proven hero pipeline" + "Meshy dragon rig" risk amended in this commit (owner-drop replaces Meshy-app for dragon; Blender stays the fixup fallback). TASKS.md corrected in this commit. No product code touched.
+- Commit(s): this commit
+
 ## 2026-11-03 — T-110: proof-capture cvars + v6 import leaves T-068  [decision]
 - Task: T-110 (import dragon v6 as the pawn mesh)
 - What: (1) New public automation interface: utm.proof.shotdelay / utm.proof.quit console cvars on the game mode (delayed one-shot HighResShot + delayed auto-quit, both default off). (2) T-100's "v6 import rides with T-068 remainder" superseded: import + pawn hookup shipped here; T-068 keeps clips/ABP/captures.

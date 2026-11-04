@@ -204,6 +204,9 @@ falsifies them. No scope was cut.
   batched contact-sheet + in-engine capture gates. The proven hero pipeline
   stands — Muse multi-images → Meshy mesh/textures → Blender rig/animation →
   Unreal; only Meshy's biped rig/animation route is excluded for the dragon.
+  [2026-11-03: newest owner dragon drop supersedes this flow for the hero
+  (T-113 imports mesh + 9 anims + textures); the Meshy app is dropped for
+  dragon work per owner direction, Blender stays the fallback.]
   Death presentation:
   dragon authored collapse/slink, thieves authored-fall → ragdoll settle,
   goats authored fall.
@@ -245,7 +248,10 @@ this M1 Max, measured per level, dynamic resolution + Lumen software RT +
   bones and was rejected. The shipped path is Blender quadruped rig/skin/
   animation (docs/ASSET-PIPELINE.md dragon gate). Repeat that pipeline; do
   not re-spend on Meshy dragon rig/animation unless a future verified
-  quadruped route passes a fresh gate.
+  quadruped route passes a fresh gate. [2026-11-03: owner drops the Meshy
+  app for dragon work (desync cost exceeds generation value); newest model
+  + 9 anims + textures supplied directly (T-113). No further dragon Meshy
+  spend; the credit forecast below now covers non-dragon batches only.]
 - **Meshy budget (finite owner budget):** proven spend reconciles 1150 → 500
   credits (last proven balance 2026-10-28). Remaining forecast to finish the
   scoped hackathon game: ~450 credits efficient, ~625 quality-safe, plus a

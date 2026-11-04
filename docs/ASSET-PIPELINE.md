@@ -3,6 +3,9 @@
 Historical/procedural — PLAN.md is normative for what ships; this file is the
 how for assets. Written 2026-10-27 (T-001); updated 2026-10-31 with the proven
 dragon verdict, credit history, and remaining-spend forecast.
+[2026-11-03: dragon Meshy-app flow suspended — owner supplies the newest
+dragon directly (T-113); this doc's dragon sections get rewritten from the
+T-113 procedure at its close. Non-dragon flows below stand.]
 
 ## The pipeline (every game asset)
 
