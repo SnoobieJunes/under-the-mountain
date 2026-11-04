@@ -149,9 +149,9 @@
       Accept: NEW-PROJECT-GUIDE step-5 checklist run; [process] marker entry filed; successor sweep task filed.
       Touches: goose-deuce.md, docs/PLAN.md, TASKS.md   Depends: none   Gated: cadence
 
-- [ ] T-129 — Final freeze: repackage, packaged smoke, submission package
+- [x] T-129 — Final freeze: repackage, packaged smoke, submission package
       Why: audit 2026-11-03: Saved/Packaged .app (Nov 3 21:01) predates HEAD and all of T-122-T-128; docs/SUBMISSION.md does not exist; T-021 alone cannot ship a judge-ready build. This is the code-freeze task the deadline needs.
-      Progress [2026-11-04, final sprint]: docs/SUBMISSION.md drafted; repackage + packaged smoke + checksum still owed on final code. NOT closed.
+      Closed [2026-11-04]: packaged on final code 283e889 via Scripts/package.sh; Saved/Packaged/Mac/UnderTheMountain.app (1.0G, binary sha256 82ab5bb06f604c6d0da284666c49d0a2); LaunchServices launch reaches gameplay, log: Dragon anim path: ABP_Dragon. Upload artifact = that .app (outside git).
       Accept: on final code: Scripts/gate.sh green; Scripts/package.sh rebuilt; fresh .app launched via LaunchServices (double-click path, not raw exec) reaching gameplay; docs/SUBMISSION.md complete (pillars, stack, controls, credits incl. friend music, known limits); upload artifact preserved outside git with path + checksum recorded here; gate green.
       Touches: Scripts/package.sh, docs/SUBMISSION.md, README.md   Depends: T-122, T-123, T-124, T-125, T-126, T-127, T-128, T-115   Gated: none
 - [ ] T-130 — Judge launch path: double-click/Gatekeeper smoke for the packaged app
