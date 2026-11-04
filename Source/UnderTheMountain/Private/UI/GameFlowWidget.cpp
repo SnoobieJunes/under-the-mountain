@@ -67,19 +67,47 @@ UTextBlock* MakeFlowText(UWidgetTree* Tree, const TCHAR* Name, const FString& Te
 	return Label;
 }
 
-UVerticalBox* MakeFlowPanel(UWidgetTree* Tree, const TCHAR* Name)
+// [2026-11-03 T-112] One screen panel: a dim Border holding the content
+// Box, attached to the canvas centred (the T-019 intro-choice pattern —
+// T-072 built these but never attached them, so the root canvas rendered
+// empty). Returns the Border (the widget ShowOnly toggles); the Box comes
+// back via OutBox for filling.
+UBorder* MakeFlowPanel(UWidgetTree* Tree, UCanvasPanel* Canvas, const TCHAR* Name,
+					   UVerticalBox*& OutBox)
 {
-	UBorder* Panel =
-		Tree->ConstructWidget<UBorder>(UBorder::StaticClass(), *(FString(Name) + TEXT("Border")));
+	OutBox = nullptr;
+	UBorder* Panel = Tree->ConstructWidget<UBorder>(UBorder::StaticClass(),
+													*(FString(Name) + TEXT("Border")));
 	UVerticalBox* Box = Tree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), Name);
-	if (Panel != nullptr && Box != nullptr)
+	if (Panel == nullptr || Box == nullptr || Canvas == nullptr)
 	{
-		Panel->SetContent(Box);
-		Panel->SetVisibility(ESlateVisibility::Hidden);
+		return nullptr;
 	}
-	return Box;
+	Panel->SetContent(Box);
+	Panel->SetVisibility(ESlateVisibility::Hidden);
+	Panel->SetBrushColor(FLinearColor(0.0f, 0.0f, 0.0f, 0.62f));
+	Panel->SetPadding(FMargin(36.0f, 28.0f));
+	if (UCanvasPanelSlot* Slot = Canvas->AddChildToCanvas(Panel))
+	{
+		Slot->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
+		Slot->SetAlignment(FVector2D(0.5f, 0.5f));
+		Slot->SetPosition(FVector2D(0.0f, 0.0f));
+		Slot->SetSize(FVector2D(560.0f, 480.0f));
+	}
+	OutBox = Box;
+	return Panel;
 }
 } // namespace
+
+UGameFlowWidget::UGameFlowWidget(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	// [2026-11-03 T-112] Focusable at construction: the game mode points
+	// UIOnly focus at this widget, and an unfocusable target logs a
+	// LogPlayerController Error on every menu open (SObjectWidget reads
+	// this flag when focus is attempted).
+	SetIsFocusable(true);
+}
 
 void UGameFlowWidget::BindToGameMode(AUnderTheMountainGameMode* Mode)
 {
@@ -147,81 +175,84 @@ void UGameFlowWidget::NativeOnInitialized()
 	const FLinearColor Muted(0.75f, 0.78f, 0.85f);
 
 	// Title: game name, Start (begin the run), Quit (leave).
-	TitlePanel = MakeFlowPanel(WidgetTree, TEXT("FlowTitle"));
-	if (UVerticalBox* Box = Cast<UVerticalBox>(TitlePanel.Get()))
+	UVerticalBox* TitleBox = nullptr;
+	TitlePanel = MakeFlowPanel(WidgetTree, Canvas, TEXT("FlowTitle"), TitleBox);
+	if (TitleBox != nullptr)
 	{
-		Box->AddChild(MakeFlowText(WidgetTree, TEXT("FlowTitleHead"), TEXT("UNDER THE MOUNTAIN"),
-								   40, Gold));
-		Box->AddChild(MakeFlowText(WidgetTree, TEXT("FlowTitleSub"),
-								   TEXT("You are the dragon. Guard your hoard."), 16, Muted));
+		TitleBox->AddChild(MakeFlowText(WidgetTree, TEXT("FlowTitleHead"), TEXT("UNDER THE MOUNTAIN"),
+										40, Gold));
+		TitleBox->AddChild(MakeFlowText(WidgetTree, TEXT("FlowTitleSub"),
+										TEXT("You are the dragon. Guard your hoard."), 16, Muted));
 		if (UButton* Start = MakeFlowButton(WidgetTree, TEXT("FlowStart"), TEXT("START RUN"),
 											Ember, 20))
 		{
 			Start->OnClicked.AddDynamic(this, &UGameFlowWidget::HandleStart);
-			Box->AddChild(Start);
+			TitleBox->AddChild(Start);
 		}
 		if (UButton* Quit = MakeFlowButton(WidgetTree, TEXT("FlowTitleQuit"), TEXT("QUIT"),
 										   Slate, 20))
 		{
 			Quit->OnClicked.AddDynamic(this, &UGameFlowWidget::HandleQuit);
-			Box->AddChild(Quit);
+			TitleBox->AddChild(Quit);
 		}
 	}
 	// Pause: resume the run, restart it clean, back out, or leave.
-	PausePanel = MakeFlowPanel(WidgetTree, TEXT("FlowPause"));
-	if (UVerticalBox* Box = Cast<UVerticalBox>(PausePanel.Get()))
+	UVerticalBox* PauseBox = nullptr;
+	PausePanel = MakeFlowPanel(WidgetTree, Canvas, TEXT("FlowPause"), PauseBox);
+	if (PauseBox != nullptr)
 	{
-		Box->AddChild(MakeFlowText(WidgetTree, TEXT("FlowPauseHead"), TEXT("PAUSED"), 32, Gold));
+		PauseBox->AddChild(MakeFlowText(WidgetTree, TEXT("FlowPauseHead"), TEXT("PAUSED"), 32, Gold));
 		if (UButton* Resume = MakeFlowButton(WidgetTree, TEXT("FlowResume"), TEXT("RESUME"),
 											 Ember, 20))
 		{
 			Resume->OnClicked.AddDynamic(this, &UGameFlowWidget::HandleResume);
-			Box->AddChild(Resume);
+			PauseBox->AddChild(Resume);
 		}
 		if (UButton* Restart = MakeFlowButton(WidgetTree, TEXT("FlowPauseRestart"),
 											  TEXT("RESTART RUN"), Slate, 20))
 		{
 			Restart->OnClicked.AddDynamic(this, &UGameFlowWidget::HandleRestart);
-			Box->AddChild(Restart);
+			PauseBox->AddChild(Restart);
 		}
 		if (UButton* Title = MakeFlowButton(WidgetTree, TEXT("FlowPauseTitle"),
 											TEXT("QUIT TO TITLE"), Slate, 20))
 		{
 			Title->OnClicked.AddDynamic(this, &UGameFlowWidget::HandleQuitToTitle);
-			Box->AddChild(Title);
+			PauseBox->AddChild(Title);
 		}
 		if (UButton* Quit = MakeFlowButton(WidgetTree, TEXT("FlowPauseQuit"), TEXT("QUIT GAME"),
 										   Slate, 20))
 		{
 			Quit->OnClicked.AddDynamic(this, &UGameFlowWidget::HandleQuit);
-			Box->AddChild(Quit);
+			PauseBox->AddChild(Quit);
 		}
 	}
 	// End: outcome line rewritten per run, then the ways back.
-	EndPanel = MakeFlowPanel(WidgetTree, TEXT("FlowEnd"));
-	if (UVerticalBox* Box = Cast<UVerticalBox>(EndPanel.Get()))
+	UVerticalBox* EndBox = nullptr;
+	EndPanel = MakeFlowPanel(WidgetTree, Canvas, TEXT("FlowEnd"), EndBox);
+	if (EndBox != nullptr)
 	{
-		Box->AddChild(
+		EndBox->AddChild(
 			MakeFlowText(WidgetTree, TEXT("FlowEndHead"), TEXT("THE RUN IS OVER"), 32, Gold));
 		EndOutcomeText = MakeFlowText(WidgetTree, TEXT("FlowEndOutcome"), TEXT(""), 18, Muted);
-		Box->AddChild(EndOutcomeText);
+		EndBox->AddChild(EndOutcomeText);
 		if (UButton* Restart = MakeFlowButton(WidgetTree, TEXT("FlowEndRestart"),
 											  TEXT("RESTART RUN"), Ember, 20))
 		{
 			Restart->OnClicked.AddDynamic(this, &UGameFlowWidget::HandleRestart);
-			Box->AddChild(Restart);
+			EndBox->AddChild(Restart);
 		}
 		if (UButton* Title = MakeFlowButton(WidgetTree, TEXT("FlowEndTitle"),
 											TEXT("QUIT TO TITLE"), Slate, 20))
 		{
 			Title->OnClicked.AddDynamic(this, &UGameFlowWidget::HandleQuitToTitle);
-			Box->AddChild(Title);
+			EndBox->AddChild(Title);
 		}
 		if (UButton* Quit = MakeFlowButton(WidgetTree, TEXT("FlowEndQuit"), TEXT("QUIT GAME"),
 										   Slate, 20))
 		{
 			Quit->OnClicked.AddDynamic(this, &UGameFlowWidget::HandleQuit);
-			Box->AddChild(Quit);
+			EndBox->AddChild(Quit);
 		}
 	}
 	HideAll();

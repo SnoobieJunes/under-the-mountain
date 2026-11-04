@@ -7,7 +7,12 @@
 // Created 2026-11-03 (T-072).
 
 #include "Misc/AutomationTest.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/Button.h"
+#include "Components/CanvasPanel.h"
+#include "Components/TextBlock.h"
 #include "Core/GameFlowMachine.h"
+#include "UI/GameFlowWidget.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -116,6 +121,118 @@ bool FGameFlowTest::RunTest(const FString& Parameters)
 		}
 	}
 
+	return true;
+}
+
+// [2026-11-03 T-112] Flow-widget render contract: T-072's screens shipped
+// with their panels never attached to the canvas (empty root, zero pixels
+// in every -game capture) and the widget non-focusable (the UIOnly focus
+// Error). Pins attach + visibility switching + button bindings + focus.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFlowWidgetRenderTest, "UnderTheMountain.UI.FlowWidget",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFlowWidgetRenderTest::RunTest(const FString& Parameters)
+{
+	UGameFlowWidget* Widget = NewObject<UGameFlowWidget>();
+	TestNotNull(TEXT("flow widget constructs"), Widget);
+	if (Widget == nullptr)
+	{
+		return false;
+	}
+	// [2026-11-03 T-112] Headless has no player context, so Initialize
+	// builds the WidgetTree but skips NativeOnInitialized — drive it
+	// directly (public on this widget exactly for this test).
+	Widget->Initialize();
+	UWidgetTree* Tree = Widget->WidgetTree;
+	TestNotNull(TEXT("widget tree built"), Tree);
+	if (Tree == nullptr)
+	{
+		return false;
+	}
+	Widget->NativeOnInitialized();
+
+	UWidget* Root = Tree->RootWidget;
+	UCanvasPanel* Canvas = Cast<UCanvasPanel>(Root);
+	TestNotNull(TEXT("root is a canvas"), Canvas);
+	// [2026-11-03 T-112] Focus needs no tree: pin it before the
+	// attach asserts so it goes red on its own pre-fix merit.
+	TestTrue(TEXT("flow widget is focusable (the UIOnly focus target)"),
+			 Widget->IsFocusable());
+	if (Canvas == nullptr)
+	{
+		return false;
+	}
+	TestEqual(TEXT("all three panels attached to the canvas"), Canvas->GetChildrenCount(), 3);
+
+	// Every panel border hangs under the canvas; every box under its border.
+	const TCHAR* Borders[3] = {TEXT("FlowTitleBorder"), TEXT("FlowPauseBorder"),
+							   TEXT("FlowEndBorder")};
+	const TCHAR* Boxes[3] = {TEXT("FlowTitle"), TEXT("FlowPause"), TEXT("FlowEnd")};
+	UWidget* Panels[3] = {nullptr, nullptr, nullptr};
+	for (int32 I = 0; I < 3; ++I)
+	{
+		Panels[I] = Tree->FindWidget(FName(Borders[I]));
+		TestNotNull(Borders[I], Panels[I]);
+		if (Panels[I] != nullptr)
+		{
+			TestTrue(*FString::Printf(TEXT("%s hangs under the canvas"), Borders[I]),
+					 Panels[I]->GetParent() == Canvas);
+		}
+		UWidget* Box = Tree->FindWidget(FName(Boxes[I]));
+		TestNotNull(Boxes[I], Box);
+		if (Box != nullptr && Panels[I] != nullptr)
+		{
+			TestTrue(*FString::Printf(TEXT("%s hangs under its border"), Boxes[I]),
+					 Box->GetParent() == Panels[I]);
+		}
+	}
+
+	// Every screen button exists with its click bound (the binding is what
+	// carries START RUN -> StartRun; T-030 owns the live click feel-check).
+	const TCHAR* Buttons[9] = {TEXT("FlowStart"), TEXT("FlowTitleQuit"), TEXT("FlowResume"),
+							   TEXT("FlowPauseRestart"), TEXT("FlowPauseTitle"), TEXT("FlowPauseQuit"),
+							   TEXT("FlowEndRestart"), TEXT("FlowEndTitle"), TEXT("FlowEndQuit")};
+	for (int32 I = 0; I < 9; ++I)
+	{
+		UButton* Button = Tree->FindWidget<UButton>(FName(Buttons[I]));
+		TestNotNull(Buttons[I], Button);
+		if (Button != nullptr)
+		{
+			TestTrue(*FString::Printf(TEXT("%s click is bound"), Buttons[I]),
+					 Button->OnClicked.IsBound());
+		}
+	}
+
+	if (Panels[0] == nullptr || Panels[1] == nullptr || Panels[2] == nullptr)
+	{
+		return false;
+	}
+	Widget->ShowTitle();
+	TestTrue(TEXT("title shows its panel"),
+			 Panels[0]->GetVisibility() == ESlateVisibility::Visible);
+	TestTrue(TEXT("title hides pause + end"),
+			 Panels[1]->GetVisibility() == ESlateVisibility::Hidden &&
+				 Panels[2]->GetVisibility() == ESlateVisibility::Hidden);
+	Widget->ShowPause();
+	TestTrue(TEXT("pause shows its panel"),
+			 Panels[1]->GetVisibility() == ESlateVisibility::Visible);
+	TestTrue(TEXT("pause hides title + end"),
+			 Panels[0]->GetVisibility() == ESlateVisibility::Hidden &&
+				 Panels[2]->GetVisibility() == ESlateVisibility::Hidden);
+	Widget->ShowEnd(EndedResult());
+	TestTrue(TEXT("end shows its panel"),
+			 Panels[2]->GetVisibility() == ESlateVisibility::Visible);
+	UTextBlock* Outcome = Tree->FindWidget<UTextBlock>(FName(TEXT("FlowEndOutcome")));
+	TestNotNull(TEXT("end outcome line exists"), Outcome);
+	if (Outcome != nullptr)
+	{
+		TestFalse(TEXT("end outcome line renders text"), Outcome->GetText().IsEmpty());
+	}
+	Widget->HideAll();
+	TestTrue(TEXT("hide-all hides every panel"),
+			 Panels[0]->GetVisibility() == ESlateVisibility::Hidden &&
+				 Panels[1]->GetVisibility() == ESlateVisibility::Hidden &&
+				 Panels[2]->GetVisibility() == ESlateVisibility::Hidden);
 	return true;
 }
 

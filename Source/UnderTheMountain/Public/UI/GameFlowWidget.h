@@ -23,6 +23,11 @@ class UNDERTHEMOUNTAIN_API UGameFlowWidget : public UUserWidget
 	GENERATED_BODY()
 
   public:
+	// [2026-11-03 T-112] Focusable at construction: the game mode points
+	// UIOnly focus at this widget, and an unfocusable target logs a
+	// LogPlayerController Error on every menu open.
+	UGameFlowWidget(const FObjectInitializer& ObjectInitializer);
+
 	// [2026-11-03 T-072] The game mode that receives the clicks (weak:
 	// a UI widget never keeps its game mode alive).
 	void BindToGameMode(AUnderTheMountainGameMode* Mode);
@@ -34,7 +39,10 @@ class UNDERTHEMOUNTAIN_API UGameFlowWidget : public UUserWidget
 	void ShowEnd(const FGameFlowResult& Result);
 	void HideAll();
 
-  protected:
+	// [2026-11-03 T-112] Public (the base keeps it protected) so the
+	// UI.FlowWidget automation test can drive the code-built tree
+	// headless: Initialize skips this without a player context.
+	// Production still reaches it only via Initialize.
 	virtual void NativeOnInitialized() override;
 
   private:
@@ -52,6 +60,8 @@ class UNDERTHEMOUNTAIN_API UGameFlowWidget : public UUserWidget
 	// [2026-11-03 T-072] One canvas, three switchable panels (only one
 	// visible at a time); the end screen's outcome line is rewritten
 	// per run.
+	// [2026-11-03 T-112] Each entry is the attached Border (not the
+	// content Box inside it) — ShowOnly toggles these.
 	UPROPERTY(Transient)
 	TObjectPtr<UWidget> TitlePanel = nullptr;
 	UPROPERTY(Transient)
