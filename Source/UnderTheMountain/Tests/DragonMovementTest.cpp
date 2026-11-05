@@ -39,8 +39,9 @@ bool FDragonMovementTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("lift clamp is 2450 cm/s^2"), Params.MaxLiftAccel, 2450.0f);
 	TestEqual(TEXT("turn authority zero speed is 200 cm/s"), Params.TurnAuthorityZeroSpeed, 200.0f);
 	TestEqual(TEXT("turn authority full speed is 600 cm/s"), Params.TurnAuthorityFullSpeed, 600.0f);
-	TestEqual(TEXT("bank roll rate is 90 deg/s"), Params.BankRollRateDegPerSec, 90.0f);
-	TestEqual(TEXT("pitch command rate is 60 deg/s"), Params.PitchCommandRateDegPerSec, 60.0f);
+	TestEqual(TEXT("roll command rate is 120 deg/s"), Params.RollCommandRateDegPerSec, 120.0f);
+	TestEqual(TEXT("pitch command rate is 75 deg/s"), Params.PitchCommandRateDegPerSec, 75.0f);
+	TestEqual(TEXT("right-stick yaw rate is 30 deg/s"), Params.RightStickYawRateDegPerSec, 30.0f);
 
 	// [2026-11-03 T-075] Impulse latch: fresh impulses read momentum (0) at
 	// any airspeed; expired latches read the airspeed smoothstep.
@@ -242,33 +243,54 @@ bool FDragonMovementTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("grazing dive entry is free"),
 			  UDragonMovementComponent::LandingSeverity(3200.0f, 10.0f, *Stats), 0.0f);
 
-	// [2026-11-04 FLIGHT-PHYSICS] Causal bank: input commands bank to
-	// the +-40 cap, yaw derives from it by the coordinated-turn law
-	// (g*tan(bank)/v). Full bank at cruise earns ~29.5 deg/s, at dive
-	// speed only ~11.8 deg/s (faster = wider), and at rest exactly
-	// nothing — the old linear bank/35 x yaw-rate pins are replaced
-	// by the physics, not weakened.
-	TestEqual(TEXT("no turn input is wings-level"), UDragonMovementComponent::CommandedBankDegrees(0.0f), 0.0f);
-	TestEqual(TEXT("full turn input banks to the cap"), UDragonMovementComponent::CommandedBankDegrees(1.0f), -40.0f);
-	TestEqual(TEXT("full opposite input banks to the opposite cap"),
-			  UDragonMovementComponent::CommandedBankDegrees(-1.0f), 40.0f);
-	TestEqual(TEXT("half input banks half"), UDragonMovementComponent::CommandedBankDegrees(0.5f), -20.0f);
-	TestEqual(TEXT("over-input clamps to the cap"), UDragonMovementComponent::CommandedBankDegrees(2.0f), -40.0f);
-	TestEqual(TEXT("wings-level never yaws"),
-			  UDragonMovementComponent::YawRateForBank(0.0f, 2400.0f, Params), 0.0f);
-	TestTrue(TEXT("full bank at dive speed yaws at the coordinated rate (~11.8 deg/s)"),
-			 FMath::Abs(UDragonMovementComponent::YawRateForBank(-40.0f, 4000.0f, Params) - 11.8f) < 0.2f);
-	TestEqual(TEXT("full bank at rest yaws nothing (no spin in place)"),
-			  UDragonMovementComponent::YawRateForBank(-40.0f, 0.0f, Params), 0.0f);
-	TestTrue(TEXT("half bank at dive speed yaws at the half-bank coordinated rate (~5.1 deg/s)"),
-			 FMath::Abs(UDragonMovementComponent::YawRateForBank(-20.0f, 4000.0f, Params) - 5.1f) < 0.2f);
-	TestTrue(TEXT("opposite bank yaws opposite"),
-			 FMath::Abs(UDragonMovementComponent::YawRateForBank(40.0f, 4000.0f, Params) + 11.8f) < 0.2f);
-	// Bank -> yaw round-trips the input through the coordinated law.
-	TestEqual(TEXT("bank-derived yaw round-trips full input through the coordinated law"),
-			  UDragonMovementComponent::YawRateForBank(UDragonMovementComponent::CommandedBankDegrees(1.0f),
-													   4000.0f, Params),
-			  UDragonMovementComponent::CoordinatedYawRateDeg(-40.0f, 4000.0f, Params));
+	// [2026-11-04 PLANE-MODEL] Rates: pitch 75 / roll 120 / yaw 30 at
+	// full authority, all authority-scaled (mushy slow, never spinny).
+	TestEqual(TEXT("pitch rate at cruise is full"), UDragonMovementComponent::PlanePitchRateDeg(1600.0f, Params), 75.0f);
+	TestEqual(TEXT("roll rate at cruise is full"), UDragonMovementComponent::PlaneRollRateDeg(1600.0f, Params), 120.0f);
+	TestEqual(TEXT("yaw rate at cruise is full small"), UDragonMovementComponent::PlaneYawRateDeg(1600.0f, Params), 30.0f);
+	TestEqual(TEXT("pitch rate at rest is zero"), UDragonMovementComponent::PlanePitchRateDeg(0.0f, Params), 0.0f);
+	TestTrue(TEXT("roll rate at 300 is mushy (<5% of full)"), UDragonMovementComponent::PlaneRollRateDeg(300.0f, Params) < 6.0f);
+	// Orientation: holding pitch input loops through inverted with no
+	// clamp; holding roll input rolls past inverted; wings-level bank
+	// geometry predicts the emergent heading rate.
+	{
+		FQuat Q = FQuat::Identity;
+		float MinUpZ = 1.0f;
+		for (int32 Step = 0; Step < 288; ++Step)
+		{
+			Q = UDragonMovementComponent::StepFlightOrientation(Q, 1.0f, 0.0f, 0.0f, 2400.0f, 1.0f / 60.0f, Params);
+			MinUpZ = FMath::Min(MinUpZ, static_cast<float>(Q.GetUpVector().Z));
+		}
+		TestTrue(TEXT("held pitch loops: dragon goes inverted (up.z < -0.9)"), MinUpZ < -0.9f);
+		TestTrue(TEXT("held pitch loops: frame returns near level after ~360deg"),
+				 Q.GetForwardVector().Z > -0.3f && Q.GetForwardVector().Z < 0.3f && Q.GetUpVector().Z > 0.8f);
+	}
+	{
+		FQuat Q = FQuat::Identity;
+		float MinUpZ = 1.0f;
+		for (int32 Step = 0; Step < 300; ++Step)
+		{
+			Q = UDragonMovementComponent::StepFlightOrientation(Q, 0.0f, 1.0f, 0.0f, 2400.0f, 1.0f / 60.0f, Params);
+			MinUpZ = FMath::Min(MinUpZ, static_cast<float>(Q.GetUpVector().Z));
+		}
+		TestTrue(TEXT("held roll rolls past inverted (up.z < -0.9)"), MinUpZ < -0.9f);
+	}
+	TestEqual(TEXT("wings-level banked-lift heading is zero"),
+			  UDragonMovementComponent::BankedLiftHeadingRateDeg(0.0f, 1800.0f, Params), 0.0f);
+	TestTrue(TEXT("45deg bank at 1800 predicts a real heading rate (>15 deg/s)"),
+			 FMath::Abs(UDragonMovementComponent::BankedLiftHeadingRateDeg(-45.0f, 1800.0f, Params)) > 15.0f);
+	TestTrue(TEXT("banked-lift heading reverses with bank sign"),
+			 UDragonMovementComponent::BankedLiftHeadingRateDeg(-45.0f, 1800.0f, Params) *
+					 UDragonMovementComponent::BankedLiftHeadingRateDeg(45.0f, 1800.0f, Params) <
+				 0.0f);
+	// Inverted lift pulls down: lift vector follows the dragon's up.
+	{
+		const FQuat Inverted(FRotator(0.0f, 0.0f, 180.0f));
+		const FVector Lift = UDragonMovementComponent::LiftVector(Inverted, 1600.0f, Params);
+		TestTrue(TEXT("inverted lift points down"), Lift.Z < -900.0f);
+		const FVector Level = UDragonMovementComponent::LiftVector(FQuat::Identity, 1600.0f, Params);
+		TestTrue(TEXT("level lift points up at gravity"), FMath::Abs(Level.Z - 980.0f) < 1.0f);
+	}
 
 	// [2026-11-04 FLIGHT-VIGOR] RMB sailing step: demand consumes at
 	// the rate budget per tick, never overshoots, never runs on
@@ -342,19 +364,10 @@ bool FDragonMovementTest::RunTest(const FString& Parameters)
 				 UDragonMovementComponent::CoordinatedYawRateDeg(-30.0f, 4000.0f, Params) < YawDeg);
 	}
 
-	// [2026-11-04 FLIGHT-PHYSICS] Full-step sims: the exact momentum
-	// core PhysCustom integrates (energy step -> steer lag onto the
-	// nose -> lift-vs-gravity Z, momentum weight 1), at 60 Hz.
+	// [2026-11-04 PLANE-MODEL] Full-step sims: the exact plane core
+	// PhysCustom integrates (StepPlaneVelocity lift+gravity, plus
+	// StepFlightOrientation/weathervane where the leg steers), 60 Hz.
 	{
-		auto MomentumStep = [&Params](FVector Vel, const FVector& NoseDir, float BankDeg, float Dt) -> FVector
-		{
-			const float Speed = UDragonMovementComponent::IntegrateEnergyStep(
-				Vel.Size(), FMath::Asin(FMath::Clamp(NoseDir.Z, -1.0f, 1.0f)), Dt, Params);
-			const float Steer = UDragonMovementComponent::ComputeSteerResponsiveness(Vel.Size(), 0.0f, Params);
-			FVector Out = Vel + (NoseDir * Speed - Vel) * FMath::Min(1.0f, Dt * Steer);
-			Out.Z += UDragonMovementComponent::LiftVerticalAccel(Speed, BankDeg, Params) * Dt;
-			return Out;
-		};
 		const float Dt = 1.0f / 60.0f;
 		// Level cruise: 10 s, altitude and speed hold without thrust.
 		{
@@ -362,7 +375,7 @@ bool FDragonMovementTest::RunTest(const FString& Parameters)
 			FVector Pos = FVector::ZeroVector;
 			for (int32 Step = 0; Step < 600; ++Step)
 			{
-				Vel = MomentumStep(Vel, FVector(1.0f, 0.0f, 0.0f), 0.0f, Dt);
+				Vel = UDragonMovementComponent::StepPlaneVelocity(Vel, FQuat::Identity, Dt, Params);
 				Pos += Vel * Dt;
 			}
 			TestTrue(FString::Printf(TEXT("level cruise holds altitude over 10 s (dz=%.1f cm)"), Pos.Z),
@@ -375,47 +388,86 @@ bool FDragonMovementTest::RunTest(const FString& Parameters)
 			FVector Pos = FVector::ZeroVector;
 			for (int32 Step = 0; Step < 600; ++Step)
 			{
-				Vel = MomentumStep(Vel, FVector(1.0f, 0.0f, 0.0f), 0.0f, Dt);
+				Vel = UDragonMovementComponent::StepPlaneVelocity(Vel, FQuat::Identity, Dt, Params);
 				Pos += Vel * Dt;
 			}
 			TestTrue(FString::Printf(TEXT("slow flight sinks in momentum (dz=%.1f cm over 10 s)"), Pos.Z),
 					 Pos.Z < -200.0f && Vel.Z < -50.0f);
 		}
-		// Dive still gains speed through the lift model (energy owns
-		// speed along the nose; lift only bends the vertical).
+		// 60deg climb bleeds, 60deg dive gains (energy exchange).
 		{
-			const FVector DiveNose = FVector(0.866f, 0.0f, -0.5f).GetSafeNormal();
-			FVector Vel = DiveNose * 1500.0f;
-			FVector Pos = FVector::ZeroVector;
-			for (int32 Step = 0; Step < 120; ++Step)
+			const FQuat ClimbQ(FRotator(60.0f, 0.0f, 0.0f));
+			FVector Vel = ClimbQ.GetForwardVector() * 2000.0f;
+			for (int32 Step = 0; Step < 180; ++Step)
 			{
-				Vel = MomentumStep(Vel, DiveNose, 0.0f, Dt);
-				Pos += Vel * Dt;
+				Vel = UDragonMovementComponent::StepPlaneVelocity(Vel, ClimbQ, Dt, Params);
 			}
-			TestTrue(FString::Printf(TEXT("dive gains speed in the full-step sim (%.0f cm/s)"), Vel.Size()),
-					 Vel.Size() > 1500.0f && Pos.Z < 0.0f);
+			TestTrue(FString::Printf(TEXT("60deg climb bleeds speed (%.0f cm/s after 3 s)"), Vel.Size()), Vel.Size() < 1600.0f);
+			const FQuat DiveQ(FRotator(-60.0f, 0.0f, 0.0f));
+			FVector DVel = DiveQ.GetForwardVector() * 1600.0f;
+			for (int32 Step = 0; Step < 180; ++Step)
+			{
+				DVel = UDragonMovementComponent::StepPlaneVelocity(DVel, DiveQ, Dt, Params);
+			}
+			TestTrue(FString::Printf(TEXT("60deg dive gains speed (%.0f cm/s after 3 s)"), DVel.Size()), DVel.Size() > 2000.0f);
 		}
-		// Banked turn, flown: heading follows the coordinated yaw for
-		// one full turn at cruise; the flown diameter matches the
-		// analytic ~9049 cm range above.
+		// Banked turn closure, flown by physics only: hold a 45deg
+		// bank (weathervane preserves roll), banked lift bends the
+		// velocity, heading accumulates a full circle near entry alt.
 		{
-			const float YawRateRad =
-				FMath::DegreesToRadians(UDragonMovementComponent::CoordinatedYawRateDeg(-30.0f, 1600.0f, Params));
+			FQuat Q(FRotator(0.0f, 0.0f, -45.0f));
+			FVector Vel(1800.0f, 0.0f, 0.0f);
 			FVector Pos = FVector::ZeroVector;
 			FVector MinP = Pos;
 			FVector MaxP = Pos;
-			float Heading = 0.0f;
-			const int32 Steps = FMath::CeilToInt(2.0f * PI / FMath::Max(YawRateRad, 0.001f) / Dt);
-			for (int32 Step = 0; Step < Steps; ++Step)
+			FVector PrevFwd = Vel.GetSafeNormal();
+			float HeadingAccum = 0.0f;
+			for (int32 Step = 0; Step < 60 * 30 && FMath::Abs(HeadingAccum) < 360.0f; ++Step)
 			{
-				Heading += YawRateRad * Dt;
-				Pos += FVector(FMath::Cos(Heading), FMath::Sin(Heading), 0.0f) * 1600.0f * Dt;
+				Q = UDragonMovementComponent::WeathervaneOrientation(Q, Vel, Dt, Params);
+				Vel = UDragonMovementComponent::StepPlaneVelocity(Vel, Q, Dt, Params);
+				Pos += Vel * Dt;
+				const FVector Fwd = Vel.GetSafeNormal();
+				if (PrevFwd.Size2D() > 0.2f && Fwd.Size2D() > 0.2f)
+				{
+					HeadingAccum += FMath::FindDeltaAngleDegrees(
+						FMath::RadiansToDegrees(FMath::Atan2(PrevFwd.Y, PrevFwd.X)),
+						FMath::RadiansToDegrees(FMath::Atan2(Fwd.Y, Fwd.X)));
+				}
+				PrevFwd = Fwd;
 				MinP = FVector(FMath::Min(MinP.X, Pos.X), FMath::Min(MinP.Y, Pos.Y), 0.0f);
 				MaxP = FVector(FMath::Max(MaxP.X, Pos.X), FMath::Max(MaxP.Y, Pos.Y), 0.0f);
 			}
 			const float FlownDiameter = FMath::Max(MaxP.X - MinP.X, MaxP.Y - MinP.Y);
-			TestTrue(FString::Printf(TEXT("flown 30 deg bank turn diameter is %.0f cm"), FlownDiameter),
-					 FlownDiameter > 8000.0f && FlownDiameter < 10000.0f);
+			TestTrue(FString::Printf(TEXT("banked turn closes a circle (heading=%.1fdeg diameter=%.0fcm dz=%.0fcm)"),
+									 HeadingAccum, FlownDiameter, Pos.Z),
+					 FMath::Abs(HeadingAccum) >= 355.0f && FlownDiameter > 3000.0f && FlownDiameter < 15000.0f);
+		}
+		// Loop traversal in sim: full pitch held, orientation +
+		// weathervane + plane velocity. Pitch accumulates through
+		// inverted and closes; speed never dies to zero.
+		{
+			FQuat Q = FQuat::Identity;
+			FVector Vel(2400.0f, 0.0f, 0.0f);
+			FVector PrevFwd = Q.GetForwardVector();
+			float PitchAccum = 0.0f;
+			float MinUpZ = 1.0f;
+			for (int32 Step = 0; Step < 60 * 20 && PitchAccum < 360.0f; ++Step)
+			{
+				Q = UDragonMovementComponent::StepFlightOrientation(Q, 1.0f, 0.0f, 0.0f, Vel.Size(), Dt, Params);
+				Q = UDragonMovementComponent::WeathervaneOrientation(Q, Vel, Dt, Params, 0.0f);
+				Vel = UDragonMovementComponent::StepPlaneVelocity(Vel, Q, Dt, Params, 1.0f);
+				const FVector Fwd = Q.GetForwardVector();
+				// Successive forwards rotate monotonically under held
+				// pitch, so the summed inter-step angle is the traversal.
+				const float CosD = FMath::Clamp(FVector::DotProduct(PrevFwd, Fwd), -1.0f, 1.0f);
+				PitchAccum += FMath::RadiansToDegrees(FMath::Acos(CosD));
+				PrevFwd = Fwd;
+				MinUpZ = FMath::Min(MinUpZ, static_cast<float>(Q.GetUpVector().Z));
+			}
+			TestTrue(FString::Printf(TEXT("loop pitch traverses 360 in sim (pitch=%.1fdeg minUpZ=%.2f speed=%.0f)"),
+									 PitchAccum, MinUpZ, Vel.Size()),
+					 PitchAccum >= 355.0f && MinUpZ < -0.9f && Vel.Size() > 300.0f);
 		}
 	}
 

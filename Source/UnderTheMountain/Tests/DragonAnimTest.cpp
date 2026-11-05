@@ -200,8 +200,189 @@ bool FDragonWalkClipStrideTest::RunTest(const FString& Parameters)
 			++StridingLegs;
 		}
 	}
-	TestTrue(FString::Printf(TEXT("at least two legs stride (%d)"), StridingLegs),
-			 StridingLegs >= 2);
+	// [2026-11-04 ANIMFIX] All four legs must stride — the owner report was
+	// front-only walking, so two striding legs is no longer enough.
+	TestTrue(FString::Printf(TEXT("all four legs stride (%d)"), StridingLegs),
+			 StridingLegs == 4);
+	return true;
+}
+
+// [2026-11-04 ANIMFIX] Full-family audit: every shipped clip must move its
+// signature bone(s) and (for looping families) close its loop seam. Logs a
+// per-family ANIMAUDIT table (bone swings in rad) so a statue clip is
+// visible in the log even before the assertion that catches it.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDragonAnimFamilyAuditTest,
+								 "UnderTheMountain.Dragon.AnimFamilyAudit",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDragonAnimFamilyAuditTest::RunTest(const FString& Parameters)
+{
+	USkeletalMesh* DragonMesh = LoadObject<USkeletalMesh>(
+		nullptr, TEXT("/Game/Meshy/Dragon/SK_Dragon_v6.SK_Dragon_v6"));
+	TestNotNull(TEXT("SK_Dragon_v6 loads for family audit"), DragonMesh);
+	if (DragonMesh == nullptr)
+	{
+		return false;
+	}
+	const FReferenceSkeleton& RefSkeleton = DragonMesh->GetSkeleton()->GetReferenceSkeleton();
+	for (int32 BoneIndex = 0; BoneIndex < RefSkeleton.GetNum(); ++BoneIndex)
+	{
+		UE_LOG(LogTemp, Display, TEXT("ANIMAUDIT bone %s"),
+			   *RefSkeleton.GetBoneName(BoneIndex).ToString());
+	}
+
+	auto BoneSwing = [&RefSkeleton](UAnimSequence* Anim, const TCHAR* BoneName,
+									double* OutSeam) -> double
+	{
+		const int32 Index = RefSkeleton.FindBoneIndex(BoneName);
+		if (Index == INDEX_NONE || Anim == nullptr)
+		{
+			if (OutSeam != nullptr)
+			{
+				*OutSeam = -1.0;
+			}
+			return -1.0;
+		}
+		const float Length = Anim->GetPlayLength();
+		FQuat First;
+		FQuat Last;
+		double MaxSwing = 0.0;
+		for (int32 Sample = 0; Sample <= 16; ++Sample)
+		{
+			FTransform BoneTransform;
+			Anim->GetBoneTransform(BoneTransform, FSkeletonPoseBoneIndex(Index),
+								   FAnimExtractContext(Length * Sample / 16.0f), true);
+			if (Sample == 0)
+			{
+				First = BoneTransform.GetRotation();
+			}
+			if (Sample == 16)
+			{
+				Last = BoneTransform.GetRotation();
+			}
+			MaxSwing = FMath::Max(MaxSwing, First.AngularDistance(BoneTransform.GetRotation()));
+		}
+		if (OutSeam != nullptr)
+		{
+			*OutSeam = First.AngularDistance(Last);
+		}
+		return MaxSwing;
+	};
+
+	struct FFamily
+	{
+		const TCHAR* Name;
+		const TCHAR* Path;
+		const TCHAR* SignatureBone;
+		double MinSwing;
+		bool bLoop;
+	};
+	const FFamily Families[] = {
+		{TEXT("Idle"), TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_IdleAnim.SK_Dragon_v4_IdleAnim"),
+		 TEXT("chest"), 0.015, true},
+		{TEXT("Walk"), TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_Anim.SK_Dragon_v4_Anim"),
+		 TEXT("hindleg_upper_L"), 0.15, true},
+		{TEXT("Fly"), TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_FlyAnim.SK_Dragon_v4_FlyAnim"),
+		 TEXT("wing_shoulder_L"), 0.5, true},
+		{TEXT("Glide"), TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_GlideAnim.SK_Dragon_v4_GlideAnim"),
+		 TEXT("wing_shoulder_L"), 0.03, true},
+		{TEXT("Hover"), TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_HoverAnim.SK_Dragon_v4_HoverAnim"),
+		 TEXT("wing_shoulder_L"), 0.5, true},
+		{TEXT("Takeoff"), TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_TakeoffAnim.SK_Dragon_v4_TakeoffAnim"),
+		 TEXT("wing_shoulder_L"), 0.5, false},
+		{TEXT("Land"), TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_LandAnim.SK_Dragon_v4_LandAnim"),
+		 TEXT("wing_shoulder_L"), 0.5, false},
+		{TEXT("Roar"), TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_RoarAnim.SK_Dragon_v4_RoarAnim"),
+		 TEXT("neck"), 0.15, false},
+		{TEXT("Hit"), TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_HitAnim.SK_Dragon_v4_HitAnim"),
+		 TEXT("head"), 0.15, false},
+		{TEXT("HitHeavy"), TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_HitHeavyAnim.SK_Dragon_v4_HitHeavyAnim"),
+		 TEXT("head"), 0.3, false},
+		{TEXT("Defeat"), TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_DefeatAnim.SK_Dragon_v4_DefeatAnim"),
+		 TEXT("frontleg_upper_L"), 0.5, false},
+		{TEXT("SleepIdle"), TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_SleepIdleAnim.SK_Dragon_v4_SleepIdleAnim"),
+		 TEXT("chest"), 0.015, true},
+		{TEXT("Wake"), TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_WakeAnim.SK_Dragon_v4_WakeAnim"),
+		 TEXT("frontleg_upper_L"), 0.5, false},
+		{TEXT("LieDown"), TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_LieDownAnim.SK_Dragon_v4_LieDownAnim"),
+		 TEXT("frontleg_upper_L"), 0.5, false},
+		{TEXT("FirePose"), TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_FirePoseAnim.SK_Dragon_v4_FirePoseAnim"),
+		 TEXT("wing_shoulder_L"), 0.05, false},
+		{TEXT("Claw"), TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_ClawAnim.SK_Dragon_v4_ClawAnim"),
+		 TEXT("frontleg_upper_R"), 0.5, false},
+		{TEXT("BiteEat"), TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_BiteEatAnim.SK_Dragon_v4_BiteEatAnim"),
+		 TEXT("neck"), 0.3, false},
+		{TEXT("TailWhip"), TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_TailWhipAnim.SK_Dragon_v4_TailWhipAnim"),
+		 TEXT("tail_06"), 0.3, false},
+		{TEXT("WingBuffet"), TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_WingBuffetAnim.SK_Dragon_v4_WingBuffetAnim"),
+		 TEXT("wing_shoulder_L"), 0.5, false},
+	};
+	for (const FFamily& Family : Families)
+	{
+		UAnimSequence* Anim = LoadObject<UAnimSequence>(nullptr, Family.Path);
+		TestNotNull(FString::Printf(TEXT("%s clip loads"), Family.Name), Anim);
+		if (Anim == nullptr)
+		{
+			continue;
+		}
+		double Seam = -1.0;
+		const double Swing = BoneSwing(Anim, Family.SignatureBone, &Seam);
+		// Top movers: what this clip actually animates, whatever its signature.
+		TArray<TPair<double, FString>> Movers;
+		for (int32 BoneIndex = 0; BoneIndex < RefSkeleton.GetNum(); ++BoneIndex)
+		{
+			const FString BoneName = RefSkeleton.GetBoneName(BoneIndex).ToString();
+			Movers.Add(TPair<double, FString>(BoneSwing(Anim, *BoneName, nullptr), BoneName));
+		}
+		Movers.Sort([](const TPair<double, FString>& A, const TPair<double, FString>& B)
+					{ return A.Key > B.Key; });
+		FString Top;
+		for (int32 Index = 0; Index < FMath::Min(3, Movers.Num()); ++Index)
+		{
+			Top += FString::Printf(TEXT("%s=%.3f "), *Movers[Index].Value, Movers[Index].Key);
+		}
+		UE_LOG(LogTemp, Display, TEXT("ANIMAUDIT %s top %s"), Family.Name, *Top);
+		UE_LOG(LogTemp, Display,
+			   TEXT("ANIMAUDIT %s len=%.2f signature=%s swing=%.3f seam=%.3f"), Family.Name,
+			   Anim->GetPlayLength(), Family.SignatureBone, Swing, Seam);
+		// [2026-11-04 ANIMFIX] Authored clips are 0.7-2.0 s; the 8 stale
+		// shipped clips measure 10.38 s (never re-exported), which plays a
+		// 1 s flap as a 10 s statue-drift. Length is part of the contract.
+		TestTrue(FString::Printf(TEXT("%s has authored length (%.2fs)"), Family.Name,
+								 Anim->GetPlayLength()),
+				 Anim->GetPlayLength() > 0.2f && Anim->GetPlayLength() < 3.0f);
+		TestTrue(FString::Printf(TEXT("%s signature %s moves (%.3f rad)"), Family.Name,
+								 Family.SignatureBone, Swing),
+				 Swing > Family.MinSwing);
+		if (Family.bLoop)
+		{
+			TestTrue(FString::Printf(TEXT("%s loop seam closes (%.3f rad)"), Family.Name, Seam),
+					 Seam >= 0.0 && Seam < 0.10);
+		}
+	}
+	// Fly leg tuck (T-058 contract, also checked by FlyAnimPose): hind legs
+	// must sit off bind in Fly, not dangle at bind while the wings flap.
+	if (UAnimSequence* FlyAnim = LoadObject<UAnimSequence>(
+			nullptr, TEXT("/Game/Meshy/Dragon/SK_Dragon_v4_FlyAnim.SK_Dragon_v4_FlyAnim")))
+	{
+		for (const TCHAR* LegBone : {TEXT("hindleg_upper_L"), TEXT("hindleg_upper_R")})
+		{
+			const int32 LegIndex = RefSkeleton.FindBoneIndex(LegBone);
+			if (LegIndex == INDEX_NONE)
+			{
+				TestTrue(FString::Printf(TEXT("%s exists"), LegBone), false);
+				continue;
+			}
+			FTransform LegTransform;
+			FlyAnim->GetBoneTransform(LegTransform, FSkeletonPoseBoneIndex(LegIndex),
+									  FAnimExtractContext(0.25f), true);
+			const double Tuck = LegTransform.GetRotation().AngularDistance(
+				RefSkeleton.GetRefBonePose()[LegIndex].GetRotation());
+			UE_LOG(LogTemp, Display, TEXT("ANIMAUDIT Fly tuck %s=%.3f"), LegBone, Tuck);
+			TestTrue(FString::Printf(TEXT("Fly %s tucked off bind (%.3f rad)"), LegBone, Tuck),
+					 Tuck > 0.3);
+		}
+	}
 	return true;
 }
 

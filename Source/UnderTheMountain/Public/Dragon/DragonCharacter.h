@@ -208,6 +208,25 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// turns it at the yaw limit; neither release snaps it back).
 	FRotator GetProtoNose() const;
 
+	// [2026-11-04 PLANE-MODEL] Full flight frame (nose pitch + wing
+	// roll as one quaternion, never clamped): PhysCustom reads lift
+	// from it, UpdatePrototypeFlight advances it with pitch/roll/yaw
+	// rates. GetProtoNose above is its Euler view for legacy readers.
+	FQuat GetProtoFlightQuat() const
+	{
+		return ProtoFlightQuat;
+	}
+	void SetProtoOrientation(const FRotator& Rot)
+	{
+		ProtoFlightQuat = Rot.Quaternion();
+		SyncProtoNoseFromQuat();
+	}
+	void SetProtoFlightQuat(const FQuat& Quat)
+	{
+		ProtoFlightQuat = Quat.GetNormalized();
+		SyncProtoNoseFromQuat();
+	}
+
 	// [2026-11-04 FLIGHT-VIGOR] Commanded bank (degrees, visual roll sign):
 	// turn input banks first and yaw derives from this in
 	// UpdatePrototypeFlight. AnimInstance + the single-node driver prefer
@@ -632,6 +651,17 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	// RMB steer-held sails it rate-limited; the latch turns it toward the
 	// view at the airspeed-limited yaw rate).
 	FRotator ProtoNose = FRotator::ZeroRotator;
+	// [2026-11-04 PLANE-MODEL] Authoritative flight frame; ProtoNose
+	// is re-derived from it on every write (SyncProtoNoseFromQuat).
+	FQuat ProtoFlightQuat = FQuat::Identity;
+	void SyncProtoNoseFromQuat()
+	{
+		ProtoNose = ProtoFlightQuat.Rotator();
+		ProtoBankDegrees = ProtoNose.Roll;
+	}
+	// [2026-11-04 PLANE-MODEL] Last right-stick sample: camera orbit
+	// (HandlePadLook) plus a small direct dragon yaw in the plane band.
+	FVector2D LastPadLookAxis = FVector2D::ZeroVector;
 	bool bSteerHeld = false;
 	bool bSteerLatch = false;
 	// [2026-11-04 FLIGHT-VIGOR] Commanded bank + queued RMB mouse demand
@@ -682,6 +712,20 @@ class UNDERTHEMOUNTAIN_API ADragonCharacter : public ACharacter
 	FVector CourseMinXY = FVector::ZeroVector;
 	FVector CourseMaxXY = FVector::ZeroVector;
 	float CourseTouchSpeed = 0.0f;
+	// [2026-11-04 PLANE-MODEL] Adversarial legs (banked 360 / loop /
+	// 60-deg climb-dive): entry snapshots + unwrapped accumulators.
+	FVector CourseEntryPos = FVector::ZeroVector;
+	FVector CoursePrevForward = FVector::ForwardVector;
+	float CourseEntrySpeed = 0.0f;
+	float CourseEntryAlt = 0.0f;
+	float CourseHeadingAccum = 0.0f;
+	float CoursePitchAccum = 0.0f;
+	float CourseMinUpZ = 1.0f;
+	float CourseMaxFwdZ = 0.0f;
+	float CourseMinFwdZ = 0.0f;
+	float CourseLogTimer = 0.0f;
+	void CourseEnterPlaneLeg(const FVector& Pos, const FVector& Vel);
+	void CourseStepPlane(float PitchInput, float RollInput, float DeltaSeconds, UDragonMovementComponent* Proto);
 	// [2026-11-04 WALKFIX] Ground-walk leg (phases 8/9, run before liftoff):
 	// max ground speed seen while W is fed, and its 0.5 s evidence cadence.
 	float CourseWalkMaxSpeed = 0.0f;

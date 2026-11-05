@@ -1728,7 +1728,13 @@ void ADragonCharacter::HandlePadLook(const FInputActionValue& Value)
 {
 	// [2026-11-03 T-065] Right stick: the camera stick, with its own pitch-
 	// invert choice (separate from the mouse).
+	// [2026-11-04 PLANE-MODEL] Reconciled owner reading: the stick
+	// keeps orbiting the camera here, AND its X sample is remembered
+	// so UpdatePrototypeFlight also yaws the dragon at the small
+	// RightStickYawRate in the plane band. Both, documented in
+	// docs/GAMEPLAY.md.
 	const FVector2D Axis = Value.Get<FVector2D>();
+	LastPadLookAxis = Axis;
 	AddControllerYawInput(Axis.X);
 	AddControllerPitchInput(Axis.Y * (InvertPadCameraPitch() ? -1.0f : 1.0f));
 }
@@ -1756,7 +1762,7 @@ void ADragonCharacter::HandleFlap()
 		{
 			GetCharacterMovement()->SetMovementMode(MOVE_Custom,
 													UDragonMovementComponent::DragonFlightCustomMode);
-			ProtoNose = GetControlRotation();
+			SetProtoOrientation(GetControlRotation());
 		}
 		else
 		{
@@ -3436,7 +3442,7 @@ void ADragonCharacter::UpdatePrototypeFlight(float DeltaSeconds)
 	if (Scheme != 0 && IsFlying() && !bInCustom)
 	{
 		Move->SetMovementMode(MOVE_Custom, UDragonMovementComponent::DragonFlightCustomMode);
-		ProtoNose = GetControlRotation();
+		SetProtoOrientation(GetControlRotation());
 		UE_LOG(LogUnderTheMountain, Log, TEXT("Dragon prototype flight engaged (scheme %d)"), Scheme);
 	}
 	else if (Scheme == 0 && bInCustom)
@@ -3470,130 +3476,90 @@ void ADragonCharacter::UpdatePrototypeFlight(float DeltaSeconds)
 		}
 		if (IsPrototypeFlying())
 		{
-			// [2026-11-04 FLIGHT-PHYSICS] Steering, in causal order:
-			// turn input commands ProtoBankDegrees first (target
-			// +-40 deg, rolled at BankRollRateDegPerSec), yaw derives
-			// from the bank by the coordinated-turn law
-			// (CoordinatedYawRateDeg: g*tan(bank)/v, faded below
-			// 600 cm/s, capped at YawRateForAirspeed), and velocity
-			// weathervanes onto the nose in PhysCustom. No input yaws
-			// the dragon directly, so flight can never spin in place.
-			// Stick Y is a pitch COMMAND (nose moves at
-			// PitchCommandRateDegPerSec), never direct velocity.
-			// Right stick stays camera (HandlePadLook untouched).
-			// RMB-hold sails through the same bank/pitch commands:
-			// queued mouse-X commands bank, queued mouse-Y commands
-			// pitch, both consumed at their rate budgets. Latched
-			// steer-to-look banks toward the view the same way. The
-			// course program owns the nose while bCourseFlying.
+			// [2026-11-04 PLANE-MODEL] Steering lives in the block
+			// below (quaternion flight frame; see there). The course
+			// program owns the frame while bCourseFlying.
 			if (!bCourseFlying)
 			{
+				// [2026-11-04 PLANE-MODEL] Left stick = nose control:
+				// Y pitches, X rolls (rates, authority-scaled, no
+				// clamp — holding pitch loops, holding roll inverts).
+				// Right stick X ALSO yaws the dragon at the small
+				// PlaneYaw rate while still orbiting the camera in
+				// HandlePadLook. RMB sailing queues mouse demand as
+				// pitch/roll inputs; steer-latch derives pitch/roll
+				// demand from the view error. Heading itself is never
+				// formula-yawed: banked lift bends the velocity in
+				// PhysCustom and the weathervane carries the nose.
 				const float AirspeedNow = Move->Velocity.Size();
-				const bool bBankSteering =
+				const bool bPlaneSteering =
 					UDragonMovementComponent::PrecisionAuthorityWeight(AirspeedNow, Proto->FlightParams) < 1.0f;
-				// Turn sources, in authority order: RMB mouse-X while
-				// sailing (queued degrees: 20 deg of queue = full
-				// bank), A/D or pad left-stick X, latched steer-to-look
-				// (bank toward the view, proportional to heading error).
-				float TurnInput = 0.0f;
-				if (bSteerHeld && !FMath::IsNearlyZero(PendingSteerDegrees.X))
+				if (bPlaneSteering)
 				{
-					TurnInput = FMath::Clamp(PendingSteerDegrees.X / 20.0f, -1.0f, 1.0f);
-				}
-				else if (FMath::Abs(LastMoveAxis.X) > 0.1f)
-				{
-					TurnInput = FMath::Clamp(LastMoveAxis.X, -1.0f, 1.0f);
-				}
-				else if (bSteerLatch)
-				{
-					TurnInput = FMath::Clamp(
-						FMath::FindDeltaAngleDegrees(ProtoNose.Yaw, GetControlRotation().Yaw) / 40.0f, -1.0f, 1.0f);
-				}
-				const float TargetBank = UDragonMovementComponent::CommandedBankDegrees(TurnInput);
-				ProtoBankDegrees = FMath::FInterpConstantTo(ProtoBankDegrees, TargetBank, DeltaSeconds,
-															Proto->FlightParams.BankRollRateDegPerSec);
-				// [2026-11-03 T-103] Trap slow widens turns (bank yaw
-				// scales with the thrust factor, as the old direct yaw did).
-				const float DerivedYawRate =
-					UDragonMovementComponent::CoordinatedYawRateDeg(ProtoBankDegrees, AirspeedNow,
-																	Proto->FlightParams) *
-					Proto->TrapSlowFactor;
-				if (bSteerHeld)
-				{
-					// [2026-11-04 FLIGHT-PHYSICS] Sailing consumes the
-					// queue through the bank/pitch commands: yaw only
-					// at the coordinated rate the current bank earns
-					// (queue dies at that rate, so a flick turns at
-					// the bank's pace, never faster), pitch at the
-					// pitch-command rate. Control rotation rides the
-					// nose so release has nothing to snap back.
-					float StepYaw = DerivedYawRate * DeltaSeconds;
-					if (!FMath::IsNearlyZero(PendingSteerDegrees.X))
+					float PitchInput = 0.0f;
+					float RollInput = 0.0f;
+					float YawInput = 0.0f;
+					if (bSteerHeld)
 					{
-						StepYaw = UDragonMovementComponent::SteerStepDegrees(
-							PendingSteerDegrees.X, FMath::Abs(DerivedYawRate), DeltaSeconds);
-						PendingSteerDegrees.X -= StepYaw;
+						RollInput = FMath::Clamp(PendingSteerDegrees.X / 20.0f, -1.0f, 1.0f);
+						PitchInput = FMath::Clamp(PendingSteerDegrees.Y / 20.0f, -1.0f, 1.0f);
+						PendingSteerDegrees.X -= RollInput * UDragonMovementComponent::PlaneRollRateDeg(AirspeedNow, Proto->FlightParams) * DeltaSeconds * 20.0f * 0.05f;
+						PendingSteerDegrees.Y -= PitchInput * UDragonMovementComponent::PlanePitchRateDeg(AirspeedNow, Proto->FlightParams) * DeltaSeconds * 20.0f * 0.05f;
 					}
-					const float StepPitch = UDragonMovementComponent::SteerStepDegrees(
-						PendingSteerDegrees.Y, Proto->FlightParams.PitchCommandRateDegPerSec, DeltaSeconds);
-					PendingSteerDegrees.Y -= StepPitch;
-					ProtoNose.Yaw = FMath::UnwindDegrees(ProtoNose.Yaw + StepYaw);
-					ProtoNose.Pitch = FMath::Clamp(ProtoNose.Pitch + StepPitch, -89.0f, 89.0f);
-					ProtoNose.Roll = 0.0f;
-					if (Controller != nullptr)
+					else if (bSteerLatch)
+					{
+						const FRotator View = GetControlRotation();
+						RollInput = FMath::Clamp(FMath::FindDeltaAngleDegrees(ProtoNose.Yaw, View.Yaw) / 40.0f, -1.0f, 1.0f);
+						PitchInput = FMath::Clamp(FMath::FindDeltaAngleDegrees(ProtoNose.Pitch, View.Pitch) / 20.0f, -1.0f, 1.0f);
+					}
+					else
+					{
+						if (FMath::Abs(LastMoveAxis.X) > 0.1f)
+						{
+							RollInput = FMath::Clamp(LastMoveAxis.X, -1.0f, 1.0f);
+						}
+						if (bLastMoveFromGamepad && FMath::Abs(LastMoveAxis.Y) > 0.1f)
+						{
+							PitchInput = FMath::Clamp(LastMoveAxis.Y, -1.0f, 1.0f) *
+										 (InvertPadFlightPitch() ? -1.0f : 1.0f);
+						}
+						else if (!bLastMoveFromGamepad)
+						{
+							// Keyboard/mouse: mouse view error is the
+							// pitch/roll demand (mouse steers the nose).
+							const FRotator View = GetControlRotation();
+							PitchInput = FMath::Clamp(FMath::FindDeltaAngleDegrees(ProtoNose.Pitch, View.Pitch) / 20.0f, -1.0f, 1.0f);
+							if (FMath::Abs(LastMoveAxis.X) <= 0.1f)
+							{
+								RollInput = FMath::Clamp(FMath::FindDeltaAngleDegrees(ProtoNose.Yaw, View.Yaw) / 40.0f, -1.0f, 1.0f);
+							}
+						}
+						if (FMath::Abs(LastPadLookAxis.X) > 0.1f)
+						{
+							YawInput = FMath::Clamp(LastPadLookAxis.X, -1.0f, 1.0f);
+						}
+					}
+					// [2026-11-03 T-103] Trap slow taxes rotation too.
+					Proto->ProtoPitchInput = PitchInput;
+					FQuat Next = UDragonMovementComponent::StepFlightOrientation(
+						ProtoFlightQuat, PitchInput * Proto->TrapSlowFactor, RollInput * Proto->TrapSlowFactor,
+						YawInput * Proto->TrapSlowFactor, AirspeedNow, DeltaSeconds, Proto->FlightParams);
+					Next = UDragonMovementComponent::WeathervaneOrientation(Next, Move->Velocity, DeltaSeconds, Proto->FlightParams,
+																			1.0f - FMath::Min(1.0f, FMath::Abs(PitchInput)));
+					SetProtoFlightQuat(Next);
+					if (bSteerHeld && Controller != nullptr)
 					{
 						Controller->SetControlRotation(ProtoNose);
 					}
 				}
-				else if (bSteerLatch)
-				{
-					// [2026-11-04 FLIGHT-PHYSICS] Latched steer-to-look
-					// banks toward the view (TurnInput above) and yaws
-					// only at the coordinated rate; pitch chases the
-					// view at the pitch-command rate. No RInterp snap
-					// at the old yaw ceiling, no spin at low speed.
-					ProtoNose.Yaw = FMath::UnwindDegrees(ProtoNose.Yaw + DerivedYawRate * DeltaSeconds);
-					const float PitchDelta =
-						FMath::FindDeltaAngleDegrees(ProtoNose.Pitch, GetControlRotation().Pitch);
-					const float PitchBudget = Proto->FlightParams.PitchCommandRateDegPerSec * DeltaSeconds;
-					ProtoNose.Pitch =
-						FMath::Clamp(ProtoNose.Pitch + FMath::Clamp(PitchDelta, -PitchBudget, PitchBudget),
-									 -89.0f, 89.0f);
-					ProtoNose.Roll = 0.0f;
-				}
-				else if (bBankSteering)
-				{
-					// [2026-11-04 FLIGHT-PHYSICS] Flight band: the
-					// bank (above) yaws the NOSE at the coordinated
-					// rate — the controller/camera is not yawed, so
-					// the right stick / mouse stay camera. Pad
-					// left-stick Y is a pitch command at the pitch
-					// rate (forward stick pitches down toward a dive,
-					// back stick up to climb, same sign the old
-					// controller-pitch path produced). The precision
-					// band below keeps A/D as strafe thrust and the
-					// nose on the view (integrator PendingInput).
-					ProtoNose.Yaw = FMath::UnwindDegrees(ProtoNose.Yaw + DerivedYawRate * DeltaSeconds);
-					if (bLastMoveFromGamepad && FMath::Abs(LastMoveAxis.Y) > 0.2f)
-					{
-						ProtoNose.Pitch = FMath::Clamp(
-							ProtoNose.Pitch + FMath::Clamp(LastMoveAxis.Y, -1.0f, 1.0f) *
-												  Proto->FlightParams.PitchCommandRateDegPerSec *
-												  (InvertPadFlightPitch() ? -1.0f : 1.0f) * DeltaSeconds,
-							-89.0f, 89.0f);
-					}
-					ProtoNose.Roll = 0.0f;
-				}
 				else
 				{
-					ProtoNose = GetControlRotation();
+					// Precision band: nose follows the view as before.
+					Proto->ProtoPitchInput = 0.0f;
+					SetProtoOrientation(GetControlRotation());
 				}
 				LastMouseTurnInput = 0.0f;
-			}
-			else
-			{
-				ProtoBankDegrees = FMath::FInterpConstantTo(ProtoBankDegrees, 0.0f, DeltaSeconds,
-															Proto->FlightParams.BankRollRateDegPerSec);
+				LastPadLookAxis = FVector2D::ZeroVector;
 			}
 			Proto->bProtoAutoThrust = bSteerLatch;
 			// [2026-11-04 FLIGHT-VIGOR] Signed speed-band stamina (owner
@@ -3775,6 +3741,88 @@ void ADragonCharacter::HandleSinkEnd()
 	bSinkHeld = false;
 }
 
+void ADragonCharacter::CourseEnterPlaneLeg(const FVector& Pos, const FVector& Vel)
+{
+	// [2026-11-04 PLANE-MODEL] Adversarial-leg entry: a logged teleport
+	// to open sky with a known velocity/flight frame, so the leg that
+	// follows is pure physics (same precedent as the transit legs).
+	SetActorLocation(Pos, false, nullptr, ETeleportType::TeleportPhysics);
+	if (UCharacterMovementComponent* Move = GetCharacterMovement())
+	{
+		// [2026-11-04 PLANE-MODEL] A TeleportPhysics entry can drop
+		// the pawn out of MOVE_Custom into Falling (course run 3:
+		// every plane leg then flew ballistic — gravity-only samples,
+		// Y exactly 0, CSV capture dead). Re-engage the chassis.
+		Move->SetMovementMode(MOVE_Custom, UDragonMovementComponent::DragonFlightCustomMode);
+		Move->Velocity = Vel;
+	}
+	const float Yaw = FMath::RadiansToDegrees(FMath::Atan2(Vel.Y, Vel.X));
+	SetProtoOrientation(FRotator(0.0f, Yaw, 0.0f));
+	CourseEntryPos = Pos;
+	CoursePrevForward = ProtoFlightQuat.GetForwardVector();
+	CourseEntrySpeed = Vel.Size();
+	CourseEntryAlt = Pos.Z;
+	CourseHeadingAccum = 0.0f;
+	CoursePitchAccum = 0.0f;
+	CourseMinUpZ = 1.0f;
+	CourseMaxFwdZ = -1.0f;
+	CourseMinFwdZ = 1.0f;
+	CourseLogTimer = 0.0f;
+	CourseMinXY = Pos;
+	CourseMaxXY = Pos;
+	CourseMark = Pos;
+	RestoreCoursePool(TEXT("plane-leg entry"));
+	CourseLog(TEXT("CourseLeg plane-entry: pos=%s vel=%s speed=%.0f alt=%.0f"), *Pos.ToString(), *Vel.ToString(),
+			  CourseEntrySpeed, CourseEntryAlt);
+}
+
+void ADragonCharacter::CourseStepPlane(float PitchInput, float RollInput, float DeltaSeconds,
+									   UDragonMovementComponent* Proto)
+{
+	// [2026-11-04 PLANE-MODEL] One course tick of the exact player
+	// steering seam (StepFlightOrientation + weathervane), plus the
+	// unwrapped heading/pitch accumulators the leg verdicts read:
+	// Euler angles wrap at +-90/180, so only accumulated forward-vector
+	// rotation can prove a full turn or a loop.
+	if (Proto == nullptr)
+	{
+		return;
+	}
+	Proto->ProtoPitchInput = PitchInput;
+	UCharacterMovementComponent* Move = GetCharacterMovement();
+	const float Speed = Move != nullptr ? Move->Velocity.Size() : 0.0f;
+	FQuat Next = UDragonMovementComponent::StepFlightOrientation(ProtoFlightQuat, PitchInput, RollInput, 0.0f,
+																 Speed, DeltaSeconds, Proto->FlightParams);
+	if (Move != nullptr)
+	{
+		Next = UDragonMovementComponent::WeathervaneOrientation(Next, Move->Velocity, DeltaSeconds, Proto->FlightParams,
+																1.0f - FMath::Min(1.0f, FMath::Abs(PitchInput)));
+	}
+	const FVector NewForward = Next.GetForwardVector();
+	const FVector Right = ProtoFlightQuat.GetRightVector();
+	const float SinPitchDelta = FVector::DotProduct(FVector::CrossProduct(CoursePrevForward, NewForward), Right);
+	const float CosDelta = FMath::Clamp(FVector::DotProduct(CoursePrevForward, NewForward), -1.0f, 1.0f);
+	// Positive pitch is nose-up; cross(forward,new) points along -right
+	// for a nose-up step in UE's left-handed frame, hence the negation.
+	CoursePitchAccum -= FMath::RadiansToDegrees(FMath::Atan2(SinPitchDelta, CosDelta));
+	if (CoursePrevForward.Size2D() > 0.2f && NewForward.Size2D() > 0.2f)
+	{
+		CourseHeadingAccum += FMath::FindDeltaAngleDegrees(
+			FMath::RadiansToDegrees(FMath::Atan2(CoursePrevForward.Y, CoursePrevForward.X)),
+			FMath::RadiansToDegrees(FMath::Atan2(NewForward.Y, NewForward.X)));
+	}
+	CourseMinUpZ = FMath::Min(CourseMinUpZ, static_cast<float>(Next.GetUpVector().Z));
+	CourseMaxFwdZ = FMath::Max(CourseMaxFwdZ, static_cast<float>(NewForward.Z));
+	CourseMinFwdZ = FMath::Min(CourseMinFwdZ, static_cast<float>(NewForward.Z));
+	CoursePrevForward = NewForward;
+	SetProtoFlightQuat(Next);
+	const FVector P = GetActorLocation();
+	CourseMinXY.X = FMath::Min(CourseMinXY.X, P.X);
+	CourseMinXY.Y = FMath::Min(CourseMinXY.Y, P.Y);
+	CourseMaxXY.X = FMath::Max(CourseMaxXY.X, P.X);
+	CourseMaxXY.Y = FMath::Max(CourseMaxXY.Y, P.Y);
+}
+
 void ADragonCharacter::TickFlightCourse(float DeltaSeconds)
 {
 	// [2026-11-03 T-075] Scripted T-075 legs in the LIVE world (real ticks,
@@ -3796,7 +3844,7 @@ void ADragonCharacter::TickFlightCourse(float DeltaSeconds)
 			CoursePhase = 8;
 			CoursePhaseTime = 0.0f;
 			CourseTotalTime = 0.0f;
-			CourseLog(TEXT("FlightCourse armed: full pool, scheme %d (legs: climb, turn, brake, hover, land)"),
+			CourseLog(TEXT("FlightCourse armed: full pool, scheme %d (legs: climb, cruise, banked360, loop, climb60, dive60, brake, hover, land)"),
 					  UDragonMovementComponent::GetFlightScheme());
 		}
 		else
@@ -3812,7 +3860,7 @@ void ADragonCharacter::TickFlightCourse(float DeltaSeconds)
 	}
 	CoursePhaseTime += DeltaSeconds;
 	CourseTotalTime += DeltaSeconds;
-	if (CourseTotalTime > 150.0f)
+	if (CourseTotalTime > 260.0f)
 	{
 		CourseLog(TEXT("FlightCourse watchdog: quitting"));
 		CoursePhase = 99;
@@ -3827,7 +3875,7 @@ void ADragonCharacter::TickFlightCourse(float DeltaSeconds)
 		if (CoursePhaseTime <= DeltaSeconds * 1.5f && !IsPrototypeFlying())
 		{
 			Move->SetMovementMode(MOVE_Custom, UDragonMovementComponent::DragonFlightCustomMode);
-			ProtoNose = GetControlRotation();
+			SetProtoOrientation(GetControlRotation());
 			if (Stats->Stamina >= Stats->ImpulseReserveCost &&
 				Stats->TryConsumeStamina(Stats->ImpulseReserveCost))
 			{
@@ -3835,7 +3883,7 @@ void ADragonCharacter::TickFlightCourse(float DeltaSeconds)
 			}
 			CourseMark = GetActorLocation();
 		}
-		ProtoNose = FRotator(60.0f, BaseYaw, 0.0f);
+		SetProtoOrientation(FRotator(60.0f, BaseYaw, 0.0f));
 		if (CoursePhaseTime >= 3.0f)
 		{
 			CourseLog(TEXT("CourseLeg liftoff: alt=%.0fcm"),
@@ -3862,7 +3910,7 @@ void ADragonCharacter::TickFlightCourse(float DeltaSeconds)
 		}
 		break;
 	case 1: // Climb: sustained nose-up cruise (chimney proxy: climb rate).
-		ProtoNose = FRotator(30.0f, BaseYaw, 0.0f);
+		SetProtoOrientation(FRotator(30.0f, BaseYaw, 0.0f));
 		if (CoursePhaseTime >= 5.0f)
 		{
 			CourseLog(TEXT("CourseLeg climb: +%.0fcm in 5s (%.0fcm/s)"),
@@ -3881,10 +3929,10 @@ void ADragonCharacter::TickFlightCourse(float DeltaSeconds)
 		}
 		break;
 	case 2: // Cruise: level nose, build speed for the turn.
-		ProtoNose = FRotator(0.0f, BaseYaw, 0.0f);
+		SetProtoOrientation(FRotator(0.0f, BaseYaw, 0.0f));
 		if (CoursePhaseTime >= 4.0f)
 		{
-			CoursePhase = 3;
+			CoursePhase = 10;
 			CoursePhaseTime = 0.0f;
 			CourseTurnAccum = 0.0f;
 			RestoreCoursePool(TEXT("cruise"));
@@ -3893,32 +3941,142 @@ void ADragonCharacter::TickFlightCourse(float DeltaSeconds)
 			CourseMaxXY = GetActorLocation();
 		}
 		break;
-	case 3: // Turn: full 360 at the airspeed-limited yaw rate; measure diameter.
-	{
-		const float TurnRate = UDragonMovementComponent::YawRateForAirspeed(
-			Move->Velocity.Size(), Proto->FlightParams);
-		CourseTurnAccum += TurnRate * DeltaSeconds;
-		ProtoNose = FRotator(0.0f, CourseBaseYaw + CourseTurnAccum, 0.0f);
-		const FVector P = GetActorLocation();
-		CourseMinXY.X = FMath::Min(CourseMinXY.X, P.X);
-		CourseMinXY.Y = FMath::Min(CourseMinXY.Y, P.Y);
-		CourseMaxXY.X = FMath::Max(CourseMaxXY.X, P.X);
-		CourseMaxXY.Y = FMath::Max(CourseMaxXY.Y, P.Y);
-		if (CourseTurnAccum >= 360.0f)
+	case 10: // [2026-11-04 PLANE-MODEL] Banked 360: roll to 45deg bank,
+		// hold it, pull slightly; heading must emerge from banked lift.
 		{
-			const float Diameter = FMath::Max(CourseMaxXY.X - CourseMinXY.X, CourseMaxXY.Y - CourseMinXY.Y);
-			CourseLog(TEXT("CourseLeg turn: diameter=%.0fcm in %.1fs at cruise (T-066 evidence)"),
-					  Diameter, CoursePhaseTime);
-			CoursePhase = 4;
-			CoursePhaseTime = 0.0f;
-			CourseMark = GetActorLocation();
-			RestoreCoursePool(TEXT("turn"));
-			Proto->bProtoBraking = true;
+			if (CoursePhaseTime <= DeltaSeconds * 1.5f)
+			{
+				CourseEnterPlaneLeg(FVector(30000.0f, 0.0f, 12000.0f), FVector(1800.0f, 0.0f, 0.0f));
+				CourseLog(TEXT("CourseLeg banked360: entry speed=%.0f alt=%.0f (roll to 45deg bank, hold, altitude-hold pull)"), CourseEntrySpeed, CourseEntryAlt);
+			}
+			else
+			{
+				const float VelPitchDeg = Move->Velocity.Size() > 1.0f
+											  ? FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(static_cast<float>(Move->Velocity.Z / Move->Velocity.Size()), -1.0f, 1.0f)))
+											  : 0.0f;
+				const float RollInput = FMath::Clamp((ProtoNose.Roll - (-45.0f)) / 20.0f, -1.0f, 1.0f);
+				// Altitude hold: pitch input chases a level flight path
+				// (a constant pull would rotate the nose forever — run 3).
+				CourseStepPlane(FMath::Clamp(-VelPitchDeg / 15.0f, -1.0f, 1.0f), RollInput, DeltaSeconds, Proto);
+				CourseLogTimer += DeltaSeconds;
+				if (CourseLogTimer >= 1.0f)
+				{
+					CourseLogTimer = 0.0f;
+					CourseLog(TEXT("CourseSample banked360: t=%.1f headingAccum=%.1f roll=%.1f speed=%.0f alt=%.0f upZ=%.2f pos=%s"),
+							  CoursePhaseTime, CourseHeadingAccum, ProtoNose.Roll, Move->Velocity.Size(), GetActorLocation().Z,
+							  ProtoFlightQuat.GetUpVector().Z, *GetActorLocation().ToString());
+				}
+				if (FMath::Abs(CourseHeadingAccum) >= 360.0f || CoursePhaseTime >= 30.0f)
+				{
+					const float Diameter = FMath::Max(CourseMaxXY.X - CourseMinXY.X, CourseMaxXY.Y - CourseMinXY.Y);
+					CourseLog(TEXT("CourseLeg banked360: headingChange=%.1fdeg diameter=%.0fcm altDelta=%.0fcm entrySpeed=%.0f exitSpeed=%.0f time=%.1fs endAlt=%.0f"),
+							  CourseHeadingAccum, Diameter, GetActorLocation().Z - CourseEntryAlt, CourseEntrySpeed,
+							  Move->Velocity.Size(), CoursePhaseTime, GetActorLocation().Z);
+					CoursePhase = 11;
+					CoursePhaseTime = 0.0f;
+				}
+			}
+			break;
 		}
-		break;
-	}
+	case 11: // [2026-11-04 PLANE-MODEL] Loop: full pitch input held
+		// through inverted until the unwrapped pitch traversal closes.
+		{
+			if (CoursePhaseTime <= DeltaSeconds * 1.5f)
+			{
+				CourseEnterPlaneLeg(FVector(45000.0f, 0.0f, 14000.0f), FVector(2400.0f, 0.0f, 0.0f));
+				CourseLog(TEXT("CourseLeg loop: entry speed=%.0f alt=%.0f (full pitch held)"), CourseEntrySpeed, CourseEntryAlt);
+			}
+			else
+			{
+				CourseStepPlane(1.0f, 0.0f, DeltaSeconds, Proto);
+				CourseLogTimer += DeltaSeconds;
+				if (CourseLogTimer >= 0.5f)
+				{
+					CourseLogTimer = 0.0f;
+					CourseLog(TEXT("CourseSample loop: t=%.1f pitchAccum=%.1f upZ=%.2f fwdZ=%.2f speed=%.0f alt=%.0f"),
+							  CoursePhaseTime, CoursePitchAccum, ProtoFlightQuat.GetUpVector().Z,
+							  ProtoFlightQuat.GetForwardVector().Z, Move->Velocity.Size(), GetActorLocation().Z);
+				}
+				if (CoursePitchAccum >= 360.0f || CoursePhaseTime >= 20.0f)
+				{
+					CourseLog(TEXT("CourseLeg loop: pitchTraversal=%.1fdeg invertedUpZ=%.2f maxFwdZ=%.2f entrySpeed=%.0f exitSpeed=%.0f altDelta=%.0fcm time=%.1fs %s"),
+							  CoursePitchAccum, CourseMinUpZ, CourseMaxFwdZ, CourseEntrySpeed, Move->Velocity.Size(),
+							  GetActorLocation().Z - CourseEntryAlt, CoursePhaseTime,
+							  (CoursePitchAccum >= 360.0f && CourseMinUpZ < -0.5f) ? TEXT("RECOVERED") : TEXT("INCOMPLETE"));
+					SetProtoOrientation(FRotator(0.0f, ProtoNose.Yaw, 0.0f));
+					CoursePhase = 12;
+					CoursePhaseTime = 0.0f;
+				}
+			}
+			break;
+		}
+	case 12: // [2026-11-04 PLANE-MODEL] 60deg climb: pitch the frame
+		// to a 60deg flight path and hold; speed must bleed.
+		{
+			if (CoursePhaseTime <= DeltaSeconds * 1.5f)
+			{
+				CourseEnterPlaneLeg(FVector(60000.0f, 0.0f, 12000.0f), FVector(2000.0f, 0.0f, 0.0f));
+				CourseLog(TEXT("CourseLeg climb60: entry speed=%.0f alt=%.0f"), CourseEntrySpeed, CourseEntryAlt);
+			}
+			else
+			{
+				const float CurPitch = FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(static_cast<float>(ProtoFlightQuat.GetForwardVector().Z), -1.0f, 1.0f)));
+				CourseStepPlane(FMath::Clamp((60.0f - CurPitch) / 20.0f, -1.0f, 1.0f), 0.0f, DeltaSeconds, Proto);
+				CourseLogTimer += DeltaSeconds;
+				if (CourseLogTimer >= 0.5f)
+				{
+					CourseLogTimer = 0.0f;
+					CourseLog(TEXT("CourseSample climb60: t=%.1f nosePitch=%.1f speed=%.0f alt=%.0f"), CoursePhaseTime, CurPitch,
+							  Move->Velocity.Size(), GetActorLocation().Z);
+				}
+				if (CoursePhaseTime >= 5.0f)
+				{
+					const float MaxPitch = FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(CourseMaxFwdZ, -1.0f, 1.0f)));
+					CourseLog(TEXT("CourseLeg climb60: maxPitch=%.1fdeg entrySpeed=%.0f exitSpeed=%.0f speedBleed=%.0f altDelta=%.0fcm time=%.1fs"),
+							  MaxPitch, CourseEntrySpeed, Move->Velocity.Size(), CourseEntrySpeed - Move->Velocity.Size(),
+							  GetActorLocation().Z - CourseEntryAlt, CoursePhaseTime);
+					CoursePhase = 13;
+					CoursePhaseTime = 0.0f;
+				}
+			}
+			break;
+		}
+	case 13: // [2026-11-04 PLANE-MODEL] 60deg dive: mirror leg; speed
+		// must gain from altitude.
+		{
+			if (CoursePhaseTime <= DeltaSeconds * 1.5f)
+			{
+				CourseEnterPlaneLeg(FVector(75000.0f, 0.0f, 16000.0f), FVector(1600.0f, 0.0f, 0.0f));
+				CourseLog(TEXT("CourseLeg dive60: entry speed=%.0f alt=%.0f"), CourseEntrySpeed, CourseEntryAlt);
+			}
+			else
+			{
+				const float CurPitch = FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(static_cast<float>(ProtoFlightQuat.GetForwardVector().Z), -1.0f, 1.0f)));
+				CourseStepPlane(FMath::Clamp((-60.0f - CurPitch) / 20.0f, -1.0f, 1.0f), 0.0f, DeltaSeconds, Proto);
+				CourseLogTimer += DeltaSeconds;
+				if (CourseLogTimer >= 0.5f)
+				{
+					CourseLogTimer = 0.0f;
+					CourseLog(TEXT("CourseSample dive60: t=%.1f nosePitch=%.1f speed=%.0f alt=%.0f"), CoursePhaseTime, CurPitch,
+							  Move->Velocity.Size(), GetActorLocation().Z);
+				}
+				if (CoursePhaseTime >= 5.0f)
+				{
+					const float MinPitch = FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(CourseMinFwdZ, -1.0f, 1.0f)));
+					CourseLog(TEXT("CourseLeg dive60: minPitch=%.1fdeg entrySpeed=%.0f exitSpeed=%.0f speedGain=%.0f altDelta=%.0fcm time=%.1fs"),
+							  MinPitch, CourseEntrySpeed, Move->Velocity.Size(), Move->Velocity.Size() - CourseEntrySpeed,
+							  GetActorLocation().Z - CourseEntryAlt, CoursePhaseTime);
+					CoursePhase = 4;
+					CoursePhaseTime = 0.0f;
+					CourseMark = GetActorLocation();
+					RestoreCoursePool(TEXT("dive60"));
+					Proto->bProtoBraking = true;
+				}
+			}
+			break;
+		}
 	case 4: // Brake: full brake to rest; measure stop distance.
-		ProtoNose = FRotator(0.0f, BaseYaw, 0.0f);
+		SetProtoOrientation(FRotator(0.0f, BaseYaw, 0.0f));
 		if (Move->Velocity.Size() < 60.0f || CoursePhaseTime >= 6.0f)
 		{
 			Proto->bProtoBraking = false;
@@ -3961,7 +4119,7 @@ void ADragonCharacter::TickFlightCourse(float DeltaSeconds)
 		break;
 	}
 	case 6: // Assisted landing: slight nose-down until walk, or timeout.
-		ProtoNose = FRotator(-10.0f, BaseYaw, 0.0f);
+		SetProtoOrientation(FRotator(-10.0f, BaseYaw, 0.0f));
 		CourseTouchSpeed = Move->Velocity.Size();
 		if (Move->MovementMode == MOVE_Walking || CoursePhaseTime >= 12.0f)
 		{

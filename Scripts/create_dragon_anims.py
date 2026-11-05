@@ -171,6 +171,32 @@ def sine(frame, span, lag=0):
     return math.sin(2 * math.pi * (frame - 1 - lag) / span + math.pi / 2)
 
 
+# [2026-11-04 ANIMFIX] Traveling-wave flap: each outboard segment lags the
+# shoulder by whole frames and swings slightly less, so the flap propagates
+# root->tip instead of the whole wing rotating as one rigid plank (the
+# shipped Fly/Hover keyed every wing bone with the SAME angle at 5 sparse
+# frames). Lag is in frames at 24 fps; at span 23 a 1-frame lag is ~16 deg
+# of phase, enough for visible follow-through, far under the 25 deg
+# straightness bound FlyAnimPose enforces on Glide (amp there is 3 deg).
+_CHAIN_LAG = {"wing_shoulder": 0, "wing_elbow": 1, "wing_wrist": 2, "wing_finger": 3,
+              "wing_finger_1": 4, "wing_finger_2": 4, "wing_finger_3": 4}
+_CHAIN_SCALE = {"wing_shoulder": 1.0, "wing_elbow": 0.92, "wing_wrist": 0.84,
+                "wing_finger": 0.76, "wing_finger_1": 0.68, "wing_finger_2": 0.68,
+                "wing_finger_3": 0.68}
+
+
+def flap_chain(frame, span, amp_deg):
+    return {b: amp_deg * _CHAIN_SCALE[b] * sine(frame, span, _CHAIN_LAG[b])
+            for b in _CHAIN_LAG}
+
+
+def loop_frames(end, step):
+    frames = list(range(1, end + 1, step))
+    if frames[-1] != end:
+        frames.append(end)
+    return frames
+
+
 def open_rig(action_name, frame_end):
     bpy.ops.wm.open_mainfile(filepath=BLEND_PATH)
     scene = bpy.context.scene
@@ -227,8 +253,17 @@ def clip_fly():
     pelvis, chest = pb(arm, "pelvis"), pb(arm, "chest")
     neck = pb(arm, "neck")
     pbind = tuple(pelvis.location)
-    for frame in (1, 7, 13, 19, 24):
-        lag_flap = {b: 32.0 * sine(frame, span) for b in WING_BASES}
+    # [2026-11-04 ANIMFIX] Keys every 2 frames with chain lag (was 5 sparse
+    # frames, one rigid angle for every wing bone). Frame 24 == frame 1 by
+    # construction (span 23, every driver is 2pi-periodic over it).
+    for frame in loop_frames(end, 2):
+        # [2026-11-04 ANIMFIX] wing_pose sets armature-space matrices; if
+        # the chest still holds last frame's rotation the shoulder locals
+        # are keyed against a stale parent and the loop seam opens (Hover
+        # measured 0.317 rad). Reset so every frame poses from the same
+        # parent state frame 1 had.
+        reset_pose(arm)
+        lag_flap = flap_chain(frame, span, 34.0)
         keyed = wing_pose(arm, 0, 1.0, lag_flap) + leg_pose(arm, 1.0) + tail_wave(arm, frame, span, 4.0)
         bob = -0.03 * sine(frame, span)
         pelvis.location = (pbind[0], pbind[1], pbind[2] + bob)
@@ -243,8 +278,11 @@ def clip_glide():
     span, end = 47, 48
     arm, action = open_rig("Glide", end)
     chest = pb(arm, "chest")
-    for frame in (1, 13, 25, 37, 48):
-        lag_flap = {b: 2.0 * sine(frame, span) for b in WING_BASES}
+    for frame in loop_frames(end, 3):
+        reset_pose(arm)  # see clip_fly: stale-parent seam guard
+        # Held spread, micro-corrections only — but with the same chain lag
+        # so the corrections ripple out instead of hinging the whole wing.
+        lag_flap = flap_chain(frame, span, 3.0)
         keyed = wing_pose(arm, 0, 1.0, lag_flap) + leg_pose(arm, 1.0) + tail_wave(arm, frame, span, 2.5)
         set_rot(chest, x=1.0 * sine(frame, span))
         key(keyed + [chest], frame)
@@ -257,8 +295,9 @@ def clip_hover():
     pelvis, chest, neck, head = pb(arm, "pelvis"), pb(arm, "chest"), pb(arm, "neck"), pb(arm, "head")
     half_f = {"upper": (22.0, -4.0, 8.0), "lower": (-34.0, 0.0, -5.0), "foot": (4.0, 0.0, -10.0)}
     half_h = {"upper": (18.0, -2.0, 5.0), "lower": (-8.0, 0.0, -3.0), "foot": (12.0, -6.0, 24.0)}
-    for frame in (1, 7, 13, 19, 24):
-        lag_flap = {b: 42.0 * sine(frame, span) for b in WING_BASES}
+    for frame in loop_frames(end, 2):
+        reset_pose(arm)  # see clip_fly: stale-parent seam guard
+        lag_flap = flap_chain(frame, span, 44.0)
         keyed = wing_pose(arm, 0, 1.0, lag_flap)
         keyed += leg_pose(arm, 1.0, front=half_f, hind=half_h)
         keyed += tail_wave(arm, frame, span, 3.0, base_deg=10.0)
@@ -306,9 +345,14 @@ def clip_walk():
             upper = pb(arm, f"{kind}_upper.{side}")
             lower = pb(arm, f"{kind}_lower.{side}")
             foot = pb(arm, f"{kind}_foot.{side}")
-            set_rot(upper, x=20.0 * swing)
+            # [2026-11-04 ANIMFIX] Hind uppers swing wider (24 vs 20 deg):
+            # same diagonal gait, but the hind stride is unmissable next to
+            # the tail mass (owner report: only front legs appeared to move;
+            # the clip/FBX/skeleton all proved hind keys exist — see audit).
+            swing_deg = 24.0 if kind == "hindleg" else 20.0
+            set_rot(upper, x=swing_deg * swing)
             set_rot(lower, x=-8.0 - 16.0 * lift)
-            set_rot(foot, x=-20.0 * swing + 8.0 + 10.0 * lift)
+            set_rot(foot, x=-swing_deg * swing + 8.0 + 10.0 * lift)
             keyed += [upper, lower, foot]
         keyed += tail_wave(arm, frame, span, 2.0)
         bob = -0.015 * math.sin(4 * math.pi * (frame - 1) / span)

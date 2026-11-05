@@ -156,13 +156,21 @@ struct FDragonFlightParams
 	UPROPERTY(EditAnywhere, Category = "Dragon|Flight")
 	float TurnAuthorityFullSpeed = 600.0f;
 
-	// [2026-11-04 FLIGHT-PHYSICS] Command rates for the flight stick:
-	// bank rolls toward its target at this rate, stick-Y pitches the
-	// nose at this rate. Neither ever snaps the nose.
+	// [2026-11-04 PLANE-MODEL] Command rates for the flight stick:
+	// stick-Y pitches the nose at this rate, stick-X rolls the dragon
+	// at this rate (a rate, not a bank-angle target: holding roll
+	// rolls continuously, so inverted flight and loops are reachable).
+	// Both are scaled by TurnAuthority(airspeed) in the rate statics.
 	UPROPERTY(EditAnywhere, Category = "Dragon|Flight")
-	float BankRollRateDegPerSec = 90.0f;
+	float RollCommandRateDegPerSec = 120.0f;
 	UPROPERTY(EditAnywhere, Category = "Dragon|Flight")
-	float PitchCommandRateDegPerSec = 60.0f;
+	float PitchCommandRateDegPerSec = 75.0f;
+	// [2026-11-04 PLANE-MODEL] Right-stick X direct yaw rate (deg/s):
+	// small by design; the right stick remains the camera stick and
+	// this adds a gentle nose yaw on top (owner: "right stick should
+	// control your Yaw/rotations" reconciled with camera orbit).
+	UPROPERTY(EditAnywhere, Category = "Dragon|Flight")
+	float RightStickYawRateDegPerSec = 30.0f;
 };
 
 UCLASS(ClassGroup = (Dragon), meta = (BlueprintSpawnableComponent))
@@ -229,19 +237,54 @@ class UNDERTHEMOUNTAIN_API UDragonMovementComponent : public UCharacterMovementC
 	static float CoordinatedYawRateDeg(float BankDegrees, float Airspeed,
 									   const FDragonFlightParams& Params);
 
-	// [2026-11-04 FLIGHT-PHYSICS] Causal bank: the turn input commands
-	// the bank first (target +-40 deg) and yaw derives from it via the
-	// coordinated-turn formula (never the reverse, never direct axis
-	// yaw). MaxBank is the commanded cap. CommandedBankDegrees maps a
-	// [-1,1] turn input onto that cap (visual roll sign: positive yaw
-	// turns bank negative, matching the old yaw-derivative sign);
-	// YawRateForBank is the coordinated rate for a bank (kept as the
-	// pawn/anim seam). SteerStepDegrees is one rate-limited step for
-	// RMB sailing / pitch commands: a pending demand (degrees) clamped
-	// to the per-tick rate budget.
-	static constexpr float MaxBankDegrees = 40.0f;
-	static float CommandedBankDegrees(float TurnInput);
-	static float YawRateForBank(float BankDegrees, float Airspeed, const FDragonFlightParams& Params);
+	// [2026-11-04 PLANE-MODEL] Plane-model steering statics. The flight
+	// frame is a full quaternion (nose pitch + wing roll, never
+	// clamped): Pitch/Roll/Yaw rates are the full-deflection rates
+	// scaled by TurnAuthority, so slow flight is mushy, never spinny.
+	// StepFlightOrientation applies one tick of local pitch/roll/yaw
+	// input to the frame (holding pitch input loops through inverted;
+	// holding roll input rolls past inverted). LiftVector is lift
+	// perpendicular to the wings — along the dragon's own up — so a
+	// banked lift steers the velocity and inverted lift pulls down.
+	// StepPlaneVelocity integrates lift+gravity (energy exchange is
+	// gravity along the flight path in that sum; drag only above the
+	// pitch-dependent terminal, as IntegrateEnergyStep). Heading
+	// change EMERGES from banked lift bending the velocity plus the
+	// weathervane (WeathervaneOrientation: nose follows velocity,
+	// roll preserved); CoordinatedYawRateDeg stays as the analytic
+	// fallback/comparison only and no longer steers the dragon.
+	// BankedLiftHeadingRateDeg is the emergent heading rate the lift
+	// geometry predicts for a held bank (lift*sin(bank)/v).
+	static float PlanePitchRateDeg(float Airspeed, const FDragonFlightParams& Params);
+	static float PlaneRollRateDeg(float Airspeed, const FDragonFlightParams& Params);
+	static float PlaneYawRateDeg(float Airspeed, const FDragonFlightParams& Params);
+	static FQuat StepFlightOrientation(const FQuat& Orientation, float PitchInput, float RollInput,
+									   float YawInput, float Airspeed, float DeltaSeconds,
+									   const FDragonFlightParams& Params);
+	static FVector LiftVector(const FQuat& Orientation, float Airspeed,
+							  const FDragonFlightParams& Params);
+	static float BankedLiftHeadingRateDeg(float BankDegrees, float Airspeed,
+										  const FDragonFlightParams& Params);
+	static FVector StepPlaneVelocity(const FVector& Velocity, const FQuat& Orientation,
+									 float DeltaSeconds, const FDragonFlightParams& Params);
+	// [2026-11-04 PLANE-MODEL] Pull variant: pitch input raises the
+	// wing's angle of attack, scaling lift along the dragon's up
+	// (full pull = 2x lift, full push = 0x). Without it a held pull
+	// only rotates the frame while lift stays at trim, the velocity
+	// cannot follow, and a loop stalls in the climb (sim-proven).
+	static FVector StepPlaneVelocity(const FVector& Velocity, const FQuat& Orientation,
+									 float DeltaSeconds, const FDragonFlightParams& Params,
+									 float PitchInput);
+	static FQuat WeathervaneOrientation(const FQuat& Orientation, const FVector& Velocity,
+										float DeltaSeconds, const FDragonFlightParams& Params);
+	// [2026-11-04 PLANE-MODEL] RateScale variant: a held pitch pull
+	// is intentional angle of attack, so stability eases off as
+	// |pitch input| grows (pawn passes 1-|PitchInput|). At full pull
+	// the frame rotates freely and lift drags the velocity around —
+	// the loop. At neutral stick the weathervane is fully on.
+	static FQuat WeathervaneOrientation(const FQuat& Orientation, const FVector& Velocity,
+										float DeltaSeconds, const FDragonFlightParams& Params,
+										float RateScale);
 	static float SteerStepDegrees(float PendingDegrees, float MaxRateDegPerSec, float DeltaSeconds);
 
 	// [2026-11-03 T-075] Nose-follow responsiveness for the current airspeed:
@@ -347,6 +390,9 @@ class UNDERTHEMOUNTAIN_API UDragonMovementComponent : public UCharacterMovementC
 	// brake + descent cap; F toggles, walk/fall clears).
 	bool bProtoRise = false;
 	bool bProtoSink = false;
+	// [2026-11-04 PLANE-MODEL] Held pitch input from the pawn/course:
+	// scales lift in StepPlaneVelocity (angle of attack). 0 = trim.
+	float ProtoPitchInput = 0.0f;
 	bool bProtoAutoThrust = false;
 	bool bLandingAssist = false;
 

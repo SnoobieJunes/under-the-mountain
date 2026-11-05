@@ -399,9 +399,9 @@ int32 UABPAuthorCommandlet::Main(const FString& Params)
 	};
 	const FSlitherBoneSpec SlitherBones[] = {
 		{TEXT("pelvis"), TEXT("SpineSlitherRotation")},
-		{TEXT("tail.01"), TEXT("TailBaseSlitherRotation")},
-		{TEXT("tail.03"), TEXT("TailMidSlitherRotation")},
-		{TEXT("tail.05"), TEXT("TailTipSlitherRotation")},
+		{TEXT("tail_01"), TEXT("TailBaseSlitherRotation")},
+		{TEXT("tail_03"), TEXT("TailMidSlitherRotation")},
+		{TEXT("tail_05"), TEXT("TailTipSlitherRotation")},
 	};
 	TArray<UAnimGraphNode_ModifyBone*> SlitherNodes;
 	for (int32 Index = 0; Index < UE_ARRAY_COUNT(SlitherBones); ++Index)

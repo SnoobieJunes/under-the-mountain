@@ -180,22 +180,165 @@ float UDragonMovementComponent::CoordinatedYawRateDeg(float BankDegrees, float A
 	return CoordinatedYawRateDeg(BankDegrees, Airspeed, FDragonFlightParams());
 }
 
-float UDragonMovementComponent::CommandedBankDegrees(float TurnInput)
+float UDragonMovementComponent::PlanePitchRateDeg(float Airspeed, const FDragonFlightParams& Params)
 {
-	// [2026-11-04 FLIGHT-VIGOR] Full stick/mouse demand banks to the cap;
-	// the negative sign keeps the visual roll the yaw-derivative bank
-	// always produced for a positive (yaw-increasing) turn.
-	return -FMath::Clamp(TurnInput, -1.0f, 1.0f) * MaxBankDegrees;
+	// [2026-11-04 PLANE-MODEL] Full-deflection pitch rate scaled by
+	// turn authority: 75 deg/s at cruise, near zero below 300 cm/s.
+	return Params.PitchCommandRateDegPerSec * TurnAuthority(Airspeed, Params);
 }
 
-float UDragonMovementComponent::YawRateForBank(float BankDegrees, float Airspeed,
-											   const FDragonFlightParams& Params)
+float UDragonMovementComponent::PlaneRollRateDeg(float Airspeed, const FDragonFlightParams& Params)
 {
-	// [2026-11-04 FLIGHT-PHYSICS] Yaw is the consequence of bank via
-	// the coordinated-turn law (g*tan(bank)/v, authority-faded and
-	// feel-capped), not a linear bank fraction. Wings-level never
-	// turns; slow flight barely turns at any bank.
-	return CoordinatedYawRateDeg(BankDegrees, Airspeed, Params);
+	return Params.RollCommandRateDegPerSec * TurnAuthority(Airspeed, Params);
+}
+
+float UDragonMovementComponent::PlaneYawRateDeg(float Airspeed, const FDragonFlightParams& Params)
+{
+	// [2026-11-04 PLANE-MODEL] Right-stick direct yaw: small (30 deg/s
+	// full) and authority-scaled like the other rates.
+	return Params.RightStickYawRateDegPerSec * TurnAuthority(Airspeed, Params);
+}
+
+FQuat UDragonMovementComponent::StepFlightOrientation(const FQuat& Orientation, float PitchInput,
+													  float RollInput, float YawInput, float Airspeed,
+													  float DeltaSeconds,
+													  const FDragonFlightParams& Params)
+{
+	// [2026-11-04 PLANE-MODEL] One tick of nose control in the local
+	// flight frame. No pitch/roll clamp of any kind: holding pitch
+	// input rotates through vertical to inverted and around (a loop),
+	// holding roll input rolls past inverted. Positive pitch input
+	// pitches the nose up; positive roll input rolls right (right wing
+	// down, i.e. negative UE roll); positive yaw input yaws right.
+	if (DeltaSeconds <= 0.0f)
+	{
+		return Orientation.GetNormalized();
+	}
+	const float PitchStep = FMath::Clamp(PitchInput, -1.0f, 1.0f) * PlanePitchRateDeg(Airspeed, Params) * DeltaSeconds;
+	const float RollStep = -FMath::Clamp(RollInput, -1.0f, 1.0f) * PlaneRollRateDeg(Airspeed, Params) * DeltaSeconds;
+	const float YawStep = FMath::Clamp(YawInput, -1.0f, 1.0f) * PlaneYawRateDeg(Airspeed, Params) * DeltaSeconds;
+	const FQuat Delta(FRotator(PitchStep, YawStep, RollStep));
+	return (Orientation.GetNormalized() * Delta).GetNormalized();
+}
+
+FVector UDragonMovementComponent::LiftVector(const FQuat& Orientation, float Airspeed,
+											 const FDragonFlightParams& Params)
+{
+	// [2026-11-04 PLANE-MODEL] Lift is perpendicular to the wings:
+	// along the dragon's own up, full magnitude at any bank. Banked,
+	// its horizontal component steers the flight path; inverted, it
+	// pulls toward the ground — which is what makes a loop close
+	// instead of ballooning.
+	return Orientation.GetNormalized().GetUpVector() * LiftAccel(Airspeed, Params);
+}
+
+float UDragonMovementComponent::BankedLiftHeadingRateDeg(float BankDegrees, float Airspeed,
+														 const FDragonFlightParams& Params)
+{
+	// [2026-11-04 PLANE-MODEL] Emergent heading rate for a held bank:
+	// the lift vector's horizontal component (Lift*sin(bank)) is the
+	// centripetal acceleration, so heading rate = that / v. Sign:
+	// negative bank (right wing down in our roll convention is
+	// positive input, see StepFlightOrientation) — here the caller
+	// passes the UE roll angle, whose sign yaws the heading oppositely.
+	const float V = FMath::Max(0.0f, Airspeed);
+	if (V <= 1.0f)
+	{
+		return 0.0f;
+	}
+	const float Horizontal = LiftAccel(V, Params) * FMath::Sin(FMath::DegreesToRadians(BankDegrees));
+	return -FMath::RadiansToDegrees(Horizontal / V);
+}
+
+FVector UDragonMovementComponent::StepPlaneVelocity(const FVector& Velocity, const FQuat& Orientation,
+													float DeltaSeconds,
+													const FDragonFlightParams& Params)
+{
+	return StepPlaneVelocity(Velocity, Orientation, DeltaSeconds, Params, 0.0f);
+}
+
+FVector UDragonMovementComponent::StepPlaneVelocity(const FVector& Velocity, const FQuat& Orientation,
+													float DeltaSeconds,
+													const FDragonFlightParams& Params, float PitchInput)
+{
+	// [2026-11-04 PLANE-MODEL] Momentum step: velocity changes only
+	// by lift (perpendicular to the wings) plus gravity. Gravity
+	// along the flight path IS the energy exchange (climb bleeds,
+	// dive gains); gravity across the path and banked lift bend the
+	// path, so heading change emerges with no yaw formula. Drag
+	// exists only above the pitch-dependent terminal (same terminal
+	// law as IntegrateEnergyStep), so a sub-terminal glide retains.
+	if (DeltaSeconds <= 0.0f)
+	{
+		return Velocity;
+	}
+	const FQuat Q = Orientation.GetNormalized();
+	// [2026-11-04 PLANE-MODEL] Angle of attack: held pull scales lift
+	// 1x->2x along the dragon's up (push unloads to 0x), so a loop
+	// pull generates the centripetal force the turn demands.
+	const float LiftScale = FMath::Clamp(1.0f + FMath::Clamp(PitchInput, -1.0f, 1.0f), 0.0f, 2.0f);
+	// [2026-11-04 PLANE-MODEL fix] Flap thrust: a dragon is not a glider
+	// — pulling up means flapping, which adds forward thrust along the
+	// nose (600 cm/s^2 at full pull). Without it a loop bleeds to stall
+	// at the top (proven: pitchTraversal 116deg, exit speed 99).
+	const FVector FlapThrust =
+		Q.GetForwardVector() * (600.0f * FMath::Max(0.0f, PitchInput));
+	const FVector Accel = LiftVector(Q, Velocity.Size(), Params) * LiftScale + FlapThrust +
+						  FVector(0.0f, 0.0f, -Params.GravityCM);
+	FVector Out = Velocity + Accel * DeltaSeconds;
+	const float SinPitch = FMath::Clamp(Q.GetForwardVector().Z, -1.0f, 1.0f);
+	float Terminal;
+	if (SinPitch <= 0.0f)
+	{
+		Terminal = Params.LevelCruiseTerminal + (Params.SteepDiveTerminal - Params.LevelCruiseTerminal) * (-SinPitch);
+	}
+	else
+	{
+		Terminal = Params.LevelCruiseTerminal * (1.0f - 0.7f * SinPitch);
+	}
+	const float Speed = Out.Size();
+	if (Speed > Terminal && Speed > KINDA_SMALL_NUMBER)
+	{
+		const float Over = Speed - Terminal;
+		Out = Out / Speed * (Terminal + Over * FMath::Exp(-DeltaSeconds * Params.DragConvergenceRate));
+	}
+	return Out;
+}
+
+FQuat UDragonMovementComponent::WeathervaneOrientation(const FQuat& Orientation, const FVector& Velocity,
+													   float DeltaSeconds,
+													   const FDragonFlightParams& Params)
+{
+	return WeathervaneOrientation(Orientation, Velocity, DeltaSeconds, Params, 1.0f);
+}
+
+FQuat UDragonMovementComponent::WeathervaneOrientation(const FQuat& Orientation, const FVector& Velocity,
+													   float DeltaSeconds,
+													   const FDragonFlightParams& Params, float RateScale)
+{
+	// [2026-11-04 PLANE-MODEL] Aerodynamic stability: the nose eases
+	// onto the velocity direction while keeping the current roll
+	// (up projected perpendicular to the new forward). This is what
+	// carries the heading around in a banked turn — banked lift bends
+	// the velocity, the weathervane follows it — at the steer
+	// responsiveness rate, so loop pitch input (75 deg/s) always
+	// outruns it and a loop cannot be weathervaned flat.
+	const float Speed = Velocity.Size();
+	if (DeltaSeconds <= 0.0f || Speed < Params.TurnAuthorityZeroSpeed)
+	{
+		return Orientation.GetNormalized();
+	}
+	const FQuat Q = Orientation.GetNormalized();
+	const FVector Forward = Velocity / Speed;
+	FVector Up = Q.GetUpVector() - Forward * FVector::DotProduct(Q.GetUpVector(), Forward);
+	if (!Up.Normalize())
+	{
+		Up = Q.GetUpVector();
+	}
+	const FQuat Desired = FRotationMatrix::MakeFromXZ(Forward, Up).ToQuat();
+	const float Alpha = FMath::Min(1.0f, DeltaSeconds * ComputeSteerResponsiveness(Speed, 0.0f, Params) *
+											 FMath::Clamp(RateScale, 0.0f, 1.0f));
+	return FQuat::Slerp(Q, Desired, Alpha).GetNormalized();
 }
 
 float UDragonMovementComponent::SteerStepDegrees(float PendingDegrees, float MaxRateDegPerSec,
@@ -362,37 +505,22 @@ void UDragonMovementComponent::PhysCustom(float deltaTime, int32 Iterations)
 		return;
 	}
 
-	// [2026-11-03 T-075] The nose defines the flight path (full pitch) — the
-	// direct fix for root cause 1 (yaw-plane-only move input): aiming up the
-	// chimney now means climbing the chimney. It is pawn state
-	// [2026-11-04 FLIGHT-VIGOR] (RMB steer-held sails it, steer-latch
-	// turns it at the yaw limit); non-pawn owners
-	// fall back to control rotation.
-	FRotator NoseRot = CharacterOwner->GetControlRotation();
+	// [2026-11-04 PLANE-MODEL] The flight frame is a full quaternion
+	// on the pawn (nose pitch + wing roll, unclamped); non-pawn owners
+	// fall back to control rotation. Lift runs along the dragon's up
+	// from that frame, so banked/inverted flight bends the velocity.
+	FQuat FlightQuat = CharacterOwner->GetControlRotation().Quaternion();
 	if (const ADragonCharacter* Dragon = Cast<ADragonCharacter>(CharacterOwner))
 	{
-		NoseRot = Dragon->GetProtoNose();
+		FlightQuat = Dragon->GetProtoFlightQuat();
 	}
-	const FVector NoseDir = NoseRot.Vector();
-	const float PitchRad = FMath::DegreesToRadians(NoseRot.Pitch);
-	// [2026-11-04 FLIGHT-PHYSICS] Commanded bank (pawn-owned, anim
-	// reads the same value): only cos(bank) of lift holds altitude.
-	float BankDegrees = 0.0f;
-	if (const ADragonCharacter* Dragon = Cast<ADragonCharacter>(CharacterOwner))
-	{
-		BankDegrees = Dragon->GetProtoBankDegrees();
-	}
+	const FRotator NoseRot = FlightQuat.Rotator();
+	const FVector NoseDir = FlightQuat.GetForwardVector();
 
-	float NewSpeed = IntegrateEnergyStep(Velocity.Size(), PitchRad, deltaTime, FlightParams);
-	// [2026-11-03 T-075] System-identification record (see CaptureFlightCsvRow).
+	float NewSpeed = IntegrateEnergyStep(Velocity.Size(), FMath::Asin(FMath::Clamp(NoseDir.Z, -1.0f, 1.0f)), deltaTime, FlightParams);
 	LastEnergySpeed = NewSpeed;
 	LastPhysDt = deltaTime;
 	LastPhysIters = Iterations;
-	// [2026-11-03 T-075] Authority blend: A pins 0 (pure momentum), B pins 1
-	// (spike: disable momentum, force precision), C rides the airspeed
-	// smoothstep — with a fresh impulse latched to momentum so launches fly.
-	// Brake holds force full precision even before airspeed has decayed
-	// (adopted Brake rule).
 	float AuthorityW = 0.0f;
 	if (Scheme == static_cast<int32>(EDragonFlightScheme::SchemeC))
 	{
@@ -405,70 +533,73 @@ void UDragonMovementComponent::PhysCustom(float deltaTime, int32 Iterations)
 	}
 	if (bProtoBraking)
 	{
-		// [2026-11-04] Analog brake: precision authority scales with
-		// the pull instead of snapping full at any touch of L2.
 		AuthorityW = FMath::Max(AuthorityW, FMath::Clamp(BrakeStrength, 0.0f, 1.0f));
 	}
-	// [2026-11-03 T-075] Landing Assist flies the approach as forced
-	// precision (brake + descent cap below); F toggles, walk/fall clears.
 	if (bLandingAssist)
 	{
 		AuthorityW = 1.0f;
 	}
-	NewSpeed = ClampSpeedToCeilings(NewSpeed, NoseRot.Pitch);
-	if (bProtoBraking)
-	{
-		NewSpeed = BrakeStep(NewSpeed, deltaTime, FlightParams, BrakeStrength);
-	}
 
-	// [2026-11-03 T-075] Precision thrust from the pending move input
-	// (existing WASD/stick bindings — no remap needed for the course); with
-	// no input the precision target is a hover-hold at zero velocity, which
-	// is what the chimney and cave legs steer with.
 	FVector PendingInput = GetPendingInputVector();
-	// [2026-11-03 T-075] Latched steer-to-look adds forward thrust in
-	// precision so the dragon travels toward the view hands-free.
 	if (bProtoAutoThrust && AuthorityW > 0.0f)
 	{
 		PendingInput += NoseDir.GetSafeNormal2D() * 0.6f;
 	}
 	const FVector PrecisionVel = PendingInput.GetClampedToMaxSize(1.0f) * FlightParams.PrecisionThrustSpeed * TrapSlowFactor;
 	const float Steer = ComputeSteerResponsiveness(Velocity.Size(), AuthorityW, FlightParams);
-	// [2026-11-03 T-075] C hybrid (additive): momentum is always the baseline
-	// so coasts glide through the band; precision ADDS input thrust scaled by
-	// band weight, and hover capture settles near-rest flight into a hold.
-	// A/B keep the pinned paths (pure momentum / forced precision).
-	FVector Desired;
+	// [2026-11-04 PLANE-MODEL] Momentum velocity is the lift+gravity
+	// step (no nose-snap, no yaw formula); precision keeps its steered
+	// thrust velocity; C blends the two velocities by AuthorityW and
+	// hover capture still settles near-rest C flight. Brake/ceilings
+	// scale the plane velocity's magnitude, never its direction.
+	FVector PlaneVel = StepPlaneVelocity(Velocity, FlightQuat, deltaTime, FlightParams, ProtoPitchInput);
+	{
+		float PlaneSpeed = ClampSpeedToCeilings(PlaneVel.Size(), NoseRot.Pitch);
+		if (bProtoBraking)
+		{
+			PlaneSpeed = BrakeStep(PlaneSpeed, deltaTime, FlightParams, BrakeStrength);
+		}
+		if (PlaneVel.Size() > KINDA_SMALL_NUMBER)
+		{
+			PlaneVel = PlaneVel.GetSafeNormal() * PlaneSpeed;
+		}
+	}
+	const FVector PrecisionSteered = Velocity + (PrecisionVel - Velocity) * FMath::Min(1.0f, deltaTime * Steer);
+	// [2026-11-04 PLANE-MODEL] Precision correction is gated on an
+	// actual precision demand (input, brake, or Landing Assist). The
+	// first course run proved why: lerping the plane velocity toward
+	// a zero-input precision target inside the blend band is a huge
+	// invisible drag — climbs/loop bled 2000->0 cm/s and froze
+	// mid-air. With no precision demand, C flies the pure plane step
+	// through the band; hover capture (below, near-rest only) still
+	// settles slow flight, and stall recovery is gravity's job.
+	const bool bPrecisionActive = PrecisionVel.SizeSquared() > 1.0f || bProtoBraking || bLandingAssist;
 	if (Scheme == static_cast<int32>(EDragonFlightScheme::SchemeC))
 	{
+		Velocity = PlaneVel;
+		if (bPrecisionActive)
+		{
+			Velocity += (PrecisionVel - Velocity) * FMath::Min(1.0f, deltaTime * Steer) * AuthorityW;
+		}
 		const float HoverH = HoverCaptureWeight(Velocity.Size(), bProtoBraking, FlightParams);
-		Desired = NoseDir * NewSpeed + PrecisionVel * AuthorityW;
-		Desired -= Velocity * FMath::Min(1.0f, deltaTime * Steer) * HoverH;
+		Velocity -= Velocity * FMath::Min(1.0f, deltaTime * Steer) * HoverH;
+	}
+	else if (AuthorityW >= 1.0f)
+	{
+		Velocity = PrecisionSteered;
 	}
 	else
 	{
-		Desired = NoseDir * NewSpeed * (1.0f - AuthorityW) + PrecisionVel * AuthorityW;
+		Velocity = PlaneVel;
 	}
-	Velocity = Velocity + (Desired - Velocity) * FMath::Min(1.0f, deltaTime * Steer);
+	NewSpeed = Velocity.Size();
 
-	// [2026-11-04 FLIGHT-PHYSICS] Lift vs gravity, momentum band only
-	// (weight 1 - AuthorityW: Scheme B / precision / Landing Assist
-	// keep their unchanged hover model, Scheme A/C flight must earn
-	// altitude with airspeed). At 1600 cm/s level this nets zero; at
-	// <600 the wing cannot hold the dragon (stall sink below adds its
-	// sag in pure momentum); at high speed the steer lag above turns
-	// excess lift into a climb the pilot trims with pitch. Energy is
-	// untouched: IntegrateEnergyStep still owns speed along the nose,
-	// so pitching up bleeds speed and diving gains it.
-	Velocity.Z += LiftVerticalAccel(NewSpeed, BankDegrees, FlightParams) * deltaTime * (1.0f - AuthorityW);
-
-	if (NewSpeed < FlightParams.StallSpeed && FlightParams.StallSpeed > 0.0f)
+	if (NewSpeed < FlightParams.StallSpeed && FlightParams.StallSpeed > 0.0f && AuthorityW < 1.0f && !bPrecisionActive)
 	{
-		// [2026-11-03 T-075] Stall sink fades out across the blend: full
-		// hover-hold at W=1, full sink in pure momentum.
-		const float SinkFrac = (1.0f - NewSpeed / FlightParams.StallSpeed) * (1.0f - AuthorityW);
-		Velocity.Z = FMath::Max(Velocity.Z - FlightParams.StallSinkRate * SinkFrac * deltaTime,
-								-FlightParams.StallSinkRate * (1.0f - AuthorityW));
+		// [2026-11-04 PLANE-MODEL] Stall sag cap (was FLIGHT-VIGOR 300):
+		// slow momentum flight sinks, bounded, while the pilot dives
+		// or spends an impulse to recover. Precision band exempt.
+		Velocity.Z = FMath::Max(Velocity.Z, -FlightParams.StallSinkRate * (1.0f - AuthorityW));
 	}
 
 	// [2026-11-03 T-075] Rise/sink ride the blend band (Space-hold/Ctrl):
@@ -625,16 +756,25 @@ void UDragonMovementComponent::CaptureFlightCsvRow(float SimTime, float Stamina)
 	}
 	const float Airspeed = Velocity.Size();
 	float NosePitch = 0.0f;
+	float BankDeg = 0.0f;
+	float UpZ = 1.0f;
+	float FwdZ = 0.0f;
+	float NoseYaw = 0.0f;
 	FVector PawnPos = FVector::ZeroVector;
 	if (const ADragonCharacter* Dragon = Cast<ADragonCharacter>(CharacterOwner))
 	{
-		NosePitch = Dragon->GetProtoNose().Pitch;
+		const FQuat Q = Dragon->GetProtoFlightQuat();
+		NosePitch = Q.Rotator().Pitch;
+		BankDeg = Dragon->GetProtoBankDegrees();
+		UpZ = Q.GetUpVector().Z;
+		FwdZ = Q.GetForwardVector().Z;
+		NoseYaw = Q.Rotator().Yaw;
 		PawnPos = Dragon->GetActorLocation();
 	}
-	FlightCsvRows.Add(FString::Printf(TEXT("%.2f,%d,%.0f,%.3f,%.0f,%.0f,%.1f,%d,%.1f,%.0f,%.4f,%d,%.0f,%.0f,%.0f"),
+	FlightCsvRows.Add(FString::Printf(TEXT("%.2f,%d,%.0f,%.3f,%.0f,%.0f,%.1f,%d,%.1f,%.0f,%.4f,%d,%.0f,%.0f,%.0f,%.1f,%.3f,%.3f,%.1f"),
 									  SimTime, GetFlightScheme(), Airspeed, PrecisionAuthorityWeight(Airspeed, FlightParams), Airspeed,
 									  Velocity.Z, Stamina, bProtoBraking ? 1 : 0, NosePitch, LastEnergySpeed, LastPhysDt,
-									  LastPhysIters, PawnPos.X, PawnPos.Y, PawnPos.Z));
+									  LastPhysIters, PawnPos.X, PawnPos.Y, PawnPos.Z, BankDeg, UpZ, FwdZ, NoseYaw));
 }
 
 void UDragonMovementComponent::DumpFlightCsvToLog() const
@@ -656,7 +796,7 @@ void UDragonMovementComponent::DumpFlightCsvToFile(const FString& FilePath) cons
 	// (directory created, failure loud, never silent).
 	IPlatformFile& PF = FPlatformFileManager::Get().GetPlatformFile();
 	PF.CreateDirectoryTree(*FPaths::GetPath(FilePath));
-	FString Body = TEXT("time,scheme,airspeed,authority,speed,vel_z,stamina,braking,nose_pitch,energy_target,phys_dt,phys_iters,pos_x,pos_y,pos_z\n");
+	FString Body = TEXT("time,scheme,airspeed,authority,speed,vel_z,stamina,braking,nose_pitch,energy_target,phys_dt,phys_iters,pos_x,pos_y,pos_z,bank_deg,up_z,fwd_z,nose_yaw\n");
 	for (const FString& Row : FlightCsvRows)
 	{
 		Body += Row;

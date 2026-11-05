@@ -90,7 +90,10 @@ for fbx_name, asset_name in CLIPS:
     # [2026-11-01 T-068] renaming onto a redirector fails, so clear it first.
     if eal.does_asset_exist(dest):
         eal.delete_asset(dest)
-    require(eal.rename_asset(anim_path, dest), "rename %s -> %s" % (anim_path, dest))
+    # [2026-11-04 anim fix] list_assets returns object paths; rename
+    # needs the package path (strip the .Object suffix) or it fails.
+    require(eal.rename_asset(str(anim_path).split(".")[0], dest),
+            "rename %s -> %s" % (anim_path, dest))
     for path in list(eal.list_assets(STAGE, recursive=False)):
         require(eal.delete_asset(path), "delete staging asset %s" % path)
     anim = require(eal.load_asset(dest), "load imported %s" % dest)

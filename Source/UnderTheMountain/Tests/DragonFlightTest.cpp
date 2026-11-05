@@ -145,6 +145,20 @@ bool FDragonFlightTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("no eleventh impulse on an empty pool"),
 			  Stats->TryConsumeStamina(Stats->ImpulseReserveCost));
 
+	// [2026-11-04 PLANE-MODEL] Held pull bends the velocity harder
+	// than trim lift: angle-of-attack lift is what closes a loop.
+	{
+		const FQuat Level = FQuat::Identity;
+		FVector TrimVel(2000.0f, 0.0f, 0.0f);
+		FVector PullVel(2000.0f, 0.0f, 0.0f);
+		for (int32 Step = 0; Step < 60; ++Step)
+		{
+			TrimVel = UDragonMovementComponent::StepPlaneVelocity(TrimVel, Level, 1.0f / 60.0f, FDragonFlightParams());
+			PullVel = UDragonMovementComponent::StepPlaneVelocity(PullVel, Level, 1.0f / 60.0f, FDragonFlightParams(), 1.0f);
+		}
+		TestTrue(TEXT("full pull out-climbs trim lift over 1 s"), PullVel.Z > TrimVel.Z + 100.0f);
+	}
+
 	// [2026-11-04 FLIGHT-PHYSICS] Vigor bands untouched by the flight
 	// physics rework: hover -3/s, slow -1/s, cruise 1200-1800 free,
 	// fast >=1800 +3/s (Stats seam, same pins as DragonStatsTest).
